@@ -1,0 +1,853 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractPacketOutputStream.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.io.output</a> &gt; <span class="el_source">AbstractPacketOutputStream.java</span></div><h1>AbstractPacketOutputStream.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.io.output;
+
+import java.io.FilterOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.Reader;
+import java.util.Arrays;
+import org.mariadb.jdbc.internal.io.LruTraceCache;
+import org.mariadb.jdbc.internal.util.exceptions.MaxAllowedPacketException;
+
+public abstract class AbstractPacketOutputStream extends FilterOutputStream implements
+    PacketOutputStream {
+
+  private static final byte QUOTE = (byte) '\'';
+  private static final byte DBL_QUOTE = (byte) '&quot;';
+  private static final byte ZERO_BYTE = (byte) '\0';
+  private static final byte BACKSLASH = (byte) '\\';
+
+  private static final int SMALL_BUFFER_SIZE = 8192;
+  private static final int MEDIUM_BUFFER_SIZE = 128 * 1024;
+  private static final int LARGE_BUFFER_SIZE = 1024 * 1024;
+  protected final int maxQuerySizeToLog;
+  protected byte[] buf;
+  protected int pos;
+<span class="nc" id="L78">  protected int maxAllowedPacket = Integer.MAX_VALUE;</span>
+  protected long cmdLength;
+  protected boolean permitTrace;
+<span class="nc" id="L81">  protected int seqNo = 0;</span>
+<span class="nc" id="L82">  protected String serverThreadLog = &quot;&quot;;</span>
+<span class="nc" id="L83">  protected LruTraceCache traceCache = null;</span>
+<span class="nc" id="L84">  private int mark = -1;</span>
+<span class="nc" id="L85">  private boolean bufferContainDataAfterMark = false;</span>
+
+  /**
+   * Common feature to write data into socket, creating MariaDB Packet.
+   *
+   * @param out               socket outputStream
+   * @param maxQuerySizeToLog maximum query size to log
+   */
+  public AbstractPacketOutputStream(OutputStream out, int maxQuerySizeToLog) {
+<span class="nc" id="L94">    super(out);</span>
+<span class="nc" id="L95">    buf = new byte[SMALL_BUFFER_SIZE];</span>
+<span class="nc" id="L96">    this.maxQuerySizeToLog = maxQuerySizeToLog;</span>
+<span class="nc" id="L97">    cmdLength = 0;</span>
+<span class="nc" id="L98">  }</span>
+
+  public abstract int getMaxPacketLength();
+
+  public abstract void startPacket(int seqNo);
+
+  protected abstract void flushBuffer(boolean commandEnd) throws IOException;
+
+  /**
+   * Buffer growing use 4 size only to avoid creating/copying that are expensive operations.
+   * possible size
+   * &lt;ol&gt;
+   * &lt;li&gt;SMALL_BUFFER_SIZE  = 8k (default)&lt;/li&gt;
+   * &lt;li&gt;MEDIUM_BUFFER_SIZE = 128k&lt;/li&gt;
+   * &lt;li&gt;LARGE_BUFFER_SIZE  = 1M&lt;/li&gt;
+   * &lt;li&gt;getMaxPacketLength = 16M (+ 4 is using no compression)&lt;/li&gt;
+   * &lt;/ol&gt;
+   *
+   * @param len length to add
+   */
+  private void growBuffer(int len) throws IOException {
+<span class="nc" id="L119">    int bufferLength = buf.length;</span>
+    int newCapacity;
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    if (bufferLength == SMALL_BUFFER_SIZE) {</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">      if (len + pos &lt; MEDIUM_BUFFER_SIZE) {</span>
+<span class="nc" id="L123">        newCapacity = MEDIUM_BUFFER_SIZE;</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">      } else if (len + pos &lt; LARGE_BUFFER_SIZE) {</span>
+<span class="nc" id="L125">        newCapacity = LARGE_BUFFER_SIZE;</span>
+      } else {
+<span class="nc" id="L127">        newCapacity = getMaxPacketLength();</span>
+      }
+<span class="nc bnc" id="L129" title="All 2 branches missed.">    } else if (bufferLength == MEDIUM_BUFFER_SIZE) {</span>
+<span class="nc bnc" id="L130" title="All 2 branches missed.">      if (len + pos &lt; LARGE_BUFFER_SIZE) {</span>
+<span class="nc" id="L131">        newCapacity = LARGE_BUFFER_SIZE;</span>
+      } else {
+<span class="nc" id="L133">        newCapacity = getMaxPacketLength();</span>
+      }
+<span class="nc bnc" id="L135" title="All 2 branches missed.">    } else if (bufferContainDataAfterMark) {</span>
+      //want to add some information to buffer without having the command Header
+      //must grow buffer until having all the query
+<span class="nc" id="L138">      newCapacity = Math.max(len + pos, getMaxPacketLength());</span>
+    } else {
+<span class="nc" id="L140">      newCapacity = getMaxPacketLength();</span>
+    }
+
+<span class="nc bnc" id="L143" title="All 4 branches missed.">    if (mark != -1 &amp;&amp; len + pos &gt; newCapacity) {</span>
+      //buffer is &gt; 16M with mark.
+      //flush until mark, reset pos at beginning
+<span class="nc" id="L146">      flushBufferStopAtMark();</span>
+
+<span class="nc bnc" id="L148" title="All 2 branches missed.">      if (len + pos &lt;= bufferLength) {</span>
+<span class="nc" id="L149">        return;</span>
+      }
+
+      //need to keep all data, buffer can grow more than maxPacketLength
+      //grow buffer if needed
+<span class="nc bnc" id="L154" title="All 2 branches missed.">      if (len + pos &gt; newCapacity) {</span>
+<span class="nc" id="L155">        newCapacity = len + pos;</span>
+      }
+    }
+
+<span class="nc" id="L159">    byte[] newBuf = new byte[newCapacity];</span>
+<span class="nc" id="L160">    System.arraycopy(buf, 0, newBuf, 0, pos);</span>
+<span class="nc" id="L161">    buf = newBuf;</span>
+<span class="nc" id="L162">  }</span>
+
+  /**
+   * Send empty packet.
+   *
+   * @param seqNo packet sequence
+   * @throws IOException if socket error occur.
+   */
+  public void writeEmptyPacket(int seqNo) throws IOException {
+<span class="nc" id="L171">    startPacket(seqNo);</span>
+<span class="nc" id="L172">    writeEmptyPacket();</span>
+<span class="nc" id="L173">    out.flush();</span>
+<span class="nc" id="L174">    cmdLength = 0;</span>
+<span class="nc" id="L175">  }</span>
+
+  public abstract void writeEmptyPacket() throws IOException;
+
+  /**
+   * Send packet to socket.
+   *
+   * @throws IOException if socket error occur.
+   */
+  public void flush() throws IOException {
+<span class="nc" id="L185">    flushBuffer(true);</span>
+<span class="nc" id="L186">    out.flush();</span>
+
+    // if buffer is big, and last query doesn't use at least half of it, resize buffer to default value
+<span class="nc bnc" id="L189" title="All 4 branches missed.">    if (buf.length &gt; SMALL_BUFFER_SIZE &amp;&amp; cmdLength * 2 &lt; buf.length) {</span>
+<span class="nc" id="L190">      buf = new byte[SMALL_BUFFER_SIZE];</span>
+    }
+
+<span class="nc bnc" id="L193" title="All 2 branches missed.">    if (cmdLength &gt;= maxAllowedPacket) {</span>
+<span class="nc" id="L194">      throw new MaxAllowedPacketException(</span>
+          &quot;query size (&quot; + cmdLength + &quot;) is &gt;= to max_allowed_packet (&quot; + maxAllowedPacket + &quot;)&quot;,
+          true);
+    }
+<span class="nc" id="L198">  }</span>
+
+  public boolean checkRemainingSize(int len) {
+<span class="nc bnc" id="L201" title="All 2 branches missed.">    return getMaxPacketLength() - pos &gt; len;</span>
+  }
+
+  /**
+   * Count query size. If query size is greater than max_allowed_packet and nothing has been already
+   * send, throw an exception to avoid having the connection closed.
+   *
+   * @param length additional length to query size
+   * @throws MaxAllowedPacketException if query has not to be send.
+   */
+  public void checkMaxAllowedLength(int length) throws MaxAllowedPacketException {
+<span class="nc bnc" id="L212" title="All 4 branches missed.">    if (cmdLength + length &gt;= maxAllowedPacket &amp;&amp; cmdLength == 0) {</span>
+      //launch exception only if no packet has been send.
+<span class="nc" id="L214">      throw new MaxAllowedPacketException(&quot;query size (&quot; + (cmdLength + length)</span>
+          + &quot;) is &gt;= to max_allowed_packet (&quot; + maxAllowedPacket + &quot;)&quot;, false);
+    }
+<span class="nc" id="L217">  }</span>
+
+  public boolean exceedMaxLength() {
+<span class="nc bnc" id="L220" title="All 2 branches missed.">    return cmdLength + (pos - initialPacketPos()) &gt;= maxAllowedPacket;</span>
+  }
+
+  public OutputStream getOutputStream() {
+<span class="nc" id="L224">    return out;</span>
+  }
+
+  /**
+   * Write short value into buffer. flush buffer if too small.
+   *
+   * @param value short value
+   * @throws IOException if socket error occur
+   */
+  public void writeShort(short value) throws IOException {
+<span class="nc bnc" id="L234" title="All 2 branches missed.">    if (2 &gt; buf.length - pos) {</span>
+      //not enough space remaining
+<span class="nc" id="L236">      byte[] arr = new byte[2];</span>
+<span class="nc" id="L237">      arr[0] = (byte) value;</span>
+<span class="nc" id="L238">      arr[1] = (byte) (value &gt;&gt; 8);</span>
+<span class="nc" id="L239">      write(arr, 0, 2);</span>
+<span class="nc" id="L240">      return;</span>
+    }
+
+<span class="nc" id="L243">    buf[pos] = (byte) value;</span>
+<span class="nc" id="L244">    buf[pos + 1] = (byte) (value &gt;&gt; 8);</span>
+<span class="nc" id="L245">    pos += 2;</span>
+<span class="nc" id="L246">  }</span>
+
+  /**
+   * Write int value into buffer. flush buffer if too small.
+   *
+   * @param value int value
+   * @throws IOException if socket error occur
+   */
+  public void writeInt(int value) throws IOException {
+<span class="nc bnc" id="L255" title="All 2 branches missed.">    if (4 &gt; buf.length - pos) {</span>
+      //not enough space remaining
+<span class="nc" id="L257">      byte[] arr = new byte[4];</span>
+<span class="nc" id="L258">      arr[0] = (byte) value;</span>
+<span class="nc" id="L259">      arr[1] = (byte) (value &gt;&gt; 8);</span>
+<span class="nc" id="L260">      arr[2] = (byte) (value &gt;&gt; 16);</span>
+<span class="nc" id="L261">      arr[3] = (byte) (value &gt;&gt; 24);</span>
+<span class="nc" id="L262">      write(arr, 0, 4);</span>
+<span class="nc" id="L263">      return;</span>
+    }
+
+<span class="nc" id="L266">    buf[pos] = (byte) value;</span>
+<span class="nc" id="L267">    buf[pos + 1] = (byte) (value &gt;&gt; 8);</span>
+<span class="nc" id="L268">    buf[pos + 2] = (byte) (value &gt;&gt; 16);</span>
+<span class="nc" id="L269">    buf[pos + 3] = (byte) (value &gt;&gt; 24);</span>
+<span class="nc" id="L270">    pos += 4;</span>
+<span class="nc" id="L271">  }</span>
+
+  /**
+   * Write long value into buffer. flush buffer if too small.
+   *
+   * @param value long value
+   * @throws IOException if socket error occur
+   */
+  public void writeLong(long value) throws IOException {
+<span class="nc bnc" id="L280" title="All 2 branches missed.">    if (8 &gt; buf.length - pos) {</span>
+      //not enough space remaining
+<span class="nc" id="L282">      byte[] arr = new byte[8];</span>
+<span class="nc" id="L283">      arr[0] = (byte) value;</span>
+<span class="nc" id="L284">      arr[1] = (byte) (value &gt;&gt; 8);</span>
+<span class="nc" id="L285">      arr[2] = (byte) (value &gt;&gt; 16);</span>
+<span class="nc" id="L286">      arr[3] = (byte) (value &gt;&gt; 24);</span>
+<span class="nc" id="L287">      arr[4] = (byte) (value &gt;&gt; 32);</span>
+<span class="nc" id="L288">      arr[5] = (byte) (value &gt;&gt; 40);</span>
+<span class="nc" id="L289">      arr[6] = (byte) (value &gt;&gt; 48);</span>
+<span class="nc" id="L290">      arr[7] = (byte) (value &gt;&gt; 56);</span>
+<span class="nc" id="L291">      write(arr, 0, 8);</span>
+<span class="nc" id="L292">      return;</span>
+    }
+
+<span class="nc" id="L295">    buf[pos] = (byte) value;</span>
+<span class="nc" id="L296">    buf[pos + 1] = (byte) (value &gt;&gt; 8);</span>
+<span class="nc" id="L297">    buf[pos + 2] = (byte) (value &gt;&gt; 16);</span>
+<span class="nc" id="L298">    buf[pos + 3] = (byte) (value &gt;&gt; 24);</span>
+<span class="nc" id="L299">    buf[pos + 4] = (byte) (value &gt;&gt; 32);</span>
+<span class="nc" id="L300">    buf[pos + 5] = (byte) (value &gt;&gt; 40);</span>
+<span class="nc" id="L301">    buf[pos + 6] = (byte) (value &gt;&gt; 48);</span>
+<span class="nc" id="L302">    buf[pos + 7] = (byte) (value &gt;&gt; 56);</span>
+<span class="nc" id="L303">    pos += 8;</span>
+<span class="nc" id="L304">  }</span>
+
+  /**
+   * Write byte value, len times into buffer. flush buffer if too small.
+   *
+   * @param value byte value
+   * @param len   number of time to write value.
+   * @throws IOException if socket error occur.
+   */
+  public void writeBytes(byte value, int len) throws IOException {
+<span class="nc bnc" id="L314" title="All 2 branches missed.">    if (len &gt; buf.length - pos) {</span>
+      //not enough space remaining
+<span class="nc" id="L316">      byte[] arr = new byte[len];</span>
+<span class="nc" id="L317">      Arrays.fill(arr, value);</span>
+<span class="nc" id="L318">      write(arr, 0, len);</span>
+<span class="nc" id="L319">      return;</span>
+    }
+
+<span class="nc bnc" id="L322" title="All 2 branches missed.">    for (int i = pos; i &lt; pos + len; i++) {</span>
+<span class="nc" id="L323">      buf[i] = value;</span>
+    }
+<span class="nc" id="L325">    pos += len;</span>
+<span class="nc" id="L326">  }</span>
+
+  /**
+   * Write field length into buffer, flush socket if needed.
+   *
+   * @param length field length
+   * @throws IOException if socket error occur.
+   */
+  public void writeFieldLength(long length) throws IOException {
+<span class="nc bnc" id="L335" title="All 2 branches missed.">    if (length &lt; 251) {</span>
+
+<span class="nc" id="L337">      write((byte) length);</span>
+
+<span class="nc bnc" id="L339" title="All 2 branches missed.">    } else if (length &lt; 65536) {</span>
+
+<span class="nc bnc" id="L341" title="All 2 branches missed.">      if (3 &gt; buf.length - pos) {</span>
+        //not enough space remaining
+<span class="nc" id="L343">        byte[] arr = new byte[3];</span>
+<span class="nc" id="L344">        arr[0] = (byte) 0xfc;</span>
+<span class="nc" id="L345">        arr[1] = (byte) length;</span>
+<span class="nc" id="L346">        arr[2] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L347">        write(arr, 0, 3);</span>
+<span class="nc" id="L348">        return;</span>
+      }
+
+<span class="nc" id="L351">      buf[pos] = (byte) 0xfc;</span>
+<span class="nc" id="L352">      buf[pos + 1] = (byte) length;</span>
+<span class="nc" id="L353">      buf[pos + 2] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L354">      pos += 3;</span>
+
+<span class="nc bnc" id="L356" title="All 2 branches missed.">    } else if (length &lt; 16777216) {</span>
+
+<span class="nc bnc" id="L358" title="All 2 branches missed.">      if (4 &gt; buf.length - pos) {</span>
+        //not enough space remaining
+<span class="nc" id="L360">        byte[] arr = new byte[4];</span>
+<span class="nc" id="L361">        arr[0] = (byte) 0xfd;</span>
+<span class="nc" id="L362">        arr[1] = (byte) length;</span>
+<span class="nc" id="L363">        arr[2] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L364">        arr[3] = (byte) (length &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L365">        write(arr, 0, 4);</span>
+<span class="nc" id="L366">        return;</span>
+      }
+
+<span class="nc" id="L369">      buf[pos] = (byte) 0xfd;</span>
+<span class="nc" id="L370">      buf[pos + 1] = (byte) length;</span>
+<span class="nc" id="L371">      buf[pos + 2] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L372">      buf[pos + 3] = (byte) (length &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L373">      pos += 4;</span>
+
+    } else {
+
+<span class="nc bnc" id="L377" title="All 2 branches missed.">      if (9 &gt; buf.length - pos) {</span>
+        //not enough space remaining
+<span class="nc" id="L379">        byte[] arr = new byte[9];</span>
+<span class="nc" id="L380">        arr[0] = (byte) 0xfe;</span>
+<span class="nc" id="L381">        arr[1] = (byte) length;</span>
+<span class="nc" id="L382">        arr[2] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L383">        arr[3] = (byte) (length &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L384">        arr[4] = (byte) (length &gt;&gt;&gt; 24);</span>
+<span class="nc" id="L385">        arr[5] = (byte) (length &gt;&gt;&gt; 32);</span>
+<span class="nc" id="L386">        arr[6] = (byte) (length &gt;&gt;&gt; 40);</span>
+<span class="nc" id="L387">        arr[7] = (byte) (length &gt;&gt;&gt; 48);</span>
+<span class="nc" id="L388">        arr[8] = (byte) (length &gt;&gt;&gt; 54);</span>
+<span class="nc" id="L389">        write(arr, 0, 9);</span>
+<span class="nc" id="L390">        return;</span>
+      }
+
+<span class="nc" id="L393">      buf[pos] = (byte) 0xfe;</span>
+<span class="nc" id="L394">      buf[pos + 1] = (byte) length;</span>
+<span class="nc" id="L395">      buf[pos + 2] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L396">      buf[pos + 3] = (byte) (length &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L397">      buf[pos + 4] = (byte) (length &gt;&gt;&gt; 24);</span>
+<span class="nc" id="L398">      buf[pos + 5] = (byte) (length &gt;&gt;&gt; 32);</span>
+<span class="nc" id="L399">      buf[pos + 6] = (byte) (length &gt;&gt;&gt; 40);</span>
+<span class="nc" id="L400">      buf[pos + 7] = (byte) (length &gt;&gt;&gt; 48);</span>
+<span class="nc" id="L401">      buf[pos + 8] = (byte) (length &gt;&gt;&gt; 54);</span>
+<span class="nc" id="L402">      pos += 9;</span>
+
+    }
+<span class="nc" id="L405">  }</span>
+
+  /**
+   * Write byte into buffer, flush buffer to socket if needed.
+   *
+   * @param value byte to send
+   * @throws IOException if socket error occur.
+   */
+  public void write(int value) throws IOException {
+<span class="nc bnc" id="L414" title="All 2 branches missed.">    if (pos &gt;= buf.length) {</span>
+<span class="nc bnc" id="L415" title="All 4 branches missed.">      if (pos &gt;= getMaxPacketLength() &amp;&amp; !bufferContainDataAfterMark) {</span>
+        //buffer is more than a Packet, must flushBuffer()
+<span class="nc" id="L417">        flushBuffer(false);</span>
+      } else {
+<span class="nc" id="L419">        growBuffer(1);</span>
+      }
+    }
+<span class="nc" id="L422">    buf[pos++] = (byte) value;</span>
+<span class="nc" id="L423">  }</span>
+
+  public void write(byte[] arr) throws IOException {
+<span class="nc" id="L426">    write(arr, 0, arr.length);</span>
+<span class="nc" id="L427">  }</span>
+
+  /**
+   * Write byte array to buffer. If buffer is full, flush socket.
+   *
+   * @param arr byte array
+   * @param off offset
+   * @param len byte length to write
+   * @throws IOException if socket error occur
+   */
+  public void write(byte[] arr, int off, int len) throws IOException {
+<span class="nc bnc" id="L438" title="All 2 branches missed.">    if (len &gt; buf.length - pos) {</span>
+<span class="nc bnc" id="L439" title="All 2 branches missed.">      if (buf.length != getMaxPacketLength()) {</span>
+<span class="nc" id="L440">        growBuffer(len);</span>
+      }
+
+      //max buffer size
+<span class="nc bnc" id="L444" title="All 2 branches missed.">      if (len &gt; buf.length - pos) {</span>
+
+<span class="nc bnc" id="L446" title="All 2 branches missed.">        if (mark != -1) {</span>
+<span class="nc" id="L447">          growBuffer(len);</span>
+<span class="nc bnc" id="L448" title="All 2 branches missed.">          if (mark != -1) {</span>
+<span class="nc" id="L449">            flushBufferStopAtMark();</span>
+          }
+
+        } else {
+          //not enough space in buffer, will stream :
+          // fill buffer and flush until all data are snd
+<span class="nc" id="L455">          int remainingLen = len;</span>
+          do {
+<span class="nc" id="L457">            int lenToFillBuffer = Math.min(getMaxPacketLength() - pos, remainingLen);</span>
+<span class="nc" id="L458">            System.arraycopy(arr, off, buf, pos, lenToFillBuffer);</span>
+<span class="nc" id="L459">            remainingLen -= lenToFillBuffer;</span>
+<span class="nc" id="L460">            off += lenToFillBuffer;</span>
+<span class="nc" id="L461">            pos += lenToFillBuffer;</span>
+<span class="nc bnc" id="L462" title="All 2 branches missed.">            if (remainingLen &gt; 0) {</span>
+<span class="nc" id="L463">              flushBuffer(false);</span>
+            } else {
+              break;
+            }
+<span class="nc" id="L467">          } while (true);</span>
+<span class="nc" id="L468">          return;</span>
+        }
+      }
+    }
+
+<span class="nc" id="L473">    System.arraycopy(arr, off, buf, pos, len);</span>
+<span class="nc" id="L474">    pos += len;</span>
+<span class="nc" id="L475">  }</span>
+
+  public void write(String str) throws IOException {
+<span class="nc" id="L478">    write(str, false, false);</span>
+<span class="nc" id="L479">  }</span>
+
+  /**
+   * Write string to socket.
+   *
+   * @param str                string
+   * @param escape             must be escape
+   * @param noBackslashEscapes escape method
+   * @throws IOException if socket error occur
+   */
+  public void write(String str, boolean escape, boolean noBackslashEscapes) throws IOException {
+
+<span class="nc" id="L491">    int charsLength = str.length();</span>
+
+    //not enough space remaining
+<span class="nc bnc" id="L494" title="All 2 branches missed.">    if (charsLength * 3 + 2 &gt;= buf.length - pos) {</span>
+<span class="nc" id="L495">      byte[] arr = str.getBytes(&quot;UTF-8&quot;);</span>
+<span class="nc bnc" id="L496" title="All 2 branches missed.">      if (escape) {</span>
+<span class="nc" id="L497">        write(QUOTE);</span>
+<span class="nc" id="L498">        writeBytesEscaped(arr, arr.length, noBackslashEscapes);</span>
+<span class="nc" id="L499">        write(QUOTE);</span>
+      } else {
+<span class="nc" id="L501">        write(arr, 0, arr.length);</span>
+      }
+<span class="nc" id="L503">      return;</span>
+    }
+
+    //create UTF-8 byte array
+    //since java char are internally using UTF-16 using surrogate's pattern, 4 bytes unicode characters will
+    //represent 2 characters : example &quot;\uD83C\uDFA4&quot; = 🎤 unicode 8 &quot;no microphones&quot;
+    //so max size is 3 * charLength
+    //(escape characters are 1 byte encoded, so length might only be 2 when escape)
+    // + 2 for the quotes for text protocol
+<span class="nc" id="L512">    int charsOffset = 0;</span>
+    char currChar;
+
+    //quick loop if only ASCII chars for faster escape
+<span class="nc bnc" id="L516" title="All 2 branches missed.">    if (escape) {</span>
+<span class="nc" id="L517">      buf[pos++] = QUOTE;</span>
+<span class="nc bnc" id="L518" title="All 2 branches missed.">      if (noBackslashEscapes) {</span>
+<span class="nc bnc" id="L519" title="All 4 branches missed.">        for (; charsOffset &lt; charsLength &amp;&amp; (currChar = str.charAt(charsOffset)) &lt; 0x80;</span>
+<span class="nc" id="L520">            charsOffset++) {</span>
+<span class="nc bnc" id="L521" title="All 2 branches missed.">          if (currChar == QUOTE) {</span>
+<span class="nc" id="L522">            buf[pos++] = QUOTE;</span>
+          }
+<span class="nc" id="L524">          buf[pos++] = (byte) currChar;</span>
+        }
+      } else {
+<span class="nc bnc" id="L527" title="All 4 branches missed.">        for (; charsOffset &lt; charsLength &amp;&amp; (currChar = str.charAt(charsOffset)) &lt; 0x80;</span>
+<span class="nc" id="L528">            charsOffset++) {</span>
+<span class="nc bnc" id="L529" title="All 8 branches missed.">          if (currChar == BACKSLASH || currChar == QUOTE || currChar == 0</span>
+              || currChar == DBL_QUOTE) {
+<span class="nc" id="L531">            buf[pos++] = BACKSLASH;</span>
+          }
+<span class="nc" id="L533">          buf[pos++] = (byte) currChar;</span>
+        }
+      }
+    } else {
+<span class="nc bnc" id="L537" title="All 4 branches missed.">      for (; charsOffset &lt; charsLength &amp;&amp; (currChar = str.charAt(charsOffset)) &lt; 0x80;</span>
+<span class="nc" id="L538">          charsOffset++) {</span>
+<span class="nc" id="L539">        buf[pos++] = (byte) currChar;</span>
+      }
+    }
+
+    //if quick loop not finished
+<span class="nc bnc" id="L544" title="All 2 branches missed.">    while (charsOffset &lt; charsLength) {</span>
+<span class="nc" id="L545">      currChar = str.charAt(charsOffset++);</span>
+<span class="nc bnc" id="L546" title="All 2 branches missed.">      if (currChar &lt; 0x80) {</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">        if (escape) {</span>
+<span class="nc bnc" id="L548" title="All 2 branches missed.">          if (noBackslashEscapes) {</span>
+<span class="nc bnc" id="L549" title="All 2 branches missed.">            if (currChar == QUOTE) {</span>
+<span class="nc" id="L550">              buf[pos++] = QUOTE;</span>
+            }
+<span class="nc bnc" id="L552" title="All 8 branches missed.">          } else if (currChar == BACKSLASH || currChar == QUOTE || currChar == ZERO_BYTE</span>
+              || currChar == DBL_QUOTE) {
+<span class="nc" id="L554">            buf[pos++] = BACKSLASH;</span>
+          }
+        }
+<span class="nc" id="L557">        buf[pos++] = (byte) currChar;</span>
+<span class="nc bnc" id="L558" title="All 2 branches missed.">      } else if (currChar &lt; 0x800) {</span>
+<span class="nc" id="L559">        buf[pos++] = (byte) (0xc0 | (currChar &gt;&gt; 6));</span>
+<span class="nc" id="L560">        buf[pos++] = (byte) (0x80 | (currChar &amp; 0x3f));</span>
+<span class="nc bnc" id="L561" title="All 4 branches missed.">      } else if (currChar &gt;= 0xD800 &amp;&amp; currChar &lt; 0xE000) {</span>
+        //reserved for surrogate - see https://en.wikipedia.org/wiki/UTF-16
+<span class="nc bnc" id="L563" title="All 2 branches missed.">        if (currChar &lt; 0xDC00) {</span>
+          //is high surrogate
+<span class="nc bnc" id="L565" title="All 2 branches missed.">          if (charsOffset + 1 &gt; charsLength) {</span>
+<span class="nc" id="L566">            buf[pos++] = (byte) 0x63;</span>
+          } else {
+<span class="nc" id="L568">            char nextChar = str.charAt(charsOffset);</span>
+<span class="nc bnc" id="L569" title="All 4 branches missed.">            if (nextChar &gt;= 0xDC00 &amp;&amp; nextChar &lt; 0xE000) {</span>
+              //is low surrogate
+<span class="nc" id="L571">              int surrogatePairs =</span>
+                  ((currChar &lt;&lt; 10) + nextChar) + (0x010000 - (0xD800 &lt;&lt; 10) - 0xDC00);
+<span class="nc" id="L573">              buf[pos++] = (byte) (0xf0 | ((surrogatePairs &gt;&gt; 18)));</span>
+<span class="nc" id="L574">              buf[pos++] = (byte) (0x80 | ((surrogatePairs &gt;&gt; 12) &amp; 0x3f));</span>
+<span class="nc" id="L575">              buf[pos++] = (byte) (0x80 | ((surrogatePairs &gt;&gt; 6) &amp; 0x3f));</span>
+<span class="nc" id="L576">              buf[pos++] = (byte) (0x80 | (surrogatePairs &amp; 0x3f));</span>
+<span class="nc" id="L577">              charsOffset++;</span>
+<span class="nc" id="L578">            } else {</span>
+              //must have low surrogate
+<span class="nc" id="L580">              buf[pos++] = (byte) 0x3f;</span>
+            }
+<span class="nc" id="L582">          }</span>
+        } else {
+          //low surrogate without high surrogate before
+<span class="nc" id="L585">          buf[pos++] = (byte) 0x3f;</span>
+        }
+      } else {
+<span class="nc" id="L588">        buf[pos++] = (byte) (0xe0 | ((currChar &gt;&gt; 12)));</span>
+<span class="nc" id="L589">        buf[pos++] = (byte) (0x80 | ((currChar &gt;&gt; 6) &amp; 0x3f));</span>
+<span class="nc" id="L590">        buf[pos++] = (byte) (0x80 | (currChar &amp; 0x3f));</span>
+      }
+    }
+<span class="nc bnc" id="L593" title="All 2 branches missed.">    if (escape) {</span>
+<span class="nc" id="L594">      buf[pos++] = QUOTE;</span>
+    }
+
+<span class="nc" id="L597">  }</span>
+
+  /**
+   * Write stream into socket.
+   *
+   * @param is                 inputStream
+   * @param escape             must be escape
+   * @param noBackslashEscapes escape method
+   * @throws IOException if socket error occur
+   */
+  public void write(InputStream is, boolean escape, boolean noBackslashEscapes) throws IOException {
+<span class="nc" id="L608">    byte[] array = new byte[4096];</span>
+    int len;
+<span class="nc bnc" id="L610" title="All 2 branches missed.">    if (escape) {</span>
+<span class="nc bnc" id="L611" title="All 2 branches missed.">      while ((len = is.read(array)) &gt; 0) {</span>
+<span class="nc" id="L612">        writeBytesEscaped(array, len, noBackslashEscapes);</span>
+      }
+    } else {
+<span class="nc bnc" id="L615" title="All 2 branches missed.">      while ((len = is.read(array)) &gt; 0) {</span>
+<span class="nc" id="L616">        write(array, 0, len);</span>
+      }
+    }
+<span class="nc" id="L619">  }</span>
+
+  /**
+   * Write stream into socket.
+   *
+   * @param is                 inputStream
+   * @param length             write length
+   * @param escape             must be escape
+   * @param noBackslashEscapes escape method
+   * @throws IOException if socket error occur
+   */
+  public void write(InputStream is, long length, boolean escape, boolean noBackslashEscapes)
+      throws IOException {
+<span class="nc" id="L632">    byte[] array = new byte[4096];</span>
+    int len;
+<span class="nc bnc" id="L634" title="All 4 branches missed.">    while (length &gt; 0 &amp;&amp; (len = is.read(array, 0, Math.min(4096, (int) length))) &gt; 0) {</span>
+<span class="nc bnc" id="L635" title="All 2 branches missed.">      if (escape) {</span>
+<span class="nc" id="L636">        writeBytesEscaped(array, len, noBackslashEscapes);</span>
+      } else {
+<span class="nc" id="L638">        write(array, 0, len);</span>
+      }
+<span class="nc" id="L640">      length -= len;</span>
+    }
+<span class="nc" id="L642">  }</span>
+
+  /**
+   * Write reader into socket.
+   *
+   * @param reader             reader
+   * @param escape             must be escape
+   * @param noBackslashEscapes escape method
+   * @throws IOException if socket error occur
+   */
+  public void write(Reader reader, boolean escape, boolean noBackslashEscapes) throws IOException {
+<span class="nc" id="L653">    char[] buffer = new char[4096];</span>
+    int len;
+<span class="nc bnc" id="L655" title="All 2 branches missed.">    while ((len = reader.read(buffer)) &gt;= 0) {</span>
+<span class="nc" id="L656">      byte[] data = new String(buffer, 0, len).getBytes(&quot;UTF-8&quot;);</span>
+<span class="nc bnc" id="L657" title="All 2 branches missed.">      if (escape) {</span>
+<span class="nc" id="L658">        writeBytesEscaped(data, data.length, noBackslashEscapes);</span>
+      } else {
+<span class="nc" id="L660">        write(data);</span>
+      }
+
+<span class="nc" id="L663">    }</span>
+<span class="nc" id="L664">  }</span>
+
+  /**
+   * Write reader into socket.
+   *
+   * @param reader             reader
+   * @param length             write length
+   * @param escape             must be escape
+   * @param noBackslashEscapes escape method
+   * @throws IOException if socket error occur
+   */
+  public void write(Reader reader, long length, boolean escape, boolean noBackslashEscapes)
+      throws IOException {
+<span class="nc" id="L677">    char[] buffer = new char[4096];</span>
+    int len;
+<span class="nc bnc" id="L679" title="All 4 branches missed.">    while (length &gt; 0 &amp;&amp; (len = reader.read(buffer, 0, Math.min((int) length, 4096))) &gt;= 0) {</span>
+<span class="nc" id="L680">      byte[] data = new String(buffer, 0, len).getBytes(&quot;UTF-8&quot;);</span>
+<span class="nc bnc" id="L681" title="All 2 branches missed.">      if (escape) {</span>
+<span class="nc" id="L682">        writeBytesEscaped(data, data.length, noBackslashEscapes);</span>
+      } else {
+<span class="nc" id="L684">        write(data);</span>
+      }
+<span class="nc" id="L686">      length -= len;</span>
+<span class="nc" id="L687">    }</span>
+<span class="nc" id="L688">  }</span>
+
+  /**
+   * Write escape bytes to socket.
+   *
+   * @param bytes              bytes
+   * @param len                len to write
+   * @param noBackslashEscapes escape method
+   * @throws IOException if socket error occur
+   */
+  public void writeBytesEscaped(byte[] bytes, int len, boolean noBackslashEscapes)
+      throws IOException {
+<span class="nc bnc" id="L700" title="All 2 branches missed.">    if (len * 2 &gt; buf.length - pos) {</span>
+
+      //makes buffer bigger (up to 16M)
+<span class="nc bnc" id="L703" title="All 2 branches missed.">      if (buf.length != getMaxPacketLength()) {</span>
+<span class="nc" id="L704">        growBuffer(len * 2);</span>
+      }
+
+      //data may be bigger than buffer.
+      //must flush buffer when full (and reset position to 0)
+<span class="nc bnc" id="L709" title="All 2 branches missed.">      if (len * 2 &gt; buf.length - pos) {</span>
+
+<span class="nc bnc" id="L711" title="All 2 branches missed.">        if (mark != -1) {</span>
+<span class="nc" id="L712">          growBuffer(len * 2);</span>
+<span class="nc bnc" id="L713" title="All 2 branches missed.">          if (mark != -1) {</span>
+<span class="nc" id="L714">            flushBufferStopAtMark();</span>
+          }
+
+        } else {
+
+          //not enough space in buffer, will fill buffer
+<span class="nc bnc" id="L720" title="All 2 branches missed.">          if (noBackslashEscapes) {</span>
+<span class="nc bnc" id="L721" title="All 2 branches missed.">            for (int i = 0; i &lt; len; i++) {</span>
+<span class="nc bnc" id="L722" title="All 2 branches missed.">              if (QUOTE == bytes[i]) {</span>
+<span class="nc" id="L723">                buf[pos++] = QUOTE;</span>
+<span class="nc bnc" id="L724" title="All 2 branches missed.">                if (buf.length &lt;= pos) {</span>
+<span class="nc" id="L725">                  flushBuffer(false);</span>
+                }
+              }
+<span class="nc" id="L728">              buf[pos++] = bytes[i];</span>
+<span class="nc bnc" id="L729" title="All 2 branches missed.">              if (buf.length &lt;= pos) {</span>
+<span class="nc" id="L730">                flushBuffer(false);</span>
+              }
+            }
+          } else {
+<span class="nc bnc" id="L734" title="All 2 branches missed.">            for (int i = 0; i &lt; len; i++) {</span>
+<span class="nc bnc" id="L735" title="All 8 branches missed.">              if (bytes[i] == QUOTE</span>
+                  || bytes[i] == BACKSLASH
+                  || bytes[i] == DBL_QUOTE
+                  || bytes[i] == ZERO_BYTE) {
+<span class="nc" id="L739">                buf[pos++] = '\\';</span>
+<span class="nc bnc" id="L740" title="All 2 branches missed.">                if (buf.length &lt;= pos) {</span>
+<span class="nc" id="L741">                  flushBuffer(false);</span>
+                }
+              }
+<span class="nc" id="L744">              buf[pos++] = bytes[i];</span>
+<span class="nc bnc" id="L745" title="All 2 branches missed.">              if (buf.length &lt;= pos) {</span>
+<span class="nc" id="L746">                flushBuffer(false);</span>
+              }
+            }
+          }
+<span class="nc" id="L750">          return;</span>
+        }
+
+      }
+    }
+
+    //sure to have enough place filling buffer directly
+<span class="nc bnc" id="L757" title="All 2 branches missed.">    if (noBackslashEscapes) {</span>
+<span class="nc bnc" id="L758" title="All 2 branches missed.">      for (int i = 0; i &lt; len; i++) {</span>
+<span class="nc bnc" id="L759" title="All 2 branches missed.">        if (QUOTE == bytes[i]) {</span>
+<span class="nc" id="L760">          buf[pos++] = QUOTE;</span>
+        }
+<span class="nc" id="L762">        buf[pos++] = bytes[i];</span>
+      }
+    } else {
+<span class="nc bnc" id="L765" title="All 2 branches missed.">      for (int i = 0; i &lt; len; i++) {</span>
+<span class="nc bnc" id="L766" title="All 8 branches missed.">        if (bytes[i] == QUOTE</span>
+            || bytes[i] == BACKSLASH
+            || bytes[i] == '&quot;'
+            || bytes[i] == ZERO_BYTE) {
+<span class="nc" id="L770">          buf[pos++] = BACKSLASH; //add escape slash</span>
+        }
+<span class="nc" id="L772">        buf[pos++] = bytes[i];</span>
+      }
+    }
+
+<span class="nc" id="L776">  }</span>
+
+  public int getMaxAllowedPacket() {
+<span class="nc" id="L779">    return maxAllowedPacket;</span>
+  }
+
+  public abstract void setMaxAllowedPacket(int maxAllowedPacket);
+
+  public void permitTrace(boolean permitTrace) {
+<span class="nc" id="L785">    this.permitTrace = permitTrace;</span>
+<span class="nc" id="L786">  }</span>
+
+  /**
+   * Set server thread id.
+   *
+   * @param serverThreadId current server thread id.
+   * @param isMaster       is server master
+   */
+  public void setServerThreadId(long serverThreadId, Boolean isMaster) {
+<span class="nc" id="L795">    this.serverThreadLog =</span>
+<span class="nc bnc" id="L796" title="All 4 branches missed.">        &quot;conn=&quot; + serverThreadId + ((isMaster != null) ? &quot;(&quot; + (isMaster ? &quot;M&quot; : &quot;S&quot;) + &quot;)&quot; : &quot;&quot;);</span>
+<span class="nc" id="L797">  }</span>
+
+  public void setTraceCache(LruTraceCache traceCache) {
+<span class="nc" id="L800">    this.traceCache = traceCache;</span>
+<span class="nc" id="L801">  }</span>
+
+  @Override
+  public void mark() {
+<span class="nc" id="L805">    mark = pos;</span>
+<span class="nc" id="L806">  }</span>
+
+  @Override
+  public boolean isMarked() {
+<span class="nc bnc" id="L810" title="All 2 branches missed.">    return mark != -1;</span>
+  }
+
+  /**
+   * Flush to last mark.
+   *
+   * @throws IOException if flush fail.
+   */
+  @Override
+  public void flushBufferStopAtMark() throws IOException {
+<span class="nc" id="L820">    final int end = pos;</span>
+<span class="nc" id="L821">    pos = mark;</span>
+<span class="nc" id="L822">    flushBuffer(true);</span>
+<span class="nc" id="L823">    out.flush();</span>
+<span class="nc" id="L824">    startPacket(0);</span>
+
+<span class="nc" id="L826">    System.arraycopy(buf, mark, buf, pos, end - mark);</span>
+<span class="nc" id="L827">    pos += end - mark;</span>
+<span class="nc" id="L828">    mark = -1;</span>
+<span class="nc" id="L829">    bufferContainDataAfterMark = true;</span>
+<span class="nc" id="L830">  }</span>
+
+  public boolean bufferIsDataAfterMark() {
+<span class="nc" id="L833">    return bufferContainDataAfterMark;</span>
+  }
+
+  /**
+   * Reset mark flag and send bytes after mark flag.
+   *
+   * @return bytes after mark flag
+   */
+  public byte[] resetMark() {
+<span class="nc" id="L842">    mark = -1;</span>
+
+<span class="nc bnc" id="L844" title="All 2 branches missed.">    if (bufferContainDataAfterMark) {</span>
+<span class="nc" id="L845">      byte[] data = Arrays.copyOfRange(buf, initialPacketPos(), pos);</span>
+<span class="nc" id="L846">      startPacket(0);</span>
+<span class="nc" id="L847">      bufferContainDataAfterMark = false;</span>
+<span class="nc" id="L848">      return data;</span>
+    }
+<span class="nc" id="L850">    return null;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

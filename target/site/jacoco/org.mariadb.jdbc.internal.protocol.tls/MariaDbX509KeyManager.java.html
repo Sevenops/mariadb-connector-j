@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MariaDbX509KeyManager.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.protocol.tls</a> &gt; <span class="el_source">MariaDbX509KeyManager.java</span></div><h1>MariaDbX509KeyManager.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.protocol.tls;
+
+import java.net.Socket;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.Principal;
+import java.security.PrivateKey;
+import java.security.UnrecoverableEntryException;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Enumeration;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.Map;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.X509ExtendedKeyManager;
+import javax.security.auth.x500.X500Principal;
+
+/**
+ * Key manager implementation that implement only client verification and rely only on private key
+ * for mutual authentication, without Server Name Indication (SNI) verification.
+ */
+public class MariaDbX509KeyManager extends X509ExtendedKeyManager {
+
+<span class="nc" id="L80">  private final Hashtable&lt;String, KeyStore.PrivateKeyEntry&gt; privateKeyHash = new Hashtable&lt;&gt;();</span>
+
+  /**
+   * Creates Key manager.
+   *
+   * @param keyStore keyStore (must have been initialized)
+   * @param pwd      keyStore password
+   * @throws KeyStoreException if keyStore hasn't been initialized.
+   */
+  public MariaDbX509KeyManager(KeyStore keyStore, char[] pwd) throws KeyStoreException {
+<span class="nc" id="L90">    super();</span>
+<span class="nc" id="L91">    Enumeration&lt;String&gt; aliases = keyStore.aliases();</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">    while (aliases.hasMoreElements()) {</span>
+<span class="nc" id="L93">      String alias = aliases.nextElement();</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">      if (keyStore.entryInstanceOf(alias, KeyStore.PrivateKeyEntry.class)) {</span>
+        try {
+<span class="nc" id="L96">          privateKeyHash.put(alias, (KeyStore.PrivateKeyEntry) keyStore</span>
+<span class="nc" id="L97">              .getEntry(alias, new KeyStore.PasswordProtection(pwd)));</span>
+<span class="nc" id="L98">        } catch (UnrecoverableEntryException | NoSuchAlgorithmException unrecoverableEntryEx) {</span>
+          //password invalid | algorithm error
+<span class="nc" id="L100">        }</span>
+      }
+<span class="nc" id="L102">    }</span>
+<span class="nc" id="L103">  }</span>
+
+  @Override
+  public String[] getClientAliases(String keyType, Principal[] issuers) {
+<span class="nc" id="L107">    List&lt;String&gt; accurateAlias = searchAccurateAliases(new String[]{keyType}, issuers);</span>
+<span class="nc bnc" id="L108" title="All 2 branches missed.">    if (accurateAlias.size() == 0) {</span>
+<span class="nc" id="L109">      return null;</span>
+    }
+<span class="nc" id="L111">    return accurateAlias.toArray(new String[accurateAlias.size()]);</span>
+  }
+
+  @Override
+  public String chooseClientAlias(String[] keyType, Principal[] issuers, Socket socket) {
+<span class="nc" id="L116">    List&lt;String&gt; accurateAlias = searchAccurateAliases(keyType, issuers);</span>
+<span class="nc bnc" id="L117" title="All 2 branches missed.">    return accurateAlias.size() &gt; 0 ? accurateAlias.get(0) : null;</span>
+  }
+
+  @Override
+  public X509Certificate[] getCertificateChain(String alias) {
+<span class="nc" id="L122">    KeyStore.PrivateKeyEntry keyEntry = privateKeyHash.get(alias);</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">    if (keyEntry == null) {</span>
+<span class="nc" id="L124">      return null;</span>
+    }
+
+<span class="nc" id="L127">    Certificate[] certs = keyEntry.getCertificateChain();</span>
+<span class="nc bnc" id="L128" title="All 4 branches missed.">    if (certs.length &gt; 0 &amp;&amp; certs[0] instanceof X509Certificate) {</span>
+<span class="nc" id="L129">      return Arrays.copyOf(certs, certs.length, X509Certificate[].class);</span>
+    }
+
+<span class="nc" id="L132">    return null;</span>
+  }
+
+  @Override
+  public String chooseEngineClientAlias(String[] keyType, Principal[] issuers, SSLEngine engine) {
+<span class="nc" id="L137">    return chooseClientAlias(keyType, issuers, null);</span>
+  }
+
+  @Override
+  public PrivateKey getPrivateKey(String alias) {
+<span class="nc" id="L142">    KeyStore.PrivateKeyEntry keyEntry = privateKeyHash.get(alias);</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">    if (keyEntry == null) {</span>
+<span class="nc" id="L144">      return null;</span>
+    }
+<span class="nc" id="L146">    return keyEntry.getPrivateKey();</span>
+  }
+
+  /**
+   * Search aliases corresponding to algorithms and issuers.
+   *
+   * @param keyTypes list of algorithms
+   * @param issuers  list of issuers;
+   * @return list of corresponding aliases
+   */
+  private ArrayList&lt;String&gt; searchAccurateAliases(String[] keyTypes, Principal[] issuers) {
+<span class="nc bnc" id="L157" title="All 4 branches missed.">    if (keyTypes == null || keyTypes.length == 0) {</span>
+<span class="nc" id="L158">      return null;</span>
+    }
+
+<span class="nc" id="L161">    ArrayList&lt;String&gt; accurateAliases = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">    for (Map.Entry&lt;String, KeyStore.PrivateKeyEntry&gt; mapEntry : privateKeyHash.entrySet()) {</span>
+
+<span class="nc" id="L164">      Certificate[] certs = mapEntry.getValue().getCertificateChain();</span>
+<span class="nc" id="L165">      String alg = certs[0].getPublicKey().getAlgorithm();</span>
+
+<span class="nc bnc" id="L167" title="All 2 branches missed.">      for (String keyType : keyTypes) {</span>
+<span class="nc bnc" id="L168" title="All 2 branches missed.">        if (alg.equals(keyType)) {</span>
+<span class="nc bnc" id="L169" title="All 4 branches missed.">          if (issuers != null &amp;&amp; issuers.length != 0) {</span>
+            checkLoop:
+<span class="nc bnc" id="L171" title="All 2 branches missed.">            for (Certificate cert : certs) {</span>
+<span class="nc bnc" id="L172" title="All 2 branches missed.">              if (cert instanceof X509Certificate) {</span>
+<span class="nc" id="L173">                X500Principal certificateIssuer = ((X509Certificate) cert).getIssuerX500Principal();</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">                for (Principal issuer : issuers) {</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">                  if (certificateIssuer.equals(issuer)) {</span>
+<span class="nc" id="L176">                    accurateAliases.add(mapEntry.getKey());</span>
+<span class="nc" id="L177">                    break checkLoop;</span>
+                  }
+                }
+              }
+            }
+          } else {
+<span class="nc" id="L183">            accurateAliases.add(mapEntry.getKey());</span>
+          }
+        }
+      }
+<span class="nc" id="L187">    }</span>
+<span class="nc" id="L188">    return accurateAliases;</span>
+  }
+
+  @Override
+  public String[] getServerAliases(String keyType, Principal[] issuers) {
+<span class="nc" id="L193">    return null; // Driver use only client side</span>
+  }
+
+  @Override
+  public String chooseServerAlias(String keyType, Principal[] issuers, Socket socket) {
+<span class="nc" id="L198">    return null; // Driver use only client side</span>
+  }
+
+  @Override
+  public String chooseEngineServerAlias(String keyType, Principal[] issuers, SSLEngine engine) {
+<span class="nc" id="L203">    return null; // Driver use only client side</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

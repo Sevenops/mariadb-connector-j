@@ -1,0 +1,3052 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MariaDbDatabaseMetaData.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">MariaDbDatabaseMetaData.java</span></div><h1>MariaDbDatabaseMetaData.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc;
+
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.PseudoColumnUsage;
+import java.sql.ResultSet;
+import java.sql.RowIdLifetime;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Types;
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+
+import org.mariadb.jdbc.internal.ColumnType;
+import org.mariadb.jdbc.internal.com.read.resultset.ColumnInformation;
+import org.mariadb.jdbc.internal.com.read.resultset.SelectResultSet;
+import org.mariadb.jdbc.internal.io.input.StandardPacketInputStream;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.Utils;
+import org.mariadb.jdbc.internal.util.constant.Version;
+import org.mariadb.jdbc.internal.util.dao.Identifier;
+
+public class MariaDbDatabaseMetaData implements DatabaseMetaData {
+
+  public static final String DRIVER_NAME = &quot;MariaDB Connector/J&quot;;
+  private final MariaDbConnection connection;
+  private final UrlParser urlParser;
+<span class="nc" id="L83">  private boolean datePrecisionColumnExist = true;</span>
+
+  /**
+   * Constructor.
+   *
+   * @param connection connection
+   * @param urlParser  Url parser
+   */
+<span class="nc" id="L91">  public MariaDbDatabaseMetaData(Connection connection, UrlParser urlParser) {</span>
+<span class="nc" id="L92">    this.connection = (MariaDbConnection) connection;</span>
+<span class="nc" id="L93">    this.urlParser = urlParser;</span>
+<span class="nc" id="L94">  }</span>
+
+  private static String columnTypeClause(Options options) {
+<span class="nc" id="L97">    String upperCaseWithoutSize =</span>
+        &quot; UCASE(IF( COLUMN_TYPE LIKE '%(%)%', CONCAT(SUBSTRING( COLUMN_TYPE,1, LOCATE('(',&quot;
+            + &quot;COLUMN_TYPE) - 1 ), SUBSTRING(COLUMN_TYPE ,1+locate(')', COLUMN_TYPE))), &quot;
+            + &quot;COLUMN_TYPE))&quot;;
+
+<span class="nc bnc" id="L102" title="All 2 branches missed.">    if (options.tinyInt1isBit) {</span>
+<span class="nc" id="L103">      upperCaseWithoutSize =</span>
+          &quot; IF(COLUMN_TYPE like 'tinyint(1)%', 'BIT', &quot; + upperCaseWithoutSize + &quot;)&quot;;
+    }
+
+<span class="nc bnc" id="L107" title="All 2 branches missed.">    if (!options.yearIsDateType) {</span>
+<span class="nc" id="L108">      return &quot; IF(COLUMN_TYPE IN ('year(2)', 'year(4)'), 'SMALLINT', &quot; + upperCaseWithoutSize + &quot;)&quot;;</span>
+    }
+
+<span class="nc" id="L111">    return upperCaseWithoutSize;</span>
+  }
+
+  // Extract identifier quoted string from input String.
+  // Return new position, or -1 on error
+  private static int skipWhite(char[] part, int startPos) {
+<span class="nc bnc" id="L117" title="All 2 branches missed.">    for (int i = startPos; i &lt; part.length; i++) {</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">      if (!Character.isWhitespace(part[i])) {</span>
+<span class="nc" id="L119">        return i;</span>
+      }
+    }
+<span class="nc" id="L122">    return part.length;</span>
+  }
+
+  private static int parseIdentifier(char[] part, int startPos, Identifier identifier)
+      throws ParseException {
+<span class="nc" id="L127">    int pos = skipWhite(part, startPos);</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">    if (part[pos] != '`') {</span>
+<span class="nc" id="L129">      throw new ParseException(new String(part), pos);</span>
+    }
+<span class="nc" id="L131">    pos++;</span>
+<span class="nc" id="L132">    StringBuilder sb = new StringBuilder();</span>
+<span class="nc" id="L133">    int quotes = 0;</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">    for (; pos &lt; part.length; pos++) {</span>
+<span class="nc" id="L135">      char ch = part[pos];</span>
+<span class="nc bnc" id="L136" title="All 2 branches missed.">      if (ch == '`') {</span>
+<span class="nc" id="L137">        quotes++;</span>
+      } else {
+<span class="nc bnc" id="L139" title="All 2 branches missed.">        for (int j = 0; j &lt; quotes / 2; j++) {</span>
+<span class="nc" id="L140">          sb.append('`');</span>
+        }
+<span class="nc bnc" id="L142" title="All 2 branches missed.">        if (quotes % 2 == 1) {</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">          if (ch == '.') {</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">            if (identifier.schema != null) {</span>
+<span class="nc" id="L145">              throw new ParseException(new String(part), pos);</span>
+            }
+<span class="nc" id="L147">            identifier.schema = sb.toString();</span>
+<span class="nc" id="L148">            return parseIdentifier(part, pos + 1, identifier);</span>
+          }
+<span class="nc" id="L150">          identifier.name = sb.toString();</span>
+<span class="nc" id="L151">          return pos;</span>
+        }
+<span class="nc" id="L153">        quotes = 0;</span>
+<span class="nc" id="L154">        sb.append(ch);</span>
+      }
+    }
+<span class="nc" id="L157">    throw new ParseException(new String(part), startPos);</span>
+  }
+
+  private static int parseIdentifierList(char[] part, int startPos, List&lt;Identifier&gt; list)
+      throws ParseException {
+<span class="nc" id="L162">    int pos = skipWhite(part, startPos);</span>
+<span class="nc bnc" id="L163" title="All 2 branches missed.">    if (part[pos] != '(') {</span>
+<span class="nc" id="L164">      throw new ParseException(new String(part), pos);</span>
+    }
+<span class="nc" id="L166">    pos++;</span>
+    for (; ; ) {
+<span class="nc" id="L168">      pos = skipWhite(part, pos);</span>
+<span class="nc" id="L169">      char ch = part[pos];</span>
+<span class="nc bnc" id="L170" title="All 4 branches missed.">      switch (ch) {</span>
+        case ')':
+<span class="nc" id="L172">          return pos + 1;</span>
+        case '`':
+<span class="nc" id="L174">          Identifier id = new Identifier();</span>
+<span class="nc" id="L175">          pos = parseIdentifier(part, pos, id);</span>
+<span class="nc" id="L176">          list.add(id);</span>
+<span class="nc" id="L177">          break;</span>
+        case ',':
+<span class="nc" id="L179">          pos++;</span>
+<span class="nc" id="L180">          break;</span>
+        default:
+<span class="nc" id="L182">          throw new ParseException(new String(part, startPos, part.length - startPos), startPos);</span>
+      }
+<span class="nc" id="L184">    }</span>
+  }
+
+  private static int skipKeyword(char[] part, int startPos, String keyword) throws ParseException {
+<span class="nc" id="L188">    int pos = skipWhite(part, startPos);</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">    for (int i = 0; i &lt; keyword.length(); i++, pos++) {</span>
+<span class="nc bnc" id="L190" title="All 2 branches missed.">      if (part[pos] != keyword.charAt(i)) {</span>
+<span class="nc" id="L191">        throw new ParseException(new String(part), pos);</span>
+      }
+    }
+<span class="nc" id="L194">    return pos;</span>
+  }
+
+  private static int getImportedKeyAction(String actionKey) {
+<span class="nc bnc" id="L198" title="All 2 branches missed.">    if (actionKey == null) {</span>
+<span class="nc" id="L199">      return DatabaseMetaData.importedKeyRestrict;</span>
+    }
+<span class="nc bnc" id="L201" title="All 6 branches missed.">    switch (actionKey) {</span>
+      case &quot;NO ACTION&quot;:
+<span class="nc" id="L203">        return DatabaseMetaData.importedKeyNoAction;</span>
+
+      case &quot;CASCADE&quot;:
+<span class="nc" id="L206">        return DatabaseMetaData.importedKeyCascade;</span>
+
+      case &quot;SET NULL&quot;:
+<span class="nc" id="L209">        return DatabaseMetaData.importedKeySetNull;</span>
+
+      case &quot;SET DEFAULT&quot;:
+<span class="nc" id="L212">        return DatabaseMetaData.importedKeySetDefault;</span>
+
+      case &quot;RESTRICT&quot;:
+<span class="nc" id="L215">        return DatabaseMetaData.importedKeyRestrict;</span>
+
+      default:
+<span class="nc" id="L218">        throw new IllegalArgumentException(&quot;Illegal key action '&quot; + actionKey + &quot;' specified.&quot;);</span>
+    }
+  }
+
+  /**
+   * Get imported keys.
+   *
+   * @param tableDef   table definition
+   * @param tableName  table name
+   * @param catalog    catalog
+   * @param connection connection
+   * @return resultset resultset
+   * @throws ParseException exception
+   */
+  private static ResultSet getImportedKeys(String tableDef, String tableName, String catalog,
+      MariaDbConnection connection) throws ParseException {
+<span class="nc" id="L234">    String[] columnNames = {</span>
+        &quot;PKTABLE_CAT&quot;, &quot;PKTABLE_SCHEM&quot;, &quot;PKTABLE_NAME&quot;,
+        &quot;PKCOLUMN_NAME&quot;, &quot;FKTABLE_CAT&quot;, &quot;FKTABLE_SCHEM&quot;,
+        &quot;FKTABLE_NAME&quot;, &quot;FKCOLUMN_NAME&quot;, &quot;KEY_SEQ&quot;,
+        &quot;UPDATE_RULE&quot;, &quot;DELETE_RULE&quot;, &quot;FK_NAME&quot;,
+        &quot;PK_NAME&quot;, &quot;DEFERRABILITY&quot;
+    };
+<span class="nc" id="L241">    ColumnType[] columnTypes = {</span>
+        ColumnType.VARCHAR, ColumnType.NULL, ColumnType.VARCHAR,
+        ColumnType.VARCHAR, ColumnType.VARCHAR, ColumnType.NULL,
+        ColumnType.VARCHAR, ColumnType.VARCHAR, ColumnType.SMALLINT,
+        ColumnType.SMALLINT, ColumnType.SMALLINT, ColumnType.VARCHAR,
+        ColumnType.NULL, ColumnType.SMALLINT};
+
+<span class="nc" id="L248">    String[] parts = tableDef.split(&quot;\n&quot;);</span>
+
+<span class="nc" id="L250">    List&lt;String[]&gt; data = new ArrayList&lt;&gt;();</span>
+
+<span class="nc bnc" id="L252" title="All 2 branches missed.">    for (String part : parts) {</span>
+<span class="nc" id="L253">      part = part.trim();</span>
+<span class="nc bnc" id="L254" title="All 4 branches missed.">      if (!part.startsWith(&quot;CONSTRAINT&quot;) &amp;&amp; !part.contains(&quot;FOREIGN KEY&quot;)) {</span>
+<span class="nc" id="L255">        continue;</span>
+      }
+<span class="nc" id="L257">      char[] partChar = part.toCharArray();</span>
+
+<span class="nc" id="L259">      Identifier constraintName = new Identifier();</span>
+
+<span class="nc" id="L261">      int pos = skipKeyword(partChar, 0, &quot;CONSTRAINT&quot;);</span>
+<span class="nc" id="L262">      pos = parseIdentifier(partChar, pos, constraintName);</span>
+<span class="nc" id="L263">      pos = skipKeyword(partChar, pos, &quot;FOREIGN KEY&quot;);</span>
+<span class="nc" id="L264">      List&lt;Identifier&gt; foreignKeyCols = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L265">      pos = parseIdentifierList(partChar, pos, foreignKeyCols);</span>
+<span class="nc" id="L266">      pos = skipKeyword(partChar, pos, &quot;REFERENCES&quot;);</span>
+<span class="nc" id="L267">      Identifier pkTable = new Identifier();</span>
+<span class="nc" id="L268">      pos = parseIdentifier(partChar, pos, pkTable);</span>
+<span class="nc" id="L269">      List&lt;Identifier&gt; primaryKeyCols = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L270">      parseIdentifierList(partChar, pos, primaryKeyCols);</span>
+<span class="nc bnc" id="L271" title="All 2 branches missed.">      if (primaryKeyCols.size() != foreignKeyCols.size()) {</span>
+<span class="nc" id="L272">        throw new ParseException(tableDef, 0);</span>
+      }
+<span class="nc" id="L274">      int onUpdateReferenceAction = DatabaseMetaData.importedKeyRestrict;</span>
+<span class="nc" id="L275">      int onDeleteReferenceAction = DatabaseMetaData.importedKeyRestrict;</span>
+
+<span class="nc bnc" id="L277" title="All 2 branches missed.">      for (String referenceAction : new String[]{&quot;RESTRICT&quot;, &quot;CASCADE&quot;, &quot;SET NULL&quot;, &quot;NO ACTION&quot;}) {</span>
+<span class="nc bnc" id="L278" title="All 2 branches missed.">        if (part.contains(&quot;ON UPDATE &quot; + referenceAction)) {</span>
+<span class="nc" id="L279">          onUpdateReferenceAction = getImportedKeyAction(referenceAction);</span>
+        }
+<span class="nc bnc" id="L281" title="All 2 branches missed.">        if (part.contains(&quot;ON DELETE &quot; + referenceAction)) {</span>
+<span class="nc" id="L282">          onDeleteReferenceAction = getImportedKeyAction(referenceAction);</span>
+        }
+      }
+
+<span class="nc bnc" id="L286" title="All 2 branches missed.">      for (int i = 0; i &lt; primaryKeyCols.size(); i++) {</span>
+
+<span class="nc" id="L288">        String[] row = new String[columnNames.length];</span>
+<span class="nc" id="L289">        row[0] = pkTable.schema;</span>
+<span class="nc bnc" id="L290" title="All 2 branches missed.">        if (row[0] == null) {</span>
+<span class="nc" id="L291">          row[0] = catalog;</span>
+        }
+<span class="nc" id="L293">        row[1] = null;</span>
+<span class="nc" id="L294">        row[2] = pkTable.name;</span>
+<span class="nc" id="L295">        row[3] = primaryKeyCols.get(i).name;</span>
+<span class="nc" id="L296">        row[4] = catalog;</span>
+<span class="nc" id="L297">        row[5] = null;</span>
+<span class="nc" id="L298">        row[6] = tableName;</span>
+<span class="nc" id="L299">        row[7] = foreignKeyCols.get(i).name;</span>
+<span class="nc" id="L300">        row[8] = Integer.toString(i + 1);</span>
+<span class="nc" id="L301">        row[9] = Integer.toString(onUpdateReferenceAction);</span>
+<span class="nc" id="L302">        row[10] = Integer.toString(onDeleteReferenceAction);</span>
+<span class="nc" id="L303">        row[11] = constraintName.name;</span>
+<span class="nc" id="L304">        row[12] = null;</span>
+<span class="nc" id="L305">        row[13] = Integer.toString(DatabaseMetaData.importedKeyNotDeferrable);</span>
+<span class="nc" id="L306">        data.add(row);</span>
+      }
+    }
+<span class="nc" id="L309">    String[][] arr = data.toArray(new String[0][]);</span>
+
+    /* Sort array by PKTABLE_CAT, PKTABLE_NAME, and KEY_SEQ.*/
+<span class="nc" id="L312">    Arrays.sort(arr, (row1, row2) -&gt; {</span>
+<span class="nc" id="L313">      int result = row1[0].compareTo(row2[0]);   //PKTABLE_CAT</span>
+<span class="nc bnc" id="L314" title="All 2 branches missed.">      if (result == 0) {</span>
+<span class="nc" id="L315">        result = row1[2].compareTo(row2[2]);   //PKTABLE_NAME</span>
+<span class="nc bnc" id="L316" title="All 2 branches missed.">        if (result == 0) {</span>
+<span class="nc" id="L317">          result = row1[8].length() - row2[8].length();  // KEY_SEQ</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">          if (result == 0) {</span>
+<span class="nc" id="L319">            result = row1[8].compareTo(row2[8]);</span>
+          }
+        }
+      }
+<span class="nc" id="L323">      return result;</span>
+    });
+<span class="nc" id="L325">    return SelectResultSet.createResultSet(columnNames, columnTypes, arr, connection.getProtocol());</span>
+  }
+
+  /**
+   * Retrieves a description of the primary key columns that are referenced by the given table's
+   * foreign key columns (the primary keys imported by a table).  They are ordered by PKTABLE_CAT,
+   * PKTABLE_SCHEM, PKTABLE_NAME, and KEY_SEQ.
+   *
+   * &lt;P&gt;Each primary key column description has the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt;
+   * &lt;LI&gt;&lt;B&gt;PKTABLE_CAT&lt;/B&gt; String {@code =&gt;} primary key table catalog being imported (may be
+   * &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;PKTABLE_SCHEM&lt;/B&gt; String {@code =&gt;} primary key table schema being imported (may be
+   * &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;PKTABLE_NAME&lt;/B&gt; String {@code =&gt;} primary key table name being imported
+   * &lt;LI&gt;&lt;B&gt;PKCOLUMN_NAME&lt;/B&gt; String {@code =&gt;} primary key column name being imported
+   * &lt;LI&gt;&lt;B&gt;FKTABLE_CAT&lt;/B&gt; String {@code =&gt;} foreign key table catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;FKTABLE_SCHEM&lt;/B&gt; String {@code =&gt;} foreign key table schema (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;FKTABLE_NAME&lt;/B&gt; String {@code =&gt;} foreign key table name
+   * &lt;LI&gt;&lt;B&gt;FKCOLUMN_NAME&lt;/B&gt; String {@code =&gt;} foreign key column name
+   * &lt;LI&gt;&lt;B&gt;KEY_SEQ&lt;/B&gt; short {@code =&gt;} sequence number within a foreign key( a value of 1
+   * represents the first column of the foreign key, a value of 2 would represent the second column
+   * within the foreign key).
+   * &lt;LI&gt;&lt;B&gt;UPDATE_RULE&lt;/B&gt; short {@code =&gt;} What happens to a foreign key when the primary key is
+   * updated:
+   * &lt;UL&gt;
+   * &lt;LI&gt; importedNoAction - do not allow update of primary key if it has been imported
+   * &lt;LI&gt; importedKeyCascade - change imported key to agree with primary key update
+   * &lt;LI&gt; importedKeySetNull - change imported key to &lt;code&gt;NULL&lt;/code&gt; if its primary key has been
+   * updated
+   * &lt;LI&gt; importedKeySetDefault - change imported key to default values if its primary key has been
+   * updated
+   * &lt;LI&gt; importedKeyRestrict - same as importedKeyNoAction (for ODBC 2.x compatibility)
+   * &lt;/UL&gt;
+   * &lt;LI&gt;&lt;B&gt;DELETE_RULE&lt;/B&gt; short {@code =&gt;} What happens to the foreign key when primary is
+   * deleted.
+   * &lt;UL&gt;
+   * &lt;LI&gt; importedKeyNoAction - do not allow delete of primary key if it has been imported
+   * &lt;LI&gt; importedKeyCascade - delete rows that import a deleted key
+   * &lt;LI&gt; importedKeySetNull - change imported key to NULL if its primary key has been deleted
+   * &lt;LI&gt; importedKeyRestrict - same as importedKeyNoAction (for ODBC 2.x compatibility)
+   * &lt;LI&gt; importedKeySetDefault - change imported key to default if its primary key has been
+   * deleted
+   * &lt;/UL&gt;
+   * &lt;LI&gt;&lt;B&gt;FK_NAME&lt;/B&gt; String {@code =&gt;} foreign key name (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;PK_NAME&lt;/B&gt; String {@code =&gt;} primary key name (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;DEFERRABILITY&lt;/B&gt; short {@code =&gt;} can the evaluation of foreign key constraints be
+   * deferred until commit
+   * &lt;UL&gt;
+   * &lt;LI&gt; importedKeyInitiallyDeferred - see SQL92 for definition
+   * &lt;LI&gt; importedKeyInitiallyImmediate - see SQL92 for definition
+   * &lt;LI&gt; importedKeyNotDeferrable - see SQL92 for definition
+   * &lt;/UL&gt;
+   * &lt;/OL&gt;
+   *
+   * @param catalog a catalog name; must match the catalog name as it is stored in the database; &quot;&quot;
+   *                retrieves those without a catalog;
+   *                &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used to narrow the
+   *                search
+   * @param schema  a schema name; must match the schema name as it is stored in the database; &quot;&quot;
+   *                retrieves those without a schema; &lt;code&gt;null&lt;/code&gt; means that the schema name
+   *                should not be used to narrow the search
+   * @param table   a table name; must match the table name as it is stored in the database
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is a primary key column description
+   * @throws SQLException if a database access error occurs
+   * @see #getExportedKeys
+   */
+  public ResultSet getImportedKeys(String catalog, String schema, String table)
+      throws SQLException {
+
+<span class="nc" id="L396">    String database = catalog;</span>
+    // We avoid using information schema queries by default, because this appears to be an expensive
+    // query (CONJ-41).
+<span class="nc bnc" id="L399" title="All 2 branches missed.">    if (table == null) {</span>
+<span class="nc" id="L400">      throw new SQLException(&quot;'table' parameter in getImportedKeys cannot be null&quot;);</span>
+    }
+
+<span class="nc bnc" id="L403" title="All 4 branches missed.">    if (database == null &amp;&amp; connection.nullCatalogMeansCurrent) {</span>
+      /* Treat null catalog as current */
+<span class="nc" id="L405">      return getImportedKeysUsingInformationSchema(&quot;&quot;, table);</span>
+    }
+
+<span class="nc bnc" id="L408" title="All 2 branches missed.">    if (database == null) {</span>
+<span class="nc" id="L409">      return getImportedKeysUsingInformationSchema(null, table);</span>
+    }
+
+<span class="nc bnc" id="L412" title="All 2 branches missed.">    if (database.isEmpty()) {</span>
+<span class="nc" id="L413">      database = connection.getCatalog();</span>
+<span class="nc bnc" id="L414" title="All 4 branches missed.">      if (database == null || database.isEmpty()) {</span>
+<span class="nc" id="L415">        return getImportedKeysUsingInformationSchema(database, table);</span>
+      }
+    }
+
+    try {
+<span class="nc" id="L420">      return getImportedKeysUsingShowCreateTable(database, table);</span>
+<span class="nc" id="L421">    } catch (Exception e) {</span>
+      // Likely, parsing failed, try out I_S query.
+<span class="nc" id="L423">      return getImportedKeysUsingInformationSchema(database, table);</span>
+    }
+  }
+
+  private String dataTypeClause(String fullTypeColumnName) {
+<span class="nc" id="L428">    Options options = urlParser.getOptions();</span>
+<span class="nc" id="L429">    return &quot; CASE data_type&quot;</span>
+        + &quot; WHEN 'bit' THEN &quot; + Types.BIT
+        + &quot; WHEN 'tinyblob' THEN &quot; + Types.VARBINARY
+        + &quot; WHEN 'mediumblob' THEN &quot; + Types.LONGVARBINARY
+        + &quot; WHEN 'longblob' THEN &quot; + Types.LONGVARBINARY
+        + &quot; WHEN 'blob' THEN &quot; + Types.LONGVARBINARY
+        + &quot; WHEN 'tinytext' THEN &quot; + Types.VARCHAR
+        + &quot; WHEN 'mediumtext' THEN &quot; + Types.LONGVARCHAR
+        + &quot; WHEN 'longtext' THEN &quot; + Types.LONGVARCHAR
+        + &quot; WHEN 'text' THEN &quot; + Types.LONGVARCHAR
+        + &quot; WHEN 'date' THEN &quot; + Types.DATE
+        + &quot; WHEN 'datetime' THEN &quot; + Types.TIMESTAMP
+        + &quot; WHEN 'decimal' THEN &quot; + Types.DECIMAL
+        + &quot; WHEN 'double' THEN &quot; + Types.DOUBLE
+        + &quot; WHEN 'enum' THEN &quot; + Types.VARCHAR
+        + &quot; WHEN 'float' THEN &quot; + Types.REAL
+        + &quot; WHEN 'int' THEN IF( &quot; + fullTypeColumnName + &quot; like '%unsigned%', &quot; + Types.INTEGER
+        + &quot;,&quot;
+        + Types.INTEGER + &quot;)&quot;
+        + &quot; WHEN 'bigint' THEN &quot; + Types.BIGINT
+        + &quot; WHEN 'mediumint' THEN &quot; + Types.INTEGER
+        + &quot; WHEN 'null' THEN &quot; + Types.NULL
+        + &quot; WHEN 'set' THEN &quot; + Types.VARCHAR
+        + &quot; WHEN 'smallint' THEN IF( &quot; + fullTypeColumnName + &quot; like '%unsigned%', &quot;
+        + Types.SMALLINT + &quot;,&quot; + Types.SMALLINT + &quot;)&quot;
+        + &quot; WHEN 'varchar' THEN &quot; + Types.VARCHAR
+        + &quot; WHEN 'varbinary' THEN &quot; + Types.VARBINARY
+        + &quot; WHEN 'char' THEN &quot; + Types.CHAR
+        + &quot; WHEN 'binary' THEN &quot; + Types.BINARY
+        + &quot; WHEN 'time' THEN &quot; + Types.TIME
+        + &quot; WHEN 'timestamp' THEN &quot; + Types.TIMESTAMP
+        + &quot; WHEN 'tinyint' THEN &quot;
+<span class="nc bnc" id="L461" title="All 2 branches missed.">        + (options.tinyInt1isBit</span>
+        ? &quot;IF(&quot; + fullTypeColumnName + &quot; like 'tinyint(1)%',&quot; + Types.BIT + &quot;,&quot; + Types.TINYINT
+<span class="nc" id="L463">        + &quot;) &quot; : Types.TINYINT)</span>
+        + &quot; WHEN 'year' THEN &quot;
+<span class="nc bnc" id="L465" title="All 2 branches missed.">        + (options.yearIsDateType ? Types.DATE : Types.SMALLINT)</span>
+        + &quot; ELSE &quot; + Types.OTHER
+        + &quot; END &quot;;
+  }
+
+  private ResultSet executeQuery(String sql) throws SQLException {
+<span class="nc" id="L471">    Statement stmt = new MariaDbStatement(connection, ResultSet.TYPE_FORWARD_ONLY,</span>
+        ResultSet.CONCUR_READ_ONLY);
+<span class="nc" id="L473">    SelectResultSet rs = (SelectResultSet) stmt.executeQuery(sql);</span>
+<span class="nc" id="L474">    rs.setStatement(null); // bypass Hibernate statement tracking (CONJ-49)</span>
+<span class="nc" id="L475">    rs.setReturnTableAlias(true);</span>
+<span class="nc" id="L476">    return rs;</span>
+  }
+
+  private String escapeQuote(String value) {
+<span class="nc bnc" id="L480" title="All 2 branches missed.">    if (value == null) {</span>
+<span class="nc" id="L481">      return &quot;NULL&quot;;</span>
+    }
+<span class="nc" id="L483">    return &quot;'&quot; + Utils.escapeString(value, connection.getProtocol().noBackslashEscapes()) + &quot;'&quot;;</span>
+  }
+
+  /**
+   * Generate part of the information schema query that restricts catalog names In the driver,
+   * catalogs is the equivalent to MariaDB schemas.
+   *
+   * @param columnName - column name in the information schema table
+   * @param catalog    - catalog name. This driver does not (always) follow JDBC standard for
+   *                   following special values, due to ConnectorJ compatibility 1. empty string
+   *                   (&quot;&quot;) - matches current catalog (i.e database). JDBC standard says only tables
+   *                   without catalog should be returned - such tables do not exist in MariaDB. If
+   *                   there is no current catalog, then empty string matches any catalog. 2. null -
+   *                   if nullCatalogMeansCurrent=true (which is the default), then the handling is
+   *                   the same as for &quot;&quot; . i.e return current catalog.JDBC-conforming way would be
+   *                   to match any catalog with null parameter. This can be switched with
+   *                   nullCatalogMeansCurrent=false in the connection URL.
+   * @return part of SQL query ,that restricts search for the catalog.
+   */
+  private String catalogCond(String columnName, String catalog) {
+<span class="nc bnc" id="L503" title="All 2 branches missed.">    if (catalog == null) {</span>
+      /* Treat null catalog as current */
+<span class="nc bnc" id="L505" title="All 2 branches missed.">      if (connection.nullCatalogMeansCurrent) {</span>
+<span class="nc" id="L506">        return &quot;(ISNULL(database()) OR (&quot; + columnName + &quot; = database()))&quot;;</span>
+      }
+<span class="nc" id="L508">      return &quot;(1 = 1)&quot;;</span>
+    }
+<span class="nc bnc" id="L510" title="All 2 branches missed.">    if (catalog.isEmpty()) {</span>
+<span class="nc" id="L511">      return &quot;(ISNULL(database()) OR (&quot; + columnName + &quot; = database()))&quot;;</span>
+    }
+<span class="nc" id="L513">    return &quot;(&quot; + columnName + &quot; = &quot; + escapeQuote(catalog) + &quot;)&quot;;</span>
+
+  }
+
+  // Helper to generate  information schema queries with &quot;like&quot; or &quot;equals&quot; condition (typically  on table name)
+  private String patternCond(String columnName, String tableName) {
+<span class="nc bnc" id="L519" title="All 2 branches missed.">    if (tableName == null) {</span>
+<span class="nc" id="L520">      return &quot;(1 = 1)&quot;;</span>
+    }
+    String predicate =
+<span class="nc bnc" id="L523" title="All 4 branches missed.">        (tableName.indexOf('%') == -1 &amp;&amp; tableName.indexOf('_') == -1) ? &quot;=&quot; : &quot;LIKE&quot;;</span>
+<span class="nc" id="L524">    return &quot;(&quot; + columnName + &quot; &quot; + predicate + &quot; '&quot; + Utils.escapeString(tableName, true) + &quot;')&quot;;</span>
+  }
+
+  /**
+   * Retrieves a description of the given table's primary key columns.  They are ordered by
+   * COLUMN_NAME.
+   *
+   * &lt;P&gt;Each primary key column description has the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt;
+   * &lt;li&gt;&lt;B&gt;TABLE_CAT&lt;/B&gt; String {@code =&gt;} table catalog &lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;TABLE_SCHEM&lt;/B&gt; String {@code =&gt;} table schema (may be &lt;code&gt;null&lt;/code&gt;)&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;TABLE_NAME&lt;/B&gt; String {@code =&gt;} table name &lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;COLUMN_NAME&lt;/B&gt; String {@code =&gt;} column name &lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;KEY_SEQ&lt;/B&gt; short {@code =&gt;} sequence number within primary key( a value of 1
+   * represents the first column of the primary key, a value of 2 would represent the second column
+   * within the primary key).&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;PK_NAME&lt;/B&gt; String {@code =&gt;} primary key name &lt;/li&gt;
+   * &lt;/OL&gt;
+   *
+   * @param catalog a catalog name; must match the catalog name as it is stored in the database; &quot;&quot;
+   *                retrieves those without a catalog;
+   *                &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used to narrow the
+   *                search
+   * @param schema  a schema name; must match the schema name as it is stored in the database; &quot;&quot;
+   *                retrieves those without a schema; &lt;code&gt;null&lt;/code&gt; means that the schema name
+   *                should not be used to narrow the search
+   * @param table   a table name; must match the table name as it is stored in the database
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is a primary key column description
+   * @throws SQLException if a database access error occurs
+   */
+  public ResultSet getPrimaryKeys(String catalog, String schema, String table) throws SQLException {
+    //MySQL 8 now use 'PRI' in place of 'pri'
+<span class="nc" id="L557">    String sql =</span>
+        &quot;SELECT A.TABLE_SCHEMA TABLE_CAT, NULL TABLE_SCHEM, A.TABLE_NAME, A.COLUMN_NAME, B.SEQ_IN_INDEX KEY_SEQ, B.INDEX_NAME PK_NAME &quot;
+            + &quot; FROM INFORMATION_SCHEMA.COLUMNS A, INFORMATION_SCHEMA.STATISTICS B&quot;
+            + &quot; WHERE A.COLUMN_KEY in ('PRI','pri') AND B.INDEX_NAME='PRIMARY' &quot;
+            + &quot; AND &quot;
+<span class="nc" id="L562">            + catalogCond(&quot;A.TABLE_SCHEMA&quot;, catalog)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L564">            + catalogCond(&quot;B.TABLE_SCHEMA&quot;, catalog)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L566">            + patternCond(&quot;A.TABLE_NAME&quot;, table)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L568">            + patternCond(&quot;B.TABLE_NAME&quot;, table)</span>
+            + &quot; AND A.TABLE_SCHEMA = B.TABLE_SCHEMA AND A.TABLE_NAME = B.TABLE_NAME AND A.COLUMN_NAME = B.COLUMN_NAME &quot;
+            + &quot; ORDER BY A.COLUMN_NAME&quot;;
+
+<span class="nc" id="L572">    return executeQuery(sql);</span>
+
+  }
+
+  /**
+   * Maps standard table types to MariaDB ones - helper since table type is never &quot;table&quot; in MariaDB, it
+   * is &quot;base table&quot;.
+   *
+   * @param tableType the table type defined by user
+   * @return the internal table type.
+   */
+  private String mapTableTypes(String tableType) {
+<span class="nc bnc" id="L584" title="All 2 branches missed.">    if (&quot;TABLE&quot;.equals(tableType)) {</span>
+<span class="nc" id="L585">      return &quot;BASE TABLE&quot;;</span>
+    }
+<span class="nc" id="L587">    return tableType;</span>
+  }
+
+  /**
+   * Retrieves a description of the tables available in the given catalog. Only table descriptions
+   * matching the catalog, schema, table name and type criteria are returned.  They are ordered by
+   * &lt;code&gt;TABLE_TYPE&lt;/code&gt;, &lt;code&gt;TABLE_CAT&lt;/code&gt;, &lt;code&gt;TABLE_SCHEM&lt;/code&gt; and
+   * &lt;code&gt;TABLE_NAME&lt;/code&gt;.
+   * Each table description has the following columns:
+   * &lt;OL&gt; &lt;LI&gt;&lt;B&gt;TABLE_CAT&lt;/B&gt; String {@code =&gt;}
+   * table catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TABLE_SCHEM&lt;/B&gt; String {@code =&gt;} table schema (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TABLE_NAME&lt;/B&gt; String {@code =&gt;} table name
+   * &lt;LI&gt;&lt;B&gt;TABLE_TYPE&lt;/B&gt; String {@code =&gt;} table type.  Typical types are &quot;TABLE&quot;, &quot;VIEW&quot;,
+   * &quot;SYSTEM TABLE&quot;, &quot;GLOBAL TEMPORARY&quot;, &quot;LOCAL TEMPORARY&quot;, &quot;ALIAS&quot;, &quot;SYNONYM&quot;. &lt;LI&gt;&lt;B&gt;REMARKS&lt;/B&gt;
+   * String {@code =&gt;} explanatory comment on the table
+   * &lt;LI&gt;&lt;B&gt;TYPE_CAT&lt;/B&gt; String {@code =&gt;} the types catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TYPE_SCHEM&lt;/B&gt; String {@code =&gt;} the types schema (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TYPE_NAME&lt;/B&gt; String {@code =&gt;} type name (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;SELF_REFERENCING_COL_NAME&lt;/B&gt; String {@code =&gt;} name of the designated &quot;identifier&quot;
+   * column of a typed table (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;REF_GENERATION&lt;/B&gt; String {@code =&gt;}
+   * specifies how values in SELF_REFERENCING_COL_NAME are created. Values are &quot;SYSTEM&quot;, &quot;USER&quot;,
+   * &quot;DERIVED&quot;. (may be &lt;code&gt;null&lt;/code&gt;) &lt;/OL&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; Some databases may not return information for all tables.&lt;/p&gt;
+   *
+   * @param catalog          a catalog name; must match the catalog name as it is stored in the
+   *                         database; &quot;&quot; retrieves those without a catalog;
+   *                         &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used to
+   *                         narrow the search
+   * @param schemaPattern    a schema name pattern; must match the schema name as it is stored in
+   *                         the database; &quot;&quot; retrieves those without a schema;
+   *                         &lt;code&gt;null&lt;/code&gt; means that the schema name should not be used to
+   *                         narrow the search
+   * @param tableNamePattern a table name pattern; must match the table name as it is stored in the
+   *                         database
+   * @param types            a list of table types, which must be from the list of table types
+   *                         returned from {@link #getTableTypes},to include;
+   *                         &lt;code&gt;null&lt;/code&gt; returns all types
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is a table description
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   */
+  public ResultSet getTables(String catalog, String schemaPattern, String tableNamePattern,
+      String[] types)
+      throws SQLException {
+
+<span class="nc" id="L634">    StringBuilder sql =</span>
+        new StringBuilder(&quot;SELECT TABLE_SCHEMA TABLE_CAT, NULL  TABLE_SCHEM,  TABLE_NAME,&quot;
+            + &quot; IF(TABLE_TYPE='BASE TABLE', 'TABLE', TABLE_TYPE) as TABLE_TYPE,&quot;
+            + &quot; TABLE_COMMENT REMARKS, NULL TYPE_CAT, NULL TYPE_SCHEM, NULL TYPE_NAME, NULL SELF_REFERENCING_COL_NAME, &quot;
+            + &quot; NULL REF_GENERATION&quot;
+            + &quot; FROM INFORMATION_SCHEMA.TABLES &quot;
+            + &quot; WHERE &quot;
+<span class="nc" id="L641">            + catalogCond(&quot;TABLE_SCHEMA&quot;, catalog)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L643">            + patternCond(&quot;TABLE_NAME&quot;, tableNamePattern));</span>
+
+<span class="nc bnc" id="L645" title="All 4 branches missed.">    if (types != null &amp;&amp; types.length &gt; 0) {</span>
+<span class="nc" id="L646">      sql.append(&quot; AND TABLE_TYPE IN (&quot;);</span>
+<span class="nc bnc" id="L647" title="All 2 branches missed.">      for (int i = 0; i &lt; types.length; i++) {</span>
+<span class="nc bnc" id="L648" title="All 2 branches missed.">        if (types[i] == null) {</span>
+<span class="nc" id="L649">          continue;</span>
+        }
+<span class="nc" id="L651">        String type = escapeQuote(mapTableTypes(types[i]));</span>
+<span class="nc bnc" id="L652" title="All 2 branches missed.">        if (i == types.length - 1) {</span>
+<span class="nc" id="L653">          sql.append(type).append(&quot;)&quot;);</span>
+        } else {
+<span class="nc" id="L655">          sql.append(type).append(&quot;,&quot;);</span>
+        }
+      }
+    }
+
+<span class="nc" id="L660">    sql.append(&quot; ORDER BY TABLE_TYPE, TABLE_SCHEMA, TABLE_NAME&quot;);</span>
+
+<span class="nc" id="L662">    return executeQuery(sql.toString());</span>
+  }
+
+  /**
+   * Retrieves a description of table columns available in the specified catalog.
+   *
+   * &lt;P&gt;Only column descriptions matching the catalog, schema, table and column name criteria are
+   * returned.  They are ordered by
+   * &lt;code&gt;TABLE_CAT&lt;/code&gt;,&lt;code&gt;TABLE_SCHEM&lt;/code&gt;, &lt;code&gt;TABLE_NAME&lt;/code&gt;, and
+   * &lt;code&gt;ORDINAL_POSITION&lt;/code&gt;.&lt;/p&gt;
+   *
+   * &lt;P&gt;Each column description has the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt; &lt;LI&gt;&lt;B&gt;TABLE_CAT&lt;/B&gt; String {@code
+   * =&gt;} table catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TABLE_SCHEM&lt;/B&gt; String {@code =&gt;} table schema (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TABLE_NAME&lt;/B&gt; String {@code =&gt;} table name
+   * &lt;LI&gt;&lt;B&gt;COLUMN_NAME&lt;/B&gt; String {@code =&gt;} column name &lt;LI&gt;&lt;B&gt;DATA_TYPE&lt;/B&gt; int {@code =&gt;} SQL
+   * type from java.sql.Types &lt;LI&gt;&lt;B&gt;TYPE_NAME&lt;/B&gt; String {@code =&gt;} Data source dependent type
+   * name, for a UDT the type name is fully qualified
+   * &lt;LI&gt;&lt;B&gt;COLUMN_SIZE&lt;/B&gt; int {@code =&gt;} column size. &lt;LI&gt;&lt;B&gt;BUFFER_LENGTH&lt;/B&gt; is not used.
+   * &lt;LI&gt;&lt;B&gt;DECIMAL_DIGITS&lt;/B&gt; int {@code =&gt;} the number of fractional digits. Null is returned for
+   * data types where DECIMAL_DIGITS is not applicable. &lt;LI&gt;&lt;B&gt;NUM_PREC_RADIX&lt;/B&gt; int {@code =&gt;}
+   * Radix (typically either 10 or 2) &lt;LI&gt;&lt;B&gt;NULLABLE&lt;/B&gt; int {@code =&gt;} is NULL allowed. &lt;UL&gt; &lt;LI&gt;
+   * columnNoNulls - might not allow &lt;code&gt;NULL&lt;/code&gt; values &lt;LI&gt; columnNullable - definitely
+   * allows
+   * &lt;code&gt;NULL&lt;/code&gt; values &lt;LI&gt; columnNullableUnknown - nullability unknown &lt;/UL&gt;
+   * &lt;LI&gt;&lt;B&gt;REMARKS&lt;/B&gt; String {@code =&gt;} comment describing column
+   * (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;COLUMN_DEF&lt;/B&gt; String {@code =&gt;} default value for the
+   * column, which should be interpreted as a string when the value is enclosed in single quotes
+   * (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;SQL_DATA_TYPE&lt;/B&gt; int {@code =&gt;} unused
+   * &lt;LI&gt;&lt;B&gt;SQL_DATETIME_SUB&lt;/B&gt; int {@code =&gt;} unused &lt;LI&gt;&lt;B&gt;CHAR_OCTET_LENGTH&lt;/B&gt; int {@code =&gt;}
+   * for char types the maximum number of bytes in the column
+   * &lt;LI&gt;&lt;B&gt;ORDINAL_POSITION&lt;/B&gt; int {@code =&gt;} index of column in table (starting at 1)
+   * &lt;LI&gt;&lt;B&gt;IS_NULLABLE&lt;/B&gt; String  {@code =&gt;} ISO rules are
+   * used to determine the nullability for a column. &lt;UL&gt; &lt;LI&gt; YES           --- if the column can
+   * include NULLs &lt;LI&gt; NO            --- if the column cannot include NULLs &lt;LI&gt; empty string  ---
+   * if the nullability for the column is unknown &lt;/UL&gt; &lt;LI&gt;&lt;B&gt;SCOPE_CATALOG&lt;/B&gt; String {@code =&gt;}
+   * catalog of table that is the scope of a reference attribute (&lt;code&gt;null&lt;/code&gt; if DATA_TYPE
+   * isn't REF) &lt;LI&gt;&lt;B&gt;SCOPE_SCHEMA&lt;/B&gt; String {@code =&gt;} schema of table that is the scope of a
+   * reference attribute (&lt;code&gt;null&lt;/code&gt; if the DATA_TYPE isn't REF) &lt;LI&gt;&lt;B&gt;SCOPE_TABLE&lt;/B&gt;
+   * String {@code =&gt;} table name that this the scope of a reference attribute (&lt;code&gt;null&lt;/code&gt; if
+   * the DATA_TYPE isn't REF)
+   * &lt;LI&gt;&lt;B&gt;SOURCE_DATA_TYPE&lt;/B&gt; short {@code =&gt;} source type of a distinct type or user-generated
+   * Ref type, SQL type from java.sql.Types (&lt;code&gt;null&lt;/code&gt; if DATA_TYPE isn't DISTINCT or
+   * user-generated REF)
+   * &lt;LI&gt;&lt;B&gt;IS_AUTOINCREMENT&lt;/B&gt; String  {@code =&gt;} Indicates whether this column is auto
+   * incremented &lt;UL&gt; &lt;LI&gt; YES           --- if the column is auto incremented &lt;LI&gt; NO --- if the
+   * column is not auto incremented &lt;LI&gt; empty string  --- if it cannot be determined whether the
+   * column is auto incremented &lt;/UL&gt; &lt;LI&gt;&lt;B&gt;IS_GENERATEDCOLUMN&lt;/B&gt; String {@code =&gt;} Indicates
+   * whether this is a generated column &lt;UL&gt; &lt;LI&gt; YES           --- if this a generated column &lt;LI&gt;
+   * NO            --- if this not a generated column &lt;LI&gt; empty string  --- if it cannot be
+   * determined whether this is a generated column &lt;/UL&gt; &lt;/OL&gt;
+   *
+   * &lt;p&gt;The COLUMN_SIZE column specifies the column size for the given column. For numeric data,
+   * this is the maximum precision.  For character data, this is the length in characters. For
+   * datetime datatypes, this is the length in characters of the String representation (assuming the
+   * maximum allowed precision of the fractional seconds component). For binary data, this is the
+   * length in bytes.  For the ROWID datatype, this is the length in bytes. Null is returned for
+   * data types where the column size is not applicable.&lt;/p&gt;
+   *
+   * @param catalog           a catalog name; must match the catalog name as it is stored in the
+   *                          database; &quot;&quot; retrieves those without a catalog;
+   *                          &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used to
+   *                          narrow the search
+   * @param schemaPattern     a schema name pattern; must match the schema name as it is stored in
+   *                          the database; &quot;&quot; retrieves those without a schema;
+   *                          &lt;code&gt;null&lt;/code&gt; means that the schema name should not be used to
+   *                          narrow the search
+   * @param tableNamePattern  a table name pattern; must match the table name as it is stored in the
+   *                          database
+   * @param columnNamePattern a column name pattern; must match the column name as it is stored in
+   *                          the database
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is a column description
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   */
+  public ResultSet getColumns(String catalog, String schemaPattern, String tableNamePattern,
+      String columnNamePattern)
+      throws SQLException {
+<span class="nc" id="L742">    Options options = urlParser.getOptions();</span>
+<span class="nc" id="L743">    String sql = &quot;SELECT TABLE_SCHEMA TABLE_CAT, NULL TABLE_SCHEM, TABLE_NAME, COLUMN_NAME,&quot;</span>
+<span class="nc" id="L744">        + dataTypeClause(&quot;COLUMN_TYPE&quot;) + &quot; DATA_TYPE,&quot;</span>
+<span class="nc" id="L745">        + columnTypeClause(options) + &quot; TYPE_NAME, &quot;</span>
+        + &quot; CASE DATA_TYPE&quot;
+        + &quot;  WHEN 'time' THEN &quot;
+<span class="nc bnc" id="L748" title="All 2 branches missed.">        + (datePrecisionColumnExist</span>
+<span class="nc" id="L749">        ? &quot;IF(DATETIME_PRECISION = 0, 10, CAST(11 + DATETIME_PRECISION as signed integer))&quot; : &quot;10&quot;)</span>
+        + &quot;  WHEN 'date' THEN 10&quot;
+        + &quot;  WHEN 'datetime' THEN &quot;
+<span class="nc bnc" id="L752" title="All 2 branches missed.">        + (datePrecisionColumnExist</span>
+<span class="nc" id="L753">        ? &quot;IF(DATETIME_PRECISION = 0, 19, CAST(20 + DATETIME_PRECISION as signed integer))&quot; : &quot;19&quot;)</span>
+        + &quot;  WHEN 'timestamp' THEN &quot;
+<span class="nc bnc" id="L755" title="All 2 branches missed.">        + (datePrecisionColumnExist</span>
+<span class="nc" id="L756">        ? &quot;IF(DATETIME_PRECISION = 0, 19, CAST(20 + DATETIME_PRECISION as signed integer))&quot; : &quot;19&quot;)</span>
+<span class="nc bnc" id="L757" title="All 2 branches missed.">        + (options.yearIsDateType ? &quot;&quot; : &quot; WHEN 'year' THEN 5&quot;)</span>
+        + &quot;  ELSE &quot;
+        + &quot;  IF(NUMERIC_PRECISION IS NULL, LEAST(CHARACTER_MAXIMUM_LENGTH,&quot; + Integer.MAX_VALUE
+        + &quot;), NUMERIC_PRECISION) &quot;
+        + &quot; END&quot;
+        + &quot; COLUMN_SIZE, 65535 BUFFER_LENGTH, &quot;
+
+        + &quot; CONVERT (CASE DATA_TYPE&quot;
+<span class="nc bnc" id="L765" title="All 2 branches missed.">        + &quot; WHEN 'year' THEN &quot; + (options.yearIsDateType ? &quot;NUMERIC_SCALE&quot; : &quot;0&quot;)</span>
+<span class="nc bnc" id="L766" title="All 2 branches missed.">        + &quot; WHEN 'tinyint' THEN &quot; + (options.tinyInt1isBit ? &quot;0&quot; : &quot;NUMERIC_SCALE&quot;)</span>
+        + &quot; ELSE NUMERIC_SCALE END, UNSIGNED INTEGER) DECIMAL_DIGITS,&quot;
+
+        + &quot; 10 NUM_PREC_RADIX, IF(IS_NULLABLE = 'yes',1,0) NULLABLE,COLUMN_COMMENT REMARKS,&quot;
+        + &quot; COLUMN_DEFAULT COLUMN_DEF, 0 SQL_DATA_TYPE, 0 SQL_DATETIME_SUB,  &quot;
+        + &quot; LEAST(CHARACTER_OCTET_LENGTH,&quot; + Integer.MAX_VALUE + &quot;) CHAR_OCTET_LENGTH,&quot;
+        + &quot; ORDINAL_POSITION, IS_NULLABLE, NULL SCOPE_CATALOG, NULL SCOPE_SCHEMA, NULL SCOPE_TABLE, NULL SOURCE_DATA_TYPE,&quot;
+        + &quot; IF(EXTRA = 'auto_increment','YES','NO') IS_AUTOINCREMENT, &quot;
+        + &quot; IF(EXTRA in ('VIRTUAL', 'PERSISTENT', 'VIRTUAL GENERATED', 'STORED GENERATED') ,'YES','NO') IS_GENERATEDCOLUMN &quot;
+        + &quot; FROM INFORMATION_SCHEMA.COLUMNS  WHERE &quot;
+<span class="nc" id="L776">        + catalogCond(&quot;TABLE_SCHEMA&quot;, catalog)</span>
+        + &quot; AND &quot;
+<span class="nc" id="L778">        + patternCond(&quot;TABLE_NAME&quot;, tableNamePattern)</span>
+        + &quot; AND &quot;
+<span class="nc" id="L780">        + patternCond(&quot;COLUMN_NAME&quot;, columnNamePattern)</span>
+        + &quot; ORDER BY TABLE_CAT, TABLE_SCHEM, TABLE_NAME, ORDINAL_POSITION&quot;;
+
+    try {
+<span class="nc" id="L784">      return executeQuery(sql);</span>
+<span class="nc" id="L785">    } catch (SQLException sqlException) {</span>
+<span class="nc bnc" id="L786" title="All 2 branches missed.">      if (sqlException.getMessage().contains(&quot;Unknown column 'DATETIME_PRECISION'&quot;)) {</span>
+<span class="nc" id="L787">        datePrecisionColumnExist = false;</span>
+<span class="nc" id="L788">        return getColumns(catalog, schemaPattern, tableNamePattern, columnNamePattern);</span>
+      }
+<span class="nc" id="L790">      throw sqlException;</span>
+    }
+
+  }
+
+  /**
+   * Retrieves a description of the foreign key columns that reference the given table's primary key
+   * columns (the foreign keys exported by a table). They are ordered by FKTABLE_CAT, FKTABLE_SCHEM,
+   * FKTABLE_NAME, and KEY_SEQ.
+   *
+   * &lt;P&gt;Each foreign key column description has the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt; &lt;LI&gt;&lt;B&gt;PKTABLE_CAT&lt;/B&gt;
+   * String {@code =&gt;} primary key table catalog (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;PKTABLE_SCHEM&lt;/B&gt;
+   * String {@code =&gt;} primary key table schema (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;PKTABLE_NAME&lt;/B&gt;
+   * String {@code =&gt;} primary key table name
+   * &lt;LI&gt;&lt;B&gt;PKCOLUMN_NAME&lt;/B&gt; String {@code =&gt;} primary key column name &lt;LI&gt;&lt;B&gt;FKTABLE_CAT&lt;/B&gt;
+   * String {@code =&gt;} foreign key table catalog (may be &lt;code&gt;null&lt;/code&gt;) being exported (may be
+   * &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;FKTABLE_SCHEM&lt;/B&gt; String {@code =&gt;} foreign key table schema (may be
+   * &lt;code&gt;null&lt;/code&gt;) being exported (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;FKTABLE_NAME&lt;/B&gt; String
+   * {@code =&gt;} foreign key table name being exported &lt;LI&gt;&lt;B&gt;FKCOLUMN_NAME&lt;/B&gt; String {@code =&gt;}
+   * foreign key column name being exported &lt;LI&gt;&lt;B&gt;KEY_SEQ&lt;/B&gt; short {@code =&gt;} sequence number
+   * within foreign key( a value of 1 represents the first column of the foreign key, a value of 2
+   * would represent the second column within the foreign key). &lt;LI&gt;&lt;B&gt;UPDATE_RULE&lt;/B&gt; short {@code
+   * =&gt;} What happens to foreign key when primary is updated: &lt;UL&gt;
+   * &lt;LI&gt; importedNoAction - do not allow update of primary key if it has been imported &lt;LI&gt;
+   * importedKeyCascade - change imported key to agree with primary key update &lt;LI&gt;
+   * importedKeySetNull - change imported key to &lt;code&gt;NULL&lt;/code&gt; if its primary key has been
+   * updated &lt;LI&gt; importedKeySetDefault - change imported key to default values if its primary key
+   * has been updated &lt;LI&gt; importedKeyRestrict - same as importedKeyNoAction (for ODBC 2.x
+   * compatibility) &lt;/UL&gt; &lt;LI&gt;&lt;B&gt;DELETE_RULE&lt;/B&gt; short {@code =&gt;} What happens to the foreign key
+   * when primary is deleted. &lt;UL&gt; &lt;LI&gt; importedKeyNoAction - do not allow delete of primary key if
+   * it has been imported &lt;LI&gt; importedKeyCascade - delete rows that import a deleted key &lt;LI&gt;
+   * importedKeySetNull - change imported key to &lt;code&gt;NULL&lt;/code&gt; if its primary key has been
+   * deleted &lt;LI&gt; importedKeyRestrict - same as importedKeyNoAction (for ODBC 2.x compatibility)
+   * &lt;LI&gt; importedKeySetDefault - change imported key to default if its primary key has been
+   * deleted
+   * &lt;/UL&gt; &lt;LI&gt;&lt;B&gt;FK_NAME&lt;/B&gt; String {@code =&gt;} foreign key name (may be
+   * &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;PK_NAME&lt;/B&gt; String {@code =&gt;} primary key name (may be
+   * &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;DEFERRABILITY&lt;/B&gt; short {@code =&gt;} can the evaluation of foreign key
+   * constraints be deferred until commit &lt;UL&gt; &lt;LI&gt; importedKeyInitiallyDeferred - see SQL92 for
+   * definition &lt;LI&gt; importedKeyInitiallyImmediate - see SQL92 for definition &lt;LI&gt;
+   * importedKeyNotDeferrable - see SQL92 for definition &lt;/UL&gt; &lt;/OL&gt;
+   *
+   * @param catalog a catalog name; must match the catalog name as it is stored in this database; &quot;&quot;
+   *                retrieves those without a catalog;
+   *                &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used to narrow the
+   *                search
+   * @param schema  a schema name; must match the schema name as it is stored in the database; &quot;&quot;
+   *                retrieves those without a schema; &lt;code&gt;null&lt;/code&gt; means that the schema name
+   *                should not be used to narrow the search
+   * @param table   a table name; must match the table name as it is stored in this database
+   * @return a &lt;code&gt;ResultSet&lt;/code&gt; object in which each row is a foreign key column description
+   * @throws SQLException if a database access error occurs
+   * @see #getImportedKeys
+   */
+  public ResultSet getExportedKeys(String catalog, String schema, String table)
+      throws SQLException {
+<span class="nc bnc" id="L848" title="All 2 branches missed.">    if (table == null) {</span>
+<span class="nc" id="L849">      throw new SQLException(&quot;'table' parameter in getExportedKeys cannot be null&quot;);</span>
+    }
+<span class="nc" id="L851">    String sql =</span>
+        &quot;SELECT KCU.REFERENCED_TABLE_SCHEMA PKTABLE_CAT, NULL PKTABLE_SCHEM,  KCU.REFERENCED_TABLE_NAME PKTABLE_NAME,&quot;
+            + &quot; KCU.REFERENCED_COLUMN_NAME PKCOLUMN_NAME, KCU.TABLE_SCHEMA FKTABLE_CAT, NULL FKTABLE_SCHEM, &quot;
+            + &quot; KCU.TABLE_NAME FKTABLE_NAME, KCU.COLUMN_NAME FKCOLUMN_NAME, KCU.POSITION_IN_UNIQUE_CONSTRAINT KEY_SEQ,&quot;
+            + &quot; CASE update_rule &quot;
+            + &quot;   WHEN 'RESTRICT' THEN 1&quot;
+            + &quot;   WHEN 'NO ACTION' THEN 3&quot;
+            + &quot;   WHEN 'CASCADE' THEN 0&quot;
+            + &quot;   WHEN 'SET NULL' THEN 2&quot;
+            + &quot;   WHEN 'SET DEFAULT' THEN 4&quot;
+            + &quot; END UPDATE_RULE,&quot;
+            + &quot; CASE DELETE_RULE&quot;
+            + &quot;  WHEN 'RESTRICT' THEN 1&quot;
+            + &quot;  WHEN 'NO ACTION' THEN 3&quot;
+            + &quot;  WHEN 'CASCADE' THEN 0&quot;
+            + &quot;  WHEN 'SET NULL' THEN 2&quot;
+            + &quot;  WHEN 'SET DEFAULT' THEN 4&quot;
+            + &quot; END DELETE_RULE,&quot;
+            + &quot; RC.CONSTRAINT_NAME FK_NAME,&quot;
+            + &quot; NULL PK_NAME,&quot;
+            + importedKeyNotDeferrable + &quot; DEFERRABILITY&quot;
+            + &quot; FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE KCU&quot;
+            + &quot; INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS RC&quot;
+            + &quot; ON KCU.CONSTRAINT_SCHEMA = RC.CONSTRAINT_SCHEMA&quot;
+            + &quot; AND KCU.CONSTRAINT_NAME = RC.CONSTRAINT_NAME&quot;
+            + &quot; WHERE &quot;
+<span class="nc" id="L877">            + catalogCond(&quot;KCU.REFERENCED_TABLE_SCHEMA&quot;, catalog)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L879">            + &quot; KCU.REFERENCED_TABLE_NAME = &quot; + escapeQuote(table)</span>
+            + &quot; ORDER BY FKTABLE_CAT, FKTABLE_SCHEM, FKTABLE_NAME, KEY_SEQ&quot;;
+
+<span class="nc" id="L882">    return executeQuery(sql);</span>
+  }
+
+  /**
+   * GetImportedKeysUsingInformationSchema.
+   *
+   * @param catalog catalog
+   * @param table   table
+   * @return resultset
+   * @throws SQLException exception
+   */
+  public ResultSet getImportedKeysUsingInformationSchema(String catalog, String table)
+      throws SQLException {
+<span class="nc bnc" id="L895" title="All 2 branches missed.">    if (table == null) {</span>
+<span class="nc" id="L896">      throw new SQLException(&quot;'table' parameter in getImportedKeys cannot be null&quot;);</span>
+    }
+<span class="nc" id="L898">    String sql =</span>
+        &quot;SELECT KCU.REFERENCED_TABLE_SCHEMA PKTABLE_CAT, NULL PKTABLE_SCHEM,  KCU.REFERENCED_TABLE_NAME PKTABLE_NAME,&quot;
+            + &quot; KCU.REFERENCED_COLUMN_NAME PKCOLUMN_NAME, KCU.TABLE_SCHEMA FKTABLE_CAT, NULL FKTABLE_SCHEM, &quot;
+            + &quot; KCU.TABLE_NAME FKTABLE_NAME, KCU.COLUMN_NAME FKCOLUMN_NAME, KCU.POSITION_IN_UNIQUE_CONSTRAINT KEY_SEQ,&quot;
+            + &quot; CASE update_rule &quot;
+            + &quot;   WHEN 'RESTRICT' THEN 1&quot;
+            + &quot;   WHEN 'NO ACTION' THEN 3&quot;
+            + &quot;   WHEN 'CASCADE' THEN 0&quot;
+            + &quot;   WHEN 'SET NULL' THEN 2&quot;
+            + &quot;   WHEN 'SET DEFAULT' THEN 4&quot;
+            + &quot; END UPDATE_RULE,&quot;
+            + &quot; CASE DELETE_RULE&quot;
+            + &quot;  WHEN 'RESTRICT' THEN 1&quot;
+            + &quot;  WHEN 'NO ACTION' THEN 3&quot;
+            + &quot;  WHEN 'CASCADE' THEN 0&quot;
+            + &quot;  WHEN 'SET NULL' THEN 2&quot;
+            + &quot;  WHEN 'SET DEFAULT' THEN 4&quot;
+            + &quot; END DELETE_RULE,&quot;
+            + &quot; RC.CONSTRAINT_NAME FK_NAME,&quot;
+            + &quot; NULL PK_NAME,&quot;
+            + importedKeyNotDeferrable + &quot; DEFERRABILITY&quot;
+            + &quot; FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE KCU&quot;
+            + &quot; INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS RC&quot;
+            + &quot; ON KCU.CONSTRAINT_SCHEMA = RC.CONSTRAINT_SCHEMA&quot;
+            + &quot; AND KCU.CONSTRAINT_NAME = RC.CONSTRAINT_NAME&quot;
+            + &quot; WHERE &quot;
+<span class="nc" id="L924">            + catalogCond(&quot;KCU.TABLE_SCHEMA&quot;, catalog)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L926">            + &quot; KCU.TABLE_NAME = &quot; + escapeQuote(table)</span>
+            + &quot; ORDER BY PKTABLE_CAT, PKTABLE_SCHEM, PKTABLE_NAME, KEY_SEQ&quot;;
+
+<span class="nc" id="L929">    return executeQuery(sql);</span>
+  }
+
+  /**
+   * GetImportedKeysUsingShowCreateTable.
+   *
+   * @param catalog catalog
+   * @param table   table
+   * @return resultset
+   * @throws Exception exception
+   */
+  public ResultSet getImportedKeysUsingShowCreateTable(String catalog, String table)
+      throws Exception {
+
+<span class="nc bnc" id="L943" title="All 4 branches missed.">    if (catalog == null || catalog.isEmpty()) {</span>
+<span class="nc" id="L944">      throw new IllegalArgumentException(&quot;catalog&quot;);</span>
+    }
+
+<span class="nc bnc" id="L947" title="All 4 branches missed.">    if (table == null || table.isEmpty()) {</span>
+<span class="nc" id="L948">      throw new IllegalArgumentException(&quot;table&quot;);</span>
+    }
+
+<span class="nc" id="L951">    ResultSet rs = connection.createStatement().executeQuery(&quot;SHOW CREATE TABLE &quot;</span>
+<span class="nc" id="L952">        + MariaDbConnection.quoteIdentifier(catalog) + &quot;.&quot; + MariaDbConnection</span>
+<span class="nc" id="L953">        .quoteIdentifier(table));</span>
+<span class="nc bnc" id="L954" title="All 2 branches missed.">    if (rs.next()) {</span>
+<span class="nc" id="L955">      String tableDef = rs.getString(2);</span>
+<span class="nc" id="L956">      return MariaDbDatabaseMetaData.getImportedKeys(tableDef, table, catalog, connection);</span>
+    }
+<span class="nc" id="L958">    throw new SQLException(&quot;Fail to retrieve table information using SHOW CREATE TABLE&quot;);</span>
+  }
+
+  /**
+   * Retrieves a description of a table's optimal set of columns that uniquely identifies a row.
+   * They are ordered by SCOPE.
+   *
+   * &lt;P&gt;Each column description has the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt; &lt;LI&gt;&lt;B&gt;SCOPE&lt;/B&gt; short {@code =&gt;}
+   * actual scope of result &lt;UL&gt; &lt;LI&gt; bestRowTemporary - very temporary, while using row &lt;LI&gt;
+   * bestRowTransaction - valid for remainder of current transaction &lt;LI&gt; bestRowSession - valid for
+   * remainder of current session &lt;/UL&gt;
+   * &lt;LI&gt;&lt;B&gt;COLUMN_NAME&lt;/B&gt; String {@code =&gt;} column name &lt;LI&gt;&lt;B&gt;DATA_TYPE&lt;/B&gt; int {@code =&gt;} SQL
+   * data type from java.sql.Types &lt;LI&gt;&lt;B&gt;TYPE_NAME&lt;/B&gt; String {@code =&gt;} Data source dependent type
+   * name, for a UDT the type name is fully qualified
+   * &lt;LI&gt;&lt;B&gt;COLUMN_SIZE&lt;/B&gt; int {@code =&gt;} precision &lt;LI&gt;&lt;B&gt;BUFFER_LENGTH&lt;/B&gt; int {@code =&gt;} not
+   * used &lt;LI&gt;&lt;B&gt;DECIMAL_DIGITS&lt;/B&gt; short  {@code =&gt;} scale - Null is returned for data types where
+   * DECIMAL_DIGITS is not applicable.
+   * &lt;LI&gt;&lt;B&gt;PSEUDO_COLUMN&lt;/B&gt; short {@code =&gt;} is this a pseudo column like an Oracle ROWID &lt;UL&gt;
+   * &lt;LI&gt; bestRowUnknown - may or may not be pseudo column &lt;LI&gt; bestRowNotPseudo - is NOT a pseudo
+   * column &lt;LI&gt; bestRowPseudo - is a pseudo column &lt;/UL&gt; &lt;/OL&gt;
+   *
+   * &lt;p&gt;The COLUMN_SIZE column represents the specified column size for the given column. For
+   * numeric data, this is the maximum precision.  For character data, this is the length in
+   * characters. For datetime datatypes, this is the length in characters of the String
+   * representation (assuming the maximum allowed precision of the fractional seconds component).
+   * For binary data, this is the length in bytes.  For the ROWID datatype, this is the length in
+   * bytes. Null is returned for data types where the column size is not applicable.&lt;/p&gt;
+   *
+   * @param catalog  a catalog name; must match the catalog name as it is stored in the database; &quot;&quot;
+   *                 retrieves those without a catalog;
+   *                 &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used to narrow the
+   *                 search
+   * @param schema   a schema name; must match the schema name as it is stored in the database; &quot;&quot;
+   *                 retrieves those without a schema; &lt;code&gt;null&lt;/code&gt; means that the schema name
+   *                 should not be used to narrow the search
+   * @param table    a table name; must match the table name as it is stored in the database
+   * @param scope    the scope of interest; use same values as SCOPE
+   * @param nullable include columns that are nullable.
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is a column description
+   * @throws SQLException if a database access error occurs
+   */
+  public ResultSet getBestRowIdentifier(String catalog, String schema, String table, int scope,
+      final boolean nullable)
+      throws SQLException {
+
+<span class="nc bnc" id="L1005" title="All 2 branches missed.">    if (table == null) {</span>
+<span class="nc" id="L1006">      throw new SQLException(&quot;'table' parameter cannot be null in getBestRowIdentifier()&quot;);</span>
+    }
+
+<span class="nc" id="L1009">    String sql =</span>
+        &quot;SELECT &quot; + DatabaseMetaData.bestRowUnknown + &quot; SCOPE, COLUMN_NAME,&quot;
+<span class="nc" id="L1011">            + dataTypeClause(&quot;COLUMN_TYPE&quot;) + &quot; DATA_TYPE, DATA_TYPE TYPE_NAME,&quot;</span>
+            + &quot; IF(NUMERIC_PRECISION IS NULL, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION) COLUMN_SIZE, 0 BUFFER_LENGTH,&quot;
+            + &quot; NUMERIC_SCALE DECIMAL_DIGITS,&quot;
+            + &quot; 1 PSEUDO_COLUMN&quot;
+            + &quot; FROM INFORMATION_SCHEMA.COLUMNS&quot;
+            + &quot; WHERE COLUMN_KEY IN('PRI', 'MUL', 'UNI')&quot;
+            + &quot; AND &quot;
+<span class="nc" id="L1018">            + catalogCond(&quot;TABLE_SCHEMA&quot;, catalog)</span>
+<span class="nc" id="L1019">            + &quot; AND TABLE_NAME = &quot; + escapeQuote(table);</span>
+
+<span class="nc" id="L1021">    return executeQuery(sql);</span>
+  }
+
+  public boolean generatedKeyAlwaysReturned() {
+<span class="nc" id="L1025">    return true;</span>
+  }
+
+  /**
+   * Retrieves a description of the pseudo or hidden columns available in a given table within the
+   * specified catalog and schema. Pseudo or hidden columns may not always be stored within a table
+   * and are not visible in a ResultSet unless they are specified in the query's outermost SELECT
+   * list. Pseudo or hidden columns may not necessarily be able to be modified. If there are no
+   * pseudo or hidden columns, an empty ResultSet is returned.
+   *
+   * &lt;P&gt;Only column descriptions matching the catalog, schema, table and column name criteria are
+   * returned.  They are ordered by
+   * &lt;code&gt;TABLE_CAT&lt;/code&gt;,&lt;code&gt;TABLE_SCHEM&lt;/code&gt;, &lt;code&gt;TABLE_NAME&lt;/code&gt; and
+   * &lt;code&gt;COLUMN_NAME&lt;/code&gt;.&lt;/P&gt;
+   *
+   * &lt;P&gt;Each column description has the following columns:&lt;/P&gt;
+   *
+   * &lt;OL&gt; &lt;LI&gt;&lt;B&gt;TABLE_CAT&lt;/B&gt; String {@code
+   * =&gt;} table catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TABLE_SCHEM&lt;/B&gt; String {@code =&gt;} table schema (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TABLE_NAME&lt;/B&gt; String {@code =&gt;} table name
+   * &lt;LI&gt;&lt;B&gt;COLUMN_NAME&lt;/B&gt; String {@code =&gt;} column name &lt;LI&gt;&lt;B&gt;DATA_TYPE&lt;/B&gt; int {@code =&gt;} SQL
+   * type from java.sql.Types &lt;LI&gt;&lt;B&gt;COLUMN_SIZE&lt;/B&gt; int {@code =&gt;} column size.
+   * &lt;LI&gt;&lt;B&gt;DECIMAL_DIGITS&lt;/B&gt; int {@code =&gt;} the number of fractional digits. Null is returned for
+   * data types where DECIMAL_DIGITS is not applicable.
+   * &lt;LI&gt;&lt;B&gt;NUM_PREC_RADIX&lt;/B&gt; int {@code =&gt;} Radix (typically either 10 or 2)
+   * &lt;LI&gt;&lt;B&gt;COLUMN_USAGE&lt;/B&gt; String {@code =&gt;} The allowed usage for the column.  The value
+   * returned will correspond to the enum name returned by
+   * PseudoColumnUsage.name() &lt;LI&gt;&lt;B&gt;REMARKS&lt;/B&gt; String {@code =&gt;} comment describing column (may
+   * be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;CHAR_OCTET_LENGTH&lt;/B&gt; int {@code =&gt;} for char types the maximum number of bytes in the
+   * column &lt;LI&gt;&lt;B&gt;IS_NULLABLE&lt;/B&gt; String  {@code =&gt;} ISO rules are used to determine the
+   * nullability for a column. &lt;UL&gt; &lt;LI&gt; YES           --- if the column can include NULLs &lt;LI&gt; NO
+   * --- if the column cannot include NULLs &lt;LI&gt; empty string --- if the nullability for the column
+   * is unknown &lt;/UL&gt; &lt;/OL&gt;
+   *
+   * &lt;p&gt;The COLUMN_SIZE column specifies the column size for the given column. For numeric data,
+   * this is the maximum precision.  For character data, this is the length in characters. For
+   * datetime datatypes, this is the length in characters of the String representation (assuming the
+   * maximum allowed precision of the fractional seconds component). For binary data, this is the
+   * length in bytes.  For the ROWID datatype, this is the length in bytes. Null is returned for
+   * data types where the column size is not applicable.&lt;/p&gt;
+   *
+   * @param catalog           a catalog name; must match the catalog name as it is stored in the
+   *                          database; &quot;&quot; retrieves those without a catalog;
+   *                          &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used to
+   *                          narrow the search
+   * @param schemaPattern     a schema name pattern; must match the schema name as it is stored in
+   *                          the database; &quot;&quot; retrieves those without a schema;
+   *                          &lt;code&gt;null&lt;/code&gt; means that the schema name should not be used to
+   *                          narrow the search
+   * @param tableNamePattern  a table name pattern; must match the table name as it is stored in the
+   *                          database
+   * @param columnNamePattern a column name pattern; must match the column name as it is stored in
+   *                          the database
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is a column description
+   * @throws SQLException if a database access error occurs
+   * @see PseudoColumnUsage
+   * @since 1.7
+   */
+  public ResultSet getPseudoColumns(String catalog, String schemaPattern, String tableNamePattern,
+      String columnNamePattern) throws SQLException {
+<span class="nc" id="L1087">    return connection.createStatement().executeQuery(</span>
+        &quot;SELECT ' ' TABLE_CAT, ' ' TABLE_SCHEM,&quot;
+            + &quot;' ' TABLE_NAME, ' ' COLUMN_NAME, 0 DATA_TYPE, 0 COLUMN_SIZE, 0 DECIMAL_DIGITS,&quot;
+            + &quot;10 NUM_PREC_RADIX, ' ' COLUMN_USAGE,  ' ' REMARKS, 0 CHAR_OCTET_LENGTH, 'YES' IS_NULLABLE FROM DUAL &quot;
+            + &quot;WHERE 1=0&quot;);
+  }
+
+  public boolean allProceduresAreCallable() {
+<span class="nc" id="L1095">    return true;</span>
+  }
+
+  public boolean allTablesAreSelectable() {
+<span class="nc" id="L1099">    return true;</span>
+  }
+
+  @Override
+  public String getURL() {
+<span class="nc" id="L1104">    return urlParser.getInitialUrl();</span>
+  }
+
+  public String getUserName() {
+<span class="nc" id="L1108">    return urlParser.getUsername();</span>
+  }
+
+  public boolean isReadOnly() {
+<span class="nc" id="L1112">    return false;</span>
+  }
+
+  public boolean nullsAreSortedHigh() {
+<span class="nc" id="L1116">    return false;</span>
+  }
+
+  public boolean nullsAreSortedLow() {
+<span class="nc bnc" id="L1120" title="All 2 branches missed.">    return !nullsAreSortedHigh();</span>
+  }
+
+  public boolean nullsAreSortedAtStart() {
+<span class="nc" id="L1124">    return false;</span>
+  }
+
+  public boolean nullsAreSortedAtEnd() {
+<span class="nc bnc" id="L1128" title="All 2 branches missed.">    return !nullsAreSortedAtStart();</span>
+  }
+
+  /**
+   * Return Server type.
+   * MySQL or MariaDB. MySQL can be forced for compatibility with option &quot;useMysqlMetadata&quot;
+   *
+   * @return server type
+   * @throws SQLException in case of socket error.
+   */
+  public String getDatabaseProductName() throws SQLException {
+<span class="nc bnc" id="L1139" title="All 2 branches missed.">    if (urlParser.getOptions().useMysqlMetadata) {</span>
+<span class="nc" id="L1140">      return &quot;MySQL&quot;;</span>
+    }
+<span class="nc bnc" id="L1142" title="All 2 branches missed.">    if (connection.getProtocol().isServerMariaDb()</span>
+<span class="nc bnc" id="L1143" title="All 2 branches missed.">            &amp;&amp; connection.getProtocol().getServerVersion().toLowerCase(Locale.ROOT).contains(&quot;mariadb&quot;)) {</span>
+<span class="nc" id="L1144">      return &quot;MariaDB&quot;;</span>
+    }
+<span class="nc" id="L1146">    return &quot;MySQL&quot;;</span>
+  }
+
+  public String getDatabaseProductVersion() {
+<span class="nc" id="L1150">    return connection.getProtocol().getServerVersion();</span>
+  }
+
+  public String getDriverName() {
+<span class="nc" id="L1154">    return DRIVER_NAME;</span>
+  }
+
+  public String getDriverVersion() {
+<span class="nc" id="L1158">    return Version.version;</span>
+  }
+
+  public int getDriverMajorVersion() {
+<span class="nc" id="L1162">    return Version.majorVersion;</span>
+  }
+
+  public int getDriverMinorVersion() {
+<span class="nc" id="L1166">    return Version.minorVersion;</span>
+  }
+
+  public boolean usesLocalFiles() {
+<span class="nc" id="L1170">    return false;</span>
+  }
+
+  public boolean usesLocalFilePerTable() {
+<span class="nc" id="L1174">    return false;</span>
+  }
+
+  public boolean supportsMixedCaseIdentifiers() throws SQLException {
+<span class="nc bnc" id="L1178" title="All 2 branches missed.">    return (connection.getLowercaseTableNames() == 0);</span>
+  }
+
+  public boolean storesUpperCaseIdentifiers() {
+<span class="nc" id="L1182">    return false;</span>
+  }
+
+  public boolean storesLowerCaseIdentifiers() throws SQLException {
+<span class="nc bnc" id="L1186" title="All 2 branches missed.">    return (connection.getLowercaseTableNames() == 1);</span>
+  }
+
+  public boolean storesMixedCaseIdentifiers() throws SQLException {
+<span class="nc bnc" id="L1190" title="All 2 branches missed.">    return (connection.getLowercaseTableNames() == 2);</span>
+  }
+
+  public boolean supportsMixedCaseQuotedIdentifiers() throws SQLException {
+<span class="nc" id="L1194">    return supportsMixedCaseIdentifiers();</span>
+  }
+
+  public boolean storesUpperCaseQuotedIdentifiers() {
+<span class="nc" id="L1198">    return storesUpperCaseIdentifiers();</span>
+  }
+
+  public boolean storesLowerCaseQuotedIdentifiers() throws SQLException {
+<span class="nc" id="L1202">    return storesLowerCaseIdentifiers();</span>
+  }
+
+  public boolean storesMixedCaseQuotedIdentifiers() throws SQLException {
+<span class="nc" id="L1206">    return storesMixedCaseIdentifiers();</span>
+  }
+
+  public String getIdentifierQuoteString() {
+<span class="nc" id="L1210">    return &quot;`&quot;;</span>
+  }
+
+  /**
+   * Retrieves a comma-separated list of all of this database's SQL keywords that are NOT also
+   * SQL:2003 keywords.
+   *
+   * @return the list of this database's keywords that are not also SQL:2003 keywords
+   */
+  @Override
+  public String getSQLKeywords() {
+<span class="nc" id="L1221">    return</span>
+        &quot;ACCESSIBLE,ANALYZE,ASENSITIVE,BEFORE,BIGINT,BINARY,BLOB,CALL,CHANGE,CONDITION,DATABASE,DATABASES,&quot;
+            + &quot;DAY_HOUR,DAY_MICROSECOND,DAY_MINUTE,DAY_SECOND,DELAYED,DETERMINISTIC,DISTINCTROW,DIV,DUAL,EACH,&quot;
+            + &quot;ELSEIF,ENCLOSED,ESCAPED,EXIT,EXPLAIN,FLOAT4,FLOAT8,FORCE,FULLTEXT,GENERAL,HIGH_PRIORITY,&quot;
+            + &quot;HOUR_MICROSECOND,HOUR_MINUTE,HOUR_SECOND,IF,IGNORE,IGNORE_SERVER_IDS,INDEX,INFILE,INOUT,INT1,INT2,&quot;
+            + &quot;INT3,INT4,INT8,ITERATE,KEY,KEYS,KILL,LEAVE,LIMIT,LINEAR,LINES,LOAD,LOCALTIME,LOCALTIMESTAMP,LOCK,&quot;
+            + &quot;LONG,LONGBLOB,LONGTEXT,LOOP,LOW_PRIORITY,MASTER_HEARTBEAT_PERIOD,MASTER_SSL_VERIFY_SERVER_CERT,&quot;
+            + &quot;MAXVALUE,MEDIUMBLOB,MEDIUMINT,MEDIUMTEXT,MIDDLEINT,MINUTE_MICROSECOND,MINUTE_SECOND,MOD,MODIFIES,&quot;
+            + &quot;NO_WRITE_TO_BINLOG,OPTIMIZE,OPTIONALLY,OUT,OUTFILE,PURGE,RANGE,READ_WRITE,READS,REGEXP,RELEASE,&quot;
+            + &quot;RENAME,REPEAT,REPLACE,REQUIRE,RESIGNAL,RESTRICT,RETURN,RLIKE,SCHEMAS,SECOND_MICROSECOND,SENSITIVE,&quot;
+            + &quot;SEPARATOR,SHOW,SIGNAL,SLOW,SPATIAL,SPECIFIC,SQL_BIG_RESULT,SQL_CALC_FOUND_ROWS,SQL_SMALL_RESULT,&quot;
+            + &quot;SQLEXCEPTION,SSL,STARTING,STRAIGHT_JOIN,TERMINATED,TINYBLOB,TINYINT,TINYTEXT,TRIGGER,UNDO,UNLOCK,&quot;
+            + &quot;UNSIGNED,USE,UTC_DATE,UTC_TIME,UTC_TIMESTAMP,VARBINARY,VARCHARACTER,WHILE,XOR,YEAR_MONTH,ZEROFILL&quot;;
+  }
+
+  /**
+   * List of numeric functions.
+   *
+   * @return List of numeric functions.
+   */
+  @Override
+  public String getNumericFunctions() {
+<span class="nc" id="L1243">    return</span>
+        &quot;DIV,ABS,ACOS,ASIN,ATAN,ATAN2,CEIL,CEILING,CONV,COS,COT,CRC32,DEGREES,EXP,FLOOR,GREATEST,LEAST,LN,LOG,&quot;
+            + &quot;LOG10,LOG2,MOD,OCT,PI,POW,POWER,RADIANS,RAND,ROUND,SIGN,SIN,SQRT,TAN,TRUNCATE&quot;;
+  }
+
+  /**
+   * List of string functions.
+   *
+   * @return List of string functions.
+   */
+  @Override
+  public String getStringFunctions() {
+<span class="nc" id="L1255">    return</span>
+        &quot;ASCII,BIN,BIT_LENGTH,CAST,CHARACTER_LENGTH,CHAR_LENGTH,CONCAT,CONCAT_WS,CONVERT,ELT,EXPORT_SET,&quot;
+            + &quot;EXTRACTVALUE,FIELD,FIND_IN_SET,FORMAT,FROM_BASE64,HEX,INSTR,LCASE,LEFT,LENGTH,LIKE,LOAD_FILE,LOCATE,&quot;
+            + &quot;LOWER,LPAD,LTRIM,MAKE_SET,MATCH AGAINST,MID,NOT LIKE,NOT REGEXP,OCTET_LENGTH,ORD,POSITION,QUOTE,&quot;
+            + &quot;REPEAT,REPLACE,REVERSE,RIGHT,RPAD,RTRIM,SOUNDEX,SOUNDS LIKE,SPACE,STRCMP,SUBSTR,SUBSTRING,&quot;
+            + &quot;SUBSTRING_INDEX,TO_BASE64,TRIM,UCASE,UNHEX,UPDATEXML,UPPER,WEIGHT_STRING&quot;;
+  }
+
+  /**
+   * List of system functions.
+   *
+   * @return List of system functions.
+   */
+  @Override
+  public String getSystemFunctions() {
+<span class="nc" id="L1270">    return &quot;DATABASE,USER,SYSTEM_USER,SESSION_USER,LAST_INSERT_ID,VERSION&quot;;</span>
+  }
+
+  /**
+   * List of time and date functions.
+   *
+   * @return List of time and date functions.
+   */
+  @Override
+  public String getTimeDateFunctions() {
+<span class="nc" id="L1280">    return</span>
+        &quot;ADDDATE,ADDTIME,CONVERT_TZ,CURDATE,CURRENT_DATE,CURRENT_TIME,CURRENT_TIMESTAMP,CURTIME,DATEDIFF,&quot;
+            + &quot;DATE_ADD,DATE_FORMAT,DATE_SUB,DAY,DAYNAME,DAYOFMONTH,DAYOFWEEK,DAYOFYEAR,EXTRACT,FROM_DAYS,&quot;
+            + &quot;FROM_UNIXTIME,GET_FORMAT,HOUR,LAST_DAY,LOCALTIME,LOCALTIMESTAMP,MAKEDATE,MAKETIME,MICROSECOND,&quot;
+            + &quot;MINUTE,MONTH,MONTHNAME,NOW,PERIOD_ADD,PERIOD_DIFF,QUARTER,SECOND,SEC_TO_TIME,STR_TO_DATE,SUBDATE,&quot;
+            + &quot;SUBTIME,SYSDATE,TIMEDIFF,TIMESTAMPADD,TIMESTAMPDIFF,TIME_FORMAT,TIME_TO_SEC,TO_DAYS,TO_SECONDS,&quot;
+            + &quot;UNIX_TIMESTAMP,UTC_DATE,UTC_TIME,UTC_TIMESTAMP,WEEK,WEEKDAY,WEEKOFYEAR,YEAR,YEARWEEK&quot;;
+  }
+
+  public String getSearchStringEscape() {
+<span class="nc" id="L1290">    return &quot;\\&quot;;</span>
+  }
+
+  public String getExtraNameCharacters() {
+<span class="nc" id="L1294">    return &quot;#@&quot;;</span>
+  }
+
+  public boolean supportsAlterTableWithAddColumn() {
+<span class="nc" id="L1298">    return true;</span>
+  }
+
+  public boolean supportsAlterTableWithDropColumn() {
+<span class="nc" id="L1302">    return true;</span>
+  }
+
+  public boolean supportsColumnAliasing() {
+<span class="nc" id="L1306">    return true;</span>
+  }
+
+  public boolean nullPlusNonNullIsNull() {
+<span class="nc" id="L1310">    return true;</span>
+  }
+
+  public boolean supportsConvert() {
+<span class="nc" id="L1314">    return true;</span>
+  }
+
+  public boolean supportsConvert(int fromType, int toType) {
+<span class="nc" id="L1318">    return false;</span>
+  }
+
+  public boolean supportsTableCorrelationNames() {
+<span class="nc" id="L1322">    return true;</span>
+  }
+
+  public boolean supportsDifferentTableCorrelationNames() {
+<span class="nc" id="L1326">    return true;</span>
+  }
+
+  public boolean supportsExpressionsInOrderBy() {
+<span class="nc" id="L1330">    return true;</span>
+  }
+
+  public boolean supportsOrderByUnrelated() {
+<span class="nc" id="L1334">    return false;</span>
+  }
+
+  public boolean supportsGroupBy() {
+<span class="nc" id="L1338">    return true;</span>
+  }
+
+  public boolean supportsGroupByUnrelated() {
+<span class="nc" id="L1342">    return true;</span>
+  }
+
+  public boolean supportsGroupByBeyondSelect() {
+<span class="nc" id="L1346">    return true;</span>
+  }
+
+  public boolean supportsLikeEscapeClause() {
+<span class="nc" id="L1350">    return true;</span>
+  }
+
+  public boolean supportsMultipleResultSets() {
+<span class="nc" id="L1354">    return false;</span>
+  }
+
+  public boolean supportsMultipleTransactions() {
+<span class="nc" id="L1358">    return true;</span>
+  }
+
+  public boolean supportsNonNullableColumns() {
+<span class="nc" id="L1362">    return true;</span>
+  }
+
+  @Override
+  public boolean supportsMinimumSQLGrammar() {
+<span class="nc" id="L1367">    return true;</span>
+  }
+
+  @Override
+  public boolean supportsCoreSQLGrammar() {
+<span class="nc" id="L1372">    return true;</span>
+  }
+
+  @Override
+  public boolean supportsExtendedSQLGrammar() {
+<span class="nc" id="L1377">    return false;</span>
+  }
+
+  @Override
+  public boolean supportsANSI92EntryLevelSQL() {
+<span class="nc" id="L1382">    return true;</span>
+  }
+
+  @Override
+  public boolean supportsANSI92IntermediateSQL() {
+<span class="nc" id="L1387">    return false;</span>
+  }
+
+  @Override
+  public boolean supportsANSI92FullSQL() {
+<span class="nc" id="L1392">    return false;</span>
+  }
+
+  public boolean supportsIntegrityEnhancementFacility() {
+<span class="nc" id="L1396">    return false;</span>
+  }
+
+  public boolean supportsOuterJoins() {
+<span class="nc" id="L1400">    return true;</span>
+  }
+
+  public boolean supportsFullOuterJoins() {
+<span class="nc" id="L1404">    return false;</span>
+  }
+
+  public boolean supportsLimitedOuterJoins() {
+<span class="nc" id="L1408">    return true;</span>
+  }
+
+  public String getSchemaTerm() {
+<span class="nc" id="L1412">    return &quot;&quot;;</span>
+  }
+
+  public String getProcedureTerm() {
+<span class="nc" id="L1416">    return &quot;procedure&quot;;</span>
+  }
+
+  public String getCatalogTerm() {
+<span class="nc" id="L1420">    return &quot;database&quot;;</span>
+  }
+
+  public boolean isCatalogAtStart() {
+<span class="nc" id="L1424">    return true;</span>
+  }
+
+  public String getCatalogSeparator() {
+<span class="nc" id="L1428">    return &quot;.&quot;;</span>
+  }
+
+  public boolean supportsSchemasInDataManipulation() {
+<span class="nc" id="L1432">    return false;</span>
+  }
+
+  public boolean supportsSchemasInProcedureCalls() {
+<span class="nc" id="L1436">    return false;</span>
+  }
+
+  public boolean supportsSchemasInTableDefinitions() {
+<span class="nc" id="L1440">    return false;</span>
+  }
+
+  public boolean supportsSchemasInIndexDefinitions() {
+<span class="nc" id="L1444">    return false;</span>
+  }
+
+  public boolean supportsSchemasInPrivilegeDefinitions() {
+<span class="nc" id="L1448">    return true;</span>
+  }
+
+  public boolean supportsCatalogsInDataManipulation() {
+<span class="nc" id="L1452">    return true;</span>
+  }
+
+  public boolean supportsCatalogsInProcedureCalls() {
+<span class="nc" id="L1456">    return true;</span>
+  }
+
+  public boolean supportsCatalogsInTableDefinitions() {
+<span class="nc" id="L1460">    return true;</span>
+  }
+
+  public boolean supportsCatalogsInIndexDefinitions() {
+<span class="nc" id="L1464">    return true;</span>
+  }
+
+  public boolean supportsCatalogsInPrivilegeDefinitions() {
+<span class="nc" id="L1468">    return true;</span>
+  }
+
+  public boolean supportsPositionedDelete() {
+<span class="nc" id="L1472">    return false;</span>
+  }
+
+  public boolean supportsPositionedUpdate() {
+<span class="nc" id="L1476">    return false;</span>
+  }
+
+  public boolean supportsSelectForUpdate() {
+<span class="nc" id="L1480">    return true;</span>
+  }
+
+  public boolean supportsStoredProcedures() {
+<span class="nc" id="L1484">    return true;</span>
+  }
+
+  public boolean supportsSubqueriesInComparisons() {
+<span class="nc" id="L1488">    return true;</span>
+  }
+
+  public boolean supportsSubqueriesInExists() {
+<span class="nc" id="L1492">    return true;</span>
+  }
+
+  public boolean supportsSubqueriesInIns() {
+<span class="nc" id="L1496">    return true;</span>
+  }
+
+  public boolean supportsSubqueriesInQuantifieds() {
+<span class="nc" id="L1500">    return true;</span>
+  }
+
+  public boolean supportsCorrelatedSubqueries() {
+<span class="nc" id="L1504">    return true;</span>
+  }
+
+  public boolean supportsUnion() {
+<span class="nc" id="L1508">    return true;</span>
+  }
+
+  public boolean supportsUnionAll() {
+<span class="nc" id="L1512">    return true;</span>
+  }
+
+  public boolean supportsOpenCursorsAcrossCommit() {
+<span class="nc" id="L1516">    return true;</span>
+  }
+
+  public boolean supportsOpenCursorsAcrossRollback() {
+<span class="nc" id="L1520">    return true;</span>
+  }
+
+  public boolean supportsOpenStatementsAcrossCommit() {
+<span class="nc" id="L1524">    return true;</span>
+  }
+
+  public boolean supportsOpenStatementsAcrossRollback() {
+<span class="nc" id="L1528">    return true;</span>
+  }
+
+  public int getMaxBinaryLiteralLength() {
+<span class="nc" id="L1532">    return 16777208;</span>
+  }
+
+  public int getMaxCharLiteralLength() {
+<span class="nc" id="L1536">    return 16777208;</span>
+  }
+
+  public int getMaxColumnNameLength() {
+<span class="nc" id="L1540">    return 64;</span>
+  }
+
+  public int getMaxColumnsInGroupBy() {
+<span class="nc" id="L1544">    return 64;</span>
+  }
+
+  public int getMaxColumnsInIndex() {
+<span class="nc" id="L1548">    return 16;</span>
+  }
+
+  public int getMaxColumnsInOrderBy() {
+<span class="nc" id="L1552">    return 64;</span>
+  }
+
+  public int getMaxColumnsInSelect() {
+<span class="nc" id="L1556">    return 256;</span>
+  }
+
+  public int getMaxColumnsInTable() {
+<span class="nc" id="L1560">    return 0;</span>
+  }
+
+  public int getMaxConnections() {
+<span class="nc" id="L1564">    return 0;</span>
+  }
+
+  public int getMaxCursorNameLength() {
+<span class="nc" id="L1568">    return 0;</span>
+  }
+
+  public int getMaxIndexLength() {
+<span class="nc" id="L1572">    return 256;</span>
+  }
+
+  public int getMaxSchemaNameLength() {
+<span class="nc" id="L1576">    return 32;</span>
+  }
+
+  public int getMaxProcedureNameLength() {
+<span class="nc" id="L1580">    return 256;</span>
+  }
+
+  public int getMaxCatalogNameLength() {
+<span class="nc" id="L1584">    return 0;</span>
+  }
+
+  public int getMaxRowSize() {
+<span class="nc" id="L1588">    return 0;</span>
+  }
+
+  public boolean doesMaxRowSizeIncludeBlobs() {
+<span class="nc" id="L1592">    return false;</span>
+  }
+
+  public int getMaxStatementLength() {
+<span class="nc" id="L1596">    return 0;</span>
+  }
+
+  public int getMaxStatements() {
+<span class="nc" id="L1600">    return 0;</span>
+  }
+
+  public int getMaxTableNameLength() {
+<span class="nc" id="L1604">    return 64;</span>
+  }
+
+  public int getMaxTablesInSelect() {
+<span class="nc" id="L1608">    return 256;</span>
+  }
+
+  public int getMaxUserNameLength() {
+<span class="nc" id="L1612">    return 16;</span>
+  }
+
+  public int getDefaultTransactionIsolation() {
+<span class="nc" id="L1616">    return Connection.TRANSACTION_REPEATABLE_READ;</span>
+  }
+
+  /**
+   * Retrieves whether this database supports transactions. If not, invoking the method
+   * &lt;code&gt;commit&lt;/code&gt; is a noop, and the isolation level is
+   * &lt;code&gt;TRANSACTION_NONE&lt;/code&gt;.
+   *
+   * @return &lt;code&gt;true&lt;/code&gt; if transactions are supported; &lt;code&gt;false&lt;/code&gt; otherwise
+   */
+  public boolean supportsTransactions() {
+<span class="nc" id="L1627">    return true;</span>
+  }
+
+
+  /* Helper to generate  information schema with &quot;equality&quot; condition (typically on catalog name)
+   */
+
+  /**
+   * Retrieves whether this database supports the given transaction isolation level.
+   *
+   * @param level one of the transaction isolation levels defined in &lt;code&gt;java.sql.Connection&lt;/code&gt;
+   * @return &lt;code&gt;true&lt;/code&gt; if so; &lt;code&gt;false&lt;/code&gt; otherwise
+   * @see Connection
+   */
+  public boolean supportsTransactionIsolationLevel(int level) {
+<span class="nc bnc" id="L1642" title="All 2 branches missed.">    switch (level) {</span>
+      case Connection.TRANSACTION_READ_UNCOMMITTED:
+      case Connection.TRANSACTION_READ_COMMITTED:
+      case Connection.TRANSACTION_REPEATABLE_READ:
+      case Connection.TRANSACTION_SERIALIZABLE:
+<span class="nc" id="L1647">        return true;</span>
+      default:
+<span class="nc" id="L1649">        return false;</span>
+    }
+  }
+
+  public boolean supportsDataDefinitionAndDataManipulationTransactions() {
+<span class="nc" id="L1654">    return true;</span>
+  }
+
+  public boolean supportsDataManipulationTransactionsOnly() {
+<span class="nc" id="L1658">    return false;</span>
+  }
+
+  public boolean dataDefinitionCausesTransactionCommit() {
+<span class="nc" id="L1662">    return true;</span>
+  }
+
+  public boolean dataDefinitionIgnoredInTransactions() {
+<span class="nc" id="L1666">    return false;</span>
+  }
+
+  /**
+   * Retrieves a description of the stored procedures available in the given catalog. Only procedure
+   * descriptions matching the schema and procedure name criteria are returned.  They are ordered
+   * by
+   * &lt;code&gt;PROCEDURE_CAT&lt;/code&gt;,
+   * &lt;code&gt;PROCEDURE_SCHEM&lt;/code&gt;, &lt;code&gt;PROCEDURE_NAME&lt;/code&gt; and &lt;code&gt;SPECIFIC_ NAME&lt;/code&gt;.
+   *
+   * &lt;P&gt;Each procedure description has the the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt; &lt;LI&gt;&lt;B&gt;PROCEDURE_CAT&lt;/B&gt;
+   * String {@code =&gt;} procedure catalog (may be
+   * &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;PROCEDURE_SCHEM&lt;/B&gt; String {@code =&gt;} procedure schema (may be
+   * &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;PROCEDURE_NAME&lt;/B&gt; String
+   * {@code =&gt;} procedure name &lt;LI&gt; reserved for future use &lt;LI&gt; reserved for future use &lt;LI&gt;
+   * reserved for future use &lt;LI&gt;&lt;B&gt;REMARKS&lt;/B&gt; String {@code =&gt;} explanatory comment on the
+   * procedure &lt;LI&gt;&lt;B&gt;PROCEDURE_TYPE&lt;/B&gt; short {@code =&gt;} kind of procedure: &lt;UL&gt; &lt;LI&gt;
+   * procedureResultUnknown - Cannot determine if  a return value will be returned &lt;LI&gt;
+   * procedureNoResult - Does not return a return value &lt;LI&gt; procedureReturnsResult - Returns a
+   * return value &lt;/UL&gt; &lt;LI&gt;&lt;B&gt;SPECIFIC_NAME&lt;/B&gt; String  {@code =&gt;} The name which uniquely
+   * identifies this procedure within its schema.
+   * &lt;/OL&gt;
+   * A user may not have permissions to execute any of the procedures that are returned by
+   * &lt;code&gt;getProcedures&lt;/code&gt;
+   *
+   * @param catalog              a catalog name; must match the catalog name as it is stored in the
+   *                             database; &quot;&quot; retrieves those without a catalog;
+   *                             &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used
+   *                             to narrow the search
+   * @param schemaPattern        a schema name pattern; must match the schema name as it is stored
+   *                             in the database; &quot;&quot; retrieves those without a schema;
+   *                             &lt;code&gt;null&lt;/code&gt; means that the schema name should not be used to
+   *                             narrow the search
+   * @param procedureNamePattern a procedure name pattern; must match the procedure name as it is
+   *                             stored in the database
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is a procedure description
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   */
+  public ResultSet getProcedures(String catalog, String schemaPattern, String procedureNamePattern)
+      throws SQLException {
+
+<span class="nc" id="L1710">    String sql =</span>
+        &quot;SELECT ROUTINE_SCHEMA PROCEDURE_CAT,NULL PROCEDURE_SCHEM, ROUTINE_NAME PROCEDURE_NAME,&quot;
+            + &quot; NULL RESERVED1, NULL RESERVED2, NULL RESERVED3,&quot;
+            + &quot; CASE ROUTINE_TYPE &quot;
+            + &quot;  WHEN 'FUNCTION' THEN &quot; + procedureReturnsResult
+            + &quot;  WHEN 'PROCEDURE' THEN &quot; + procedureNoResult
+            + &quot;  ELSE &quot; + procedureResultUnknown
+            + &quot; END PROCEDURE_TYPE,&quot;
+            + &quot; ROUTINE_COMMENT REMARKS, SPECIFIC_NAME &quot;
+            + &quot; FROM INFORMATION_SCHEMA.ROUTINES &quot;
+            + &quot; WHERE &quot;
+<span class="nc" id="L1721">            + catalogCond(&quot;ROUTINE_SCHEMA&quot;, catalog)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L1723">            + patternCond(&quot;ROUTINE_NAME&quot;, procedureNamePattern)</span>
+            + &quot;/* AND ROUTINE_TYPE='PROCEDURE' */&quot;;
+<span class="nc" id="L1725">    return executeQuery(sql);</span>
+  }
+
+  /* Is INFORMATION_SCHEMA.PARAMETERS available ?*/
+  private boolean haveInformationSchemaParameters() {
+<span class="nc" id="L1730">    return connection.getProtocol().versionGreaterOrEqual(5, 5, 3);</span>
+  }
+
+  /**
+   * Retrieves a description of the given catalog's stored procedure parameter and result columns.
+   *
+   * &lt;P&gt;Only descriptions matching the schema, procedure and parameter name criteria are returned.
+   * They are ordered by PROCEDURE_CAT, PROCEDURE_SCHEM, PROCEDURE_NAME and SPECIFIC_NAME. Within
+   * this, the return value, if any, is first. Next are the parameter descriptions in call order.
+   * The column descriptions follow in column number order.&lt;/p&gt;
+   *
+   * &lt;P&gt;Each row in the &lt;code&gt;ResultSet&lt;/code&gt; is a parameter description or column description
+   * with the following fields:&lt;/p&gt;
+   *
+   * &lt;OL&gt;
+   * &lt;LI&gt;&lt;B&gt;PROCEDURE_CAT&lt;/B&gt; String {@code =&gt;} procedure catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;PROCEDURE_SCHEM&lt;/B&gt; String {@code =&gt;} procedure
+   * schema (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;PROCEDURE_NAME&lt;/B&gt; String {@code =&gt;} procedure name
+   * &lt;LI&gt;&lt;B&gt;COLUMN_NAME&lt;/B&gt; String {@code =&gt;} column/parameter name &lt;LI&gt;&lt;B&gt;COLUMN_TYPE&lt;/B&gt; Short
+   * {@code =&gt;} kind of column/parameter: &lt;UL&gt; &lt;LI&gt; procedureColumnUnknown - nobody knows &lt;LI&gt;
+   * procedureColumnIn - IN parameter &lt;LI&gt; procedureColumnInOut - INOUT parameter &lt;LI&gt;
+   * procedureColumnOut - OUT parameter &lt;LI&gt; procedureColumnReturn - procedure return value &lt;LI&gt;
+   * procedureColumnResult - result column in &lt;code&gt;ResultSet&lt;/code&gt; &lt;/UL&gt; &lt;LI&gt;&lt;B&gt;DATA_TYPE&lt;/B&gt; int
+   * {@code =&gt;} SQL type from java.sql.Types &lt;LI&gt;&lt;B&gt;TYPE_NAME&lt;/B&gt; String {@code =&gt;} SQL type name,
+   * for a UDT type the type name is fully qualified
+   * &lt;LI&gt;&lt;B&gt;PRECISION&lt;/B&gt; int {@code =&gt;} precision &lt;LI&gt;&lt;B&gt;LENGTH&lt;/B&gt; int {@code =&gt;} length in bytes
+   * of data &lt;LI&gt;&lt;B&gt;SCALE&lt;/B&gt; short {@code =&gt;} scale -  null is returned for data types where SCALE
+   * is not applicable. &lt;LI&gt;&lt;B&gt;RADIX&lt;/B&gt; short {@code =&gt;} radix &lt;LI&gt;&lt;B&gt;NULLABLE&lt;/B&gt; short {@code =&gt;}
+   * can it contain NULL. &lt;UL&gt; &lt;LI&gt; procedureNoNulls - does not allow NULL values &lt;LI&gt;
+   * procedureNullable - allows NULL values &lt;LI&gt; procedureNullableUnknown - nullability unknown
+   * &lt;/UL&gt; &lt;LI&gt;&lt;B&gt;REMARKS&lt;/B&gt; String {@code =&gt;} comment describing parameter/column
+   * &lt;LI&gt;&lt;B&gt;COLUMN_DEF&lt;/B&gt; String {@code =&gt;} default value for the column, which should be
+   * interpreted as a string when the value is enclosed in single quotes (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;UL&gt; &lt;LI&gt; The string NULL (not enclosed in quotes) - if NULL was specified as the default
+   * value
+   * &lt;LI&gt; TRUNCATE (not enclosed in quotes)        - if the specified default value cannot be
+   * represented without truncation &lt;LI&gt; NULL - if a default value was not specified &lt;/UL&gt;
+   * &lt;LI&gt;&lt;B&gt;SQL_DATA_TYPE&lt;/B&gt; int  {@code =&gt;} reserved for future use
+   * &lt;LI&gt;&lt;B&gt;SQL_DATETIME_SUB&lt;/B&gt; int  {@code =&gt;} reserved for future use
+   * &lt;LI&gt;&lt;B&gt;CHAR_OCTET_LENGTH&lt;/B&gt; int  {@code =&gt;} the maximum length of binary and character based
+   * columns.  For any other datatype the returned value is a NULL &lt;LI&gt;&lt;B&gt;ORDINAL_POSITION&lt;/B&gt; int
+   * {@code =&gt;} the ordinal position, starting from 1, for the input and output parameters for a
+   * procedure. A value of 0 is returned if this row describes the procedure's return value.  For
+   * result set columns, it is the ordinal position of the column in the result set starting from 1.
+   * If there are multiple result sets, the column ordinal positions are implementation defined.
+   * &lt;LI&gt;&lt;B&gt;IS_NULLABLE&lt;/B&gt; String  {@code =&gt;} ISO rules are used to determine the nullability for
+   * a column. &lt;UL&gt; &lt;LI&gt; YES --- if the column can include NULLs &lt;LI&gt; NO            --- if the
+   * column cannot include NULLs &lt;LI&gt; empty string  --- if the nullability for the column is
+   * unknown
+   * &lt;/UL&gt;
+   * &lt;LI&gt;&lt;B&gt;SPECIFIC_NAME&lt;/B&gt; String  {@code =&gt;} the name which uniquely identifies this procedure
+   * within its schema. &lt;/OL&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; Some databases may not return the column descriptions for a procedure.&lt;/p&gt;
+   *
+   * &lt;p&gt;The PRECISION column represents the specified column size for the given column. For numeric
+   * data, this is the maximum precision.  For character data, this is the length in characters. For
+   * datetime datatypes, this is the length in characters of the String representation (assuming the
+   * maximum allowed precision of the fractional seconds component). For binary data, this is the
+   * length in bytes.  For the ROWID datatype, this is the length in bytes. Null is returned for
+   * data types where the column size is not applicable.&lt;/p&gt;
+   *
+   * @param catalog              a catalog name; must match the catalog name as it is stored in the
+   *                             database; &quot;&quot; retrieves those without a catalog;
+   *                             &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used
+   *                             to narrow the search
+   * @param schemaPattern        a schema name pattern; must match the schema name as it is stored
+   *                             in the database; &quot;&quot; retrieves those without a schema;
+   *                             &lt;code&gt;null&lt;/code&gt; means that the schema name should not be used to
+   *                             narrow the search
+   * @param procedureNamePattern a procedure name pattern; must match the procedure name as it is
+   *                             stored in the database
+   * @param columnNamePattern    a column name pattern; must match the column name as it is stored
+   *                             in the database
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row describes a stored procedure parameter or column
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   */
+  public ResultSet getProcedureColumns(String catalog, String schemaPattern,
+      String procedureNamePattern,
+      String columnNamePattern) throws SQLException {
+    String sql;
+
+<span class="nc bnc" id="L1813" title="All 2 branches missed.">    if (haveInformationSchemaParameters()) {</span>
+      /*
+       *  Get info from information_schema.parameters
+       */
+<span class="nc" id="L1817">      sql =</span>
+          &quot;SELECT SPECIFIC_SCHEMA PROCEDURE_CAT, NULL PROCEDURE_SCHEM, SPECIFIC_NAME PROCEDURE_NAME,&quot;
+              + &quot; PARAMETER_NAME COLUMN_NAME, &quot;
+              + &quot; CASE PARAMETER_MODE &quot;
+              + &quot;  WHEN 'IN' THEN &quot; + procedureColumnIn
+              + &quot;  WHEN 'OUT' THEN &quot; + procedureColumnOut
+              + &quot;  WHEN 'INOUT' THEN &quot; + procedureColumnInOut
+              + &quot;  ELSE IF(PARAMETER_MODE IS NULL,&quot; + procedureColumnReturn + &quot;,&quot;
+              + procedureColumnUnknown + &quot;)&quot;
+              + &quot; END COLUMN_TYPE,&quot;
+<span class="nc" id="L1827">              + dataTypeClause(&quot;DTD_IDENTIFIER&quot;) + &quot; DATA_TYPE,&quot;</span>
+              + &quot;DATA_TYPE TYPE_NAME,&quot;
+              + &quot; CASE DATA_TYPE&quot;
+              + &quot;  WHEN 'time' THEN &quot;
+<span class="nc bnc" id="L1831" title="All 2 branches missed.">              + (datePrecisionColumnExist</span>
+<span class="nc" id="L1832">              ? &quot;IF(DATETIME_PRECISION = 0, 10, CAST(11 + DATETIME_PRECISION as signed integer))&quot;</span>
+<span class="nc" id="L1833">              : &quot;10&quot;)</span>
+              + &quot;  WHEN 'date' THEN 10&quot;
+              + &quot;  WHEN 'datetime' THEN &quot;
+<span class="nc bnc" id="L1836" title="All 2 branches missed.">              + (datePrecisionColumnExist</span>
+<span class="nc" id="L1837">              ? &quot;IF(DATETIME_PRECISION = 0, 19, CAST(20 + DATETIME_PRECISION as signed integer))&quot;</span>
+<span class="nc" id="L1838">              : &quot;19&quot;)</span>
+              + &quot;  WHEN 'timestamp' THEN &quot;
+<span class="nc bnc" id="L1840" title="All 2 branches missed.">              + (datePrecisionColumnExist</span>
+<span class="nc" id="L1841">              ? &quot;IF(DATETIME_PRECISION = 0, 19, CAST(20 + DATETIME_PRECISION as signed integer))&quot;</span>
+<span class="nc" id="L1842">              : &quot;19&quot;)</span>
+              + &quot;  ELSE &quot;
+              + &quot;  IF(NUMERIC_PRECISION IS NULL, LEAST(CHARACTER_MAXIMUM_LENGTH,&quot;
+              + Integer.MAX_VALUE + &quot;), NUMERIC_PRECISION) &quot;
+              + &quot; END `PRECISION`,&quot;
+
+              + &quot; CASE DATA_TYPE&quot;
+              + &quot;  WHEN 'time' THEN &quot;
+<span class="nc bnc" id="L1850" title="All 2 branches missed.">              + (datePrecisionColumnExist</span>
+<span class="nc" id="L1851">              ? &quot;IF(DATETIME_PRECISION = 0, 10, CAST(11 + DATETIME_PRECISION as signed integer))&quot;</span>
+<span class="nc" id="L1852">              : &quot;10&quot;)</span>
+              + &quot;  WHEN 'date' THEN 10&quot;
+              + &quot;  WHEN 'datetime' THEN &quot;
+<span class="nc bnc" id="L1855" title="All 2 branches missed.">              + (datePrecisionColumnExist</span>
+<span class="nc" id="L1856">              ? &quot;IF(DATETIME_PRECISION = 0, 19, CAST(20 + DATETIME_PRECISION as signed integer))&quot;</span>
+<span class="nc" id="L1857">              : &quot;19&quot;)</span>
+              + &quot;  WHEN 'timestamp' THEN &quot;
+<span class="nc bnc" id="L1859" title="All 2 branches missed.">              + (datePrecisionColumnExist</span>
+<span class="nc" id="L1860">              ? &quot;IF(DATETIME_PRECISION = 0, 19, CAST(20 + DATETIME_PRECISION as signed integer))&quot;</span>
+<span class="nc" id="L1861">              : &quot;19&quot;)</span>
+              + &quot;  ELSE &quot;
+              + &quot;  IF(NUMERIC_PRECISION IS NULL, LEAST(CHARACTER_MAXIMUM_LENGTH,&quot;
+              + Integer.MAX_VALUE + &quot;), NUMERIC_PRECISION) &quot;
+              + &quot; END `LENGTH`,&quot;
+
+<span class="nc bnc" id="L1867" title="All 2 branches missed.">              + (datePrecisionColumnExist ? &quot; CASE DATA_TYPE&quot;</span>
+              + &quot;  WHEN 'time' THEN CAST(DATETIME_PRECISION as signed integer)&quot;
+              + &quot;  WHEN 'datetime' THEN CAST(DATETIME_PRECISION as signed integer)&quot;
+              + &quot;  WHEN 'timestamp' THEN CAST(DATETIME_PRECISION as signed integer)&quot;
+              + &quot;  ELSE NUMERIC_SCALE &quot;
+<span class="nc" id="L1872">              + &quot; END `SCALE`,&quot; : &quot; NUMERIC_SCALE `SCALE`,&quot;)</span>
+
+              + &quot;10 RADIX,&quot;
+              + procedureNullableUnknown
+              + &quot; NULLABLE,NULL REMARKS,NULL COLUMN_DEF,0 SQL_DATA_TYPE,0 SQL_DATETIME_SUB,&quot;
+              + &quot;CHARACTER_OCTET_LENGTH CHAR_OCTET_LENGTH ,ORDINAL_POSITION, '' IS_NULLABLE, SPECIFIC_NAME &quot;
+              + &quot; FROM INFORMATION_SCHEMA.PARAMETERS &quot;
+              + &quot; WHERE &quot;
+<span class="nc" id="L1880">              + catalogCond(&quot;SPECIFIC_SCHEMA&quot;, catalog)</span>
+<span class="nc" id="L1881">              + &quot; AND &quot; + patternCond(&quot;SPECIFIC_NAME&quot;, procedureNamePattern)</span>
+<span class="nc" id="L1882">              + &quot; AND &quot; + patternCond(&quot;PARAMETER_NAME&quot;, columnNamePattern)</span>
+              + &quot; /* AND ROUTINE_TYPE='PROCEDURE' */ &quot;
+              + &quot; ORDER BY SPECIFIC_SCHEMA, SPECIFIC_NAME, ORDINAL_POSITION&quot;;
+    } else {
+
+      /* No information_schema.parameters
+       * TODO : figure out what to do with older versions (get info via mysql.proc)
+       * For now, just a dummy result set is returned.
+       */
+<span class="nc" id="L1891">      sql =</span>
+          &quot;SELECT '' PROCEDURE_CAT, '' PROCEDURE_SCHEM , '' PROCEDURE_NAME,'' COLUMN_NAME, 0 COLUMN_TYPE,&quot;
+              + &quot;0 DATA_TYPE,'' TYPE_NAME, 0 `PRECISION`,0 LENGTH, 0 SCALE,10 RADIX,&quot;
+              + &quot;0 NULLABLE,NULL REMARKS,NULL COLUMN_DEF,0 SQL_DATA_TYPE,0 SQL_DATETIME_SUB,&quot;
+              + &quot;0 CHAR_OCTET_LENGTH ,0 ORDINAL_POSITION, '' IS_NULLABLE, '' SPECIFIC_NAME &quot;
+              + &quot; FROM DUAL &quot;
+              + &quot; WHERE 1=0 &quot;;
+    }
+
+    try {
+<span class="nc" id="L1901">      return executeQuery(sql);</span>
+<span class="nc" id="L1902">    } catch (SQLException sqlException) {</span>
+<span class="nc bnc" id="L1903" title="All 2 branches missed.">      if (sqlException.getMessage().contains(&quot;Unknown column 'DATETIME_PRECISION'&quot;)) {</span>
+<span class="nc" id="L1904">        datePrecisionColumnExist = false;</span>
+<span class="nc" id="L1905">        return getProcedureColumns(catalog, schemaPattern, procedureNamePattern, columnNamePattern);</span>
+      }
+<span class="nc" id="L1907">      throw sqlException;</span>
+    }
+  }
+
+  /**
+   * Retrieves a description of the given catalog's system or user function parameters and return
+   * type.
+   *
+   * &lt;P&gt;Only descriptions matching the schema,  function and parameter name criteria are returned.
+   * They are ordered by &lt;code&gt;FUNCTION_CAT&lt;/code&gt;,
+   * &lt;code&gt;FUNCTION_SCHEM&lt;/code&gt;, &lt;code&gt;FUNCTION_NAME&lt;/code&gt; and &lt;code&gt;SPECIFIC_ NAME&lt;/code&gt;.
+   * Within this, the return value, if any, is first. Next are the parameter descriptions in call
+   * order. The column descriptions follow in column number order.&lt;/p&gt;
+   *
+   * &lt;P&gt;Each row in the &lt;code&gt;ResultSet&lt;/code&gt; is a parameter description, column description or
+   * return type description with the following fields:&lt;/p&gt;
+   *
+   * &lt;OL&gt; &lt;LI&gt;&lt;B&gt;FUNCTION_CAT&lt;/B&gt; String {@code =&gt;} function catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;FUNCTION_SCHEM&lt;/B&gt; String {@code =&gt;} function
+   * schema (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;FUNCTION_NAME&lt;/B&gt; String {@code =&gt;} function name.
+   * This is the name used to invoke the function
+   * &lt;LI&gt;&lt;B&gt;COLUMN_NAME&lt;/B&gt; String {@code =&gt;} column/parameter name &lt;LI&gt;&lt;B&gt;COLUMN_TYPE&lt;/B&gt; Short
+   * {@code =&gt;} kind of column/parameter: &lt;UL&gt; &lt;LI&gt; functionColumnUnknown - nobody knows &lt;LI&gt;
+   * functionColumnIn - IN parameter &lt;LI&gt; functionColumnInOut - INOUT parameter &lt;LI&gt;
+   * functionColumnOut - OUT parameter &lt;LI&gt; functionColumnReturn - function return value &lt;LI&gt;
+   * functionColumnResult - Indicates that the parameter or column is a column in the
+   * &lt;code&gt;ResultSet&lt;/code&gt; &lt;/UL&gt; &lt;LI&gt;&lt;B&gt;DATA_TYPE&lt;/B&gt; int {@code =&gt;} SQL type from java.sql.Types
+   * &lt;LI&gt;&lt;B&gt;TYPE_NAME&lt;/B&gt; String {@code =&gt;} SQL type name, for a UDT type the type name is fully
+   * qualified &lt;LI&gt;&lt;B&gt;PRECISION&lt;/B&gt; int {@code =&gt;} precision
+   * &lt;LI&gt;&lt;B&gt;LENGTH&lt;/B&gt; int {@code =&gt;} length in bytes of data &lt;LI&gt;&lt;B&gt;SCALE&lt;/B&gt; short {@code =&gt;}
+   * scale -  null is returned for data types where SCALE is not applicable.
+   * &lt;LI&gt;&lt;B&gt;RADIX&lt;/B&gt; short {@code =&gt;} radix &lt;LI&gt;&lt;B&gt;NULLABLE&lt;/B&gt; short {@code =&gt;} can it contain
+   * NULL. &lt;UL&gt; &lt;LI&gt; functionNoNulls - does not allow NULL values &lt;LI&gt; functionNullable - allows
+   * NULL values &lt;LI&gt; functionNullableUnknown - nullability unknown &lt;/UL&gt; &lt;LI&gt;&lt;B&gt;REMARKS&lt;/B&gt; String
+   * {@code =&gt;} comment describing column/parameter &lt;LI&gt;&lt;B&gt;CHAR_OCTET_LENGTH&lt;/B&gt; int  {@code =&gt;} the
+   * maximum length of binary and character based parameters or columns.  For any other datatype the
+   * returned value is a NULL
+   * &lt;LI&gt;&lt;B&gt;ORDINAL_POSITION&lt;/B&gt; int  {@code =&gt;} the ordinal position, starting from 1, for the
+   * input and output parameters. A value of 0 is returned if this row describes the function's
+   * return value. For result set columns, it is the ordinal position of the column in the result
+   * set starting from 1. &lt;LI&gt;&lt;B&gt;IS_NULLABLE&lt;/B&gt; String  {@code =&gt;} ISO rules are used to determine
+   * the nullability for a parameter or column. &lt;UL&gt; &lt;LI&gt; YES           --- if the parameter or
+   * column can include NULLs &lt;LI&gt; NO            --- if the parameter or column  cannot include
+   * NULLs &lt;LI&gt; empty string  --- if the nullability for the parameter  or column is unknown &lt;/UL&gt;
+   * &lt;LI&gt;&lt;B&gt;SPECIFIC_NAME&lt;/B&gt; String  {@code =&gt;} the name which uniquely identifies this function
+   * within its schema.  This is a user specified, or DBMS generated, name that may be different
+   * then the &lt;code&gt;FUNCTION_NAME&lt;/code&gt; for example with overload functions &lt;/OL&gt;
+   *
+   * &lt;p&gt;The PRECISION column represents the specified column size for the given parameter or
+   * column. For numeric data, this is the maximum precision.  For character data, this is the
+   * length in characters. For datetime datatypes, this is the length in characters of the String
+   * representation (assuming the maximum allowed precision of the fractional seconds component).
+   * For binary data, this is the length in bytes. For the ROWID datatype, this is the length in
+   * bytes. Null is returned for data types where the column size is not applicable.&lt;/p&gt;
+   *
+   * @param catalog             a catalog name; must match the catalog name as it is stored in the
+   *                            database; &quot;&quot; retrieves those without a catalog;
+   *                            &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used to
+   *                            narrow the search
+   * @param schemaPattern       a schema name pattern; must match the schema name as it is stored in
+   *                            the database; &quot;&quot; retrieves those without a schema;
+   *                            &lt;code&gt;null&lt;/code&gt; means that the schema name should not be used to
+   *                            narrow the search
+   * @param functionNamePattern a procedure name pattern; must match the function name as it is
+   *                            stored in the database
+   * @param columnNamePattern   a parameter name pattern; must match the parameter or column name as
+   *                            it is stored in the database
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row describes a user function parameter, column  or
+   *     return type
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   * @since 1.6
+   */
+  public ResultSet getFunctionColumns(String catalog, String schemaPattern,
+      String functionNamePattern,
+      String columnNamePattern) throws SQLException {
+
+    String sql;
+<span class="nc bnc" id="L1985" title="All 2 branches missed.">    if (haveInformationSchemaParameters()) {</span>
+
+<span class="nc" id="L1987">      sql =</span>
+          &quot;SELECT SPECIFIC_SCHEMA `FUNCTION_CAT`, NULL `FUNCTION_SCHEM`, SPECIFIC_NAME FUNCTION_NAME,&quot;
+              + &quot; PARAMETER_NAME COLUMN_NAME, &quot;
+              + &quot; CASE PARAMETER_MODE &quot;
+              + &quot;  WHEN 'IN' THEN &quot; + functionColumnIn
+              + &quot;  WHEN 'OUT' THEN &quot; + functionColumnOut
+              + &quot;  WHEN 'INOUT' THEN &quot; + functionColumnInOut
+              + &quot;  ELSE &quot; + functionReturn
+              + &quot; END COLUMN_TYPE,&quot;
+<span class="nc" id="L1996">              + dataTypeClause(&quot;DTD_IDENTIFIER&quot;) + &quot; DATA_TYPE,&quot;</span>
+              + &quot;DATA_TYPE TYPE_NAME,NUMERIC_PRECISION `PRECISION`,CHARACTER_MAXIMUM_LENGTH LENGTH,NUMERIC_SCALE SCALE,10 RADIX,&quot;
+              + procedureNullableUnknown + &quot; NULLABLE,NULL REMARKS,&quot;
+              + &quot;CHARACTER_OCTET_LENGTH CHAR_OCTET_LENGTH ,ORDINAL_POSITION, '' IS_NULLABLE, SPECIFIC_NAME &quot;
+              + &quot; FROM INFORMATION_SCHEMA.PARAMETERS &quot;
+              + &quot; WHERE &quot;
+<span class="nc" id="L2002">              + catalogCond(&quot;SPECIFIC_SCHEMA&quot;, catalog)</span>
+<span class="nc" id="L2003">              + &quot; AND &quot; + patternCond(&quot;SPECIFIC_NAME&quot;, functionNamePattern)</span>
+<span class="nc" id="L2004">              + &quot; AND &quot; + patternCond(&quot;PARAMETER_NAME&quot;, columnNamePattern)</span>
+              + &quot; AND ROUTINE_TYPE='FUNCTION'&quot;
+              + &quot; ORDER BY FUNCTION_CAT, SPECIFIC_NAME, ORDINAL_POSITION&quot;;
+    } else {
+      /*
+       * No information_schema.parameters
+       * TODO : figure out what to do with older versions (get info via mysql.proc)
+       * For now, just a dummy result set is returned.
+       */
+<span class="nc" id="L2013">      sql =</span>
+          &quot;SELECT '' FUNCTION_CAT, NULL FUNCTION_SCHEM, '' FUNCTION_NAME,&quot;
+              + &quot; '' COLUMN_NAME, 0  COLUMN_TYPE, 0 DATA_TYPE,&quot;
+              + &quot; '' TYPE_NAME,0 `PRECISION`,0 LENGTH, 0 SCALE,0 RADIX,&quot;
+              + &quot; 0 NULLABLE,NULL REMARKS, 0 CHAR_OCTET_LENGTH , 0 ORDINAL_POSITION, &quot;
+              + &quot; '' IS_NULLABLE, '' SPECIFIC_NAME &quot;
+              + &quot; FROM DUAL WHERE 1=0 &quot;;
+    }
+<span class="nc" id="L2021">    return executeQuery(sql);</span>
+  }
+
+  public ResultSet getSchemas() throws SQLException {
+<span class="nc" id="L2025">    return executeQuery(</span>
+        &quot;SELECT '' TABLE_SCHEM, '' TABLE_catalog  FROM DUAL WHERE 1=0&quot;);
+  }
+
+  public ResultSet getSchemas(String catalog, String schemaPattern) throws SQLException {
+<span class="nc" id="L2030">    return executeQuery(&quot;SELECT  ' ' table_schem, ' ' table_catalog FROM DUAL WHERE 1=0&quot;);</span>
+  }
+
+  public ResultSet getCatalogs() throws SQLException {
+<span class="nc" id="L2034">    return executeQuery(</span>
+        &quot;SELECT SCHEMA_NAME TABLE_CAT FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY 1&quot;);
+  }
+
+  public ResultSet getTableTypes() throws SQLException {
+<span class="nc" id="L2039">    return executeQuery(</span>
+        &quot;SELECT 'TABLE' TABLE_TYPE UNION SELECT 'SYSTEM VIEW' TABLE_TYPE UNION SELECT 'VIEW' TABLE_TYPE&quot;);
+  }
+
+  /**
+   * Retrieves a description of the access rights for a table's columns.
+   *
+   * &lt;P&gt;Only privileges matching the column name criteria are returned.  They are ordered by
+   * COLUMN_NAME and PRIVILEGE.&lt;/p&gt;
+   *
+   * &lt;P&gt;Each privilege description has the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt; &lt;LI&gt;&lt;B&gt;TABLE_CAT&lt;/B&gt; String
+   * {@code =&gt;} table catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TABLE_SCHEM&lt;/B&gt; String {@code =&gt;} table schema (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TABLE_NAME&lt;/B&gt; String {@code =&gt;} table name
+   * &lt;LI&gt;&lt;B&gt;COLUMN_NAME&lt;/B&gt; String {@code =&gt;} column name &lt;LI&gt;&lt;B&gt;GRANTOR&lt;/B&gt; String {@code =&gt;}
+   * grantor of access (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;GRANTEE&lt;/B&gt; String {@code =&gt;} grantee of access &lt;LI&gt;&lt;B&gt;PRIVILEGE&lt;/B&gt; String {@code =&gt;}
+   * name of access (SELECT, INSERT, UPDATE, REFRENCES, ...) &lt;LI&gt;&lt;B&gt;IS_GRANTABLE&lt;/B&gt; String {@code
+   * =&gt;} &quot;YES&quot; if grantee is permitted to grant to others; &quot;NO&quot; if not; &lt;code&gt;null&lt;/code&gt; if
+   * unknown
+   * &lt;/OL&gt;
+   *
+   * @param catalog           a catalog name; must match the catalog name as it is stored in the
+   *                          database; &quot;&quot; retrieves those without a catalog;
+   *                          &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used to
+   *                          narrow the search
+   * @param schema            a schema name; must match the schema name as it is stored in the
+   *                          database; &quot;&quot; retrieves those without a schema; &lt;code&gt;null&lt;/code&gt; means
+   *                          that the schema name should not be used to narrow the search
+   * @param table             a table name; must match the table name as it is stored in the
+   *                          database
+   * @param columnNamePattern a column name pattern; must match the column name as it is stored in
+   *                          the database
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is a column privilege description
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   */
+  public ResultSet getColumnPrivileges(String catalog, String schema, String table,
+      String columnNamePattern) throws SQLException {
+
+<span class="nc bnc" id="L2081" title="All 2 branches missed.">    if (table == null) {</span>
+<span class="nc" id="L2082">      throw new SQLException(&quot;'table' parameter must not be null&quot;);</span>
+    }
+<span class="nc" id="L2084">    String sql =</span>
+        &quot;SELECT TABLE_SCHEMA TABLE_CAT, NULL TABLE_SCHEM, TABLE_NAME,&quot;
+            + &quot; COLUMN_NAME, NULL AS GRANTOR, GRANTEE, PRIVILEGE_TYPE AS PRIVILEGE, IS_GRANTABLE FROM &quot;
+            + &quot; INFORMATION_SCHEMA.COLUMN_PRIVILEGES WHERE &quot;
+<span class="nc" id="L2088">            + catalogCond(&quot;TABLE_SCHEMA&quot;, catalog)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L2090">            + &quot; TABLE_NAME = &quot; + escapeQuote(table)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L2092">            + patternCond(&quot;COLUMN_NAME&quot;, columnNamePattern)</span>
+            + &quot; ORDER BY COLUMN_NAME, PRIVILEGE_TYPE&quot;;
+
+<span class="nc" id="L2095">    return executeQuery(sql);</span>
+  }
+
+  /**
+   * Retrieves a description of the access rights for each table available in a catalog. Note that a
+   * table privilege applies to one or more columns in the table. It would be wrong to assume that
+   * this privilege applies to all columns (this may be true for some systems but is not true for
+   * all.)
+   *
+   * &lt;P&gt;Only privileges matching the schema and table name criteria are returned.  They are ordered
+   * by &lt;code&gt;TABLE_CAT&lt;/code&gt;,
+   * &lt;code&gt;TABLE_SCHEM&lt;/code&gt;, &lt;code&gt;TABLE_NAME&lt;/code&gt;, and &lt;code&gt;PRIVILEGE&lt;/code&gt;.&lt;/p&gt;
+   *
+   * &lt;P&gt;Each privilege description has the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt; &lt;LI&gt;&lt;B&gt;TABLE_CAT&lt;/B&gt; String
+   * {@code =&gt;} table catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TABLE_SCHEM&lt;/B&gt; String {@code =&gt;} table schema (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;TABLE_NAME&lt;/B&gt; String {@code =&gt;} table name
+   * &lt;LI&gt;&lt;B&gt;GRANTOR&lt;/B&gt; String {@code =&gt;} grantor of access (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;GRANTEE&lt;/B&gt; String {@code =&gt;} grantee of access
+   * &lt;LI&gt;&lt;B&gt;PRIVILEGE&lt;/B&gt; String {@code =&gt;} name of access (SELECT, INSERT, UPDATE, REFRENCES, ...)
+   * &lt;LI&gt;&lt;B&gt;IS_GRANTABLE&lt;/B&gt; String {@code =&gt;} &quot;YES&quot;
+   * if grantee is permitted to grant to others; &quot;NO&quot; if not; &lt;code&gt;null&lt;/code&gt; if unknown &lt;/OL&gt;
+   *
+   * @param catalog          a catalog name; must match the catalog name as it is stored in the
+   *                         database; &quot;&quot; retrieves those without a catalog;
+   *                         &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used to
+   *                         narrow the search
+   * @param schemaPattern    a schema name pattern; must match the schema name as it is stored in
+   *                         the database; &quot;&quot; retrieves those without a schema;
+   *                         &lt;code&gt;null&lt;/code&gt; means that the schema name should not be used to
+   *                         narrow the search
+   * @param tableNamePattern a table name pattern; must match the table name as it is stored in the
+   *                         database
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is a table privilege description
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   */
+  public ResultSet getTablePrivileges(String catalog, String schemaPattern, String tableNamePattern)
+      throws SQLException {
+<span class="nc" id="L2136">    String sql =</span>
+        &quot;SELECT TABLE_SCHEMA TABLE_CAT,NULL  TABLE_SCHEM, TABLE_NAME, NULL GRANTOR,&quot;
+            + &quot;GRANTEE, PRIVILEGE_TYPE  PRIVILEGE, IS_GRANTABLE  FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES &quot;
+            + &quot; WHERE &quot;
+<span class="nc" id="L2140">            + catalogCond(&quot;TABLE_SCHEMA&quot;, catalog)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L2142">            + patternCond(&quot;TABLE_NAME&quot;, tableNamePattern)</span>
+            + &quot;ORDER BY TABLE_SCHEMA, TABLE_NAME,  PRIVILEGE_TYPE &quot;;
+
+<span class="nc" id="L2145">    return executeQuery(sql);</span>
+  }
+
+  /**
+   * Retrieves a description of a table's columns that are automatically updated when any value in a
+   * row is updated.  They are unordered.
+   *
+   * &lt;P&gt;Each column description has the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt; &lt;LI&gt;&lt;B&gt;SCOPE&lt;/B&gt; short {@code =&gt;}
+   * is not used &lt;LI&gt;&lt;B&gt;COLUMN_NAME&lt;/B&gt; String {@code =&gt;} column name &lt;LI&gt;&lt;B&gt;DATA_TYPE&lt;/B&gt; int
+   * {@code =&gt;} SQL data type from
+   * &lt;code&gt;java.sql.Types&lt;/code&gt; &lt;LI&gt;&lt;B&gt;TYPE_NAME&lt;/B&gt; String {@code =&gt;} Data source-dependent type
+   * name &lt;LI&gt;&lt;B&gt;COLUMN_SIZE&lt;/B&gt; int {@code =&gt;} precision &lt;LI&gt;&lt;B&gt;BUFFER_LENGTH&lt;/B&gt; int {@code =&gt;}
+   * length of column value in bytes &lt;LI&gt;&lt;B&gt;DECIMAL_DIGITS&lt;/B&gt; short  {@code =&gt;} scale - Null is
+   * returned for data types where DECIMAL_DIGITS is not applicable.
+   * &lt;LI&gt;&lt;B&gt;PSEUDO_COLUMN&lt;/B&gt; short {@code =&gt;} whether this is pseudo column like an Oracle ROWID
+   * &lt;UL&gt; &lt;LI&gt; versionColumnUnknown - may or may not be
+   * pseudo column &lt;LI&gt; versionColumnNotPseudo - is NOT a pseudo column &lt;LI&gt; versionColumnPseudo -
+   * is a pseudo column &lt;/UL&gt; &lt;/OL&gt;
+   *
+   * &lt;p&gt;The COLUMN_SIZE column represents the specified column size for the given column. For
+   * numeric data, this is the maximum precision.  For character data, this is the length in
+   * characters. For datetime datatypes, this is the length in characters of the String
+   * representation (assuming the maximum allowed precision of the fractional seconds component).
+   * For binary data, this is the length in bytes.  For the ROWID datatype, this is the length in
+   * bytes. Null is returned for data types where the column size is not applicable.&lt;/p&gt;
+   *
+   * @param catalog a catalog name; must match the catalog name as it is stored in the database; &quot;&quot;
+   *                retrieves those without a catalog;&lt;code&gt;null&lt;/code&gt; means that the catalog name
+   *                should not be used to narrow the search
+   * @param schema  a schema name; must match the schema name as it is stored in the database; &quot;&quot;
+   *                retrieves those without a schema; &lt;code&gt;null&lt;/code&gt; means that the schema name
+   *                should not be used to narrow the search
+   * @param table   a table name; must match the table name as it is stored in the database
+   * @return a &lt;code&gt;ResultSet&lt;/code&gt; object in which each row is a column description
+   * @throws SQLException if a database access error occurs
+   */
+  public ResultSet getVersionColumns(String catalog, String schema, String table)
+      throws SQLException {
+<span class="nc" id="L2185">    String sql =</span>
+        &quot;SELECT 0 SCOPE, ' ' COLUMN_NAME, 0 DATA_TYPE,&quot;
+            + &quot; ' ' TYPE_NAME, 0 COLUMN_SIZE, 0 BUFFER_LENGTH,&quot;
+            + &quot; 0 DECIMAL_DIGITS, 0 PSEUDO_COLUMN &quot;
+            + &quot; FROM DUAL WHERE 1 = 0&quot;;
+<span class="nc" id="L2190">    return executeQuery(sql);</span>
+  }
+
+  /**
+   * Retrieves a description of the foreign key columns in the given foreign key table that
+   * reference the primary key or the columns representing a unique constraint of the  parent table
+   * (could be the same or a different table). The number of columns returned from the parent table
+   * must match the number of columns that make up the foreign key.  They are ordered by
+   * FKTABLE_CAT, FKTABLE_SCHEM, FKTABLE_NAME, and KEY_SEQ.
+   *
+   * &lt;P&gt;Each foreign key column description has the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt; &lt;LI&gt;&lt;B&gt;PKTABLE_CAT&lt;/B&gt;
+   * String {@code =&gt;} parent key table catalog (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;PKTABLE_SCHEM&lt;/B&gt;
+   * String {@code =&gt;} parent key table schema (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;PKTABLE_NAME&lt;/B&gt;
+   * String {@code =&gt;} parent key table name
+   * &lt;LI&gt;&lt;B&gt;PKCOLUMN_NAME&lt;/B&gt; String {@code =&gt;} parent key column name &lt;LI&gt;&lt;B&gt;FKTABLE_CAT&lt;/B&gt;
+   * String {@code =&gt;} foreign key table catalog (may be &lt;code&gt;null&lt;/code&gt;) being exported (may be
+   * &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;FKTABLE_SCHEM&lt;/B&gt; String {@code =&gt;} foreign key table schema (may be
+   * &lt;code&gt;null&lt;/code&gt;) being exported (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;FKTABLE_NAME&lt;/B&gt; String
+   * {@code =&gt;} foreign key table name being exported &lt;LI&gt;&lt;B&gt;FKCOLUMN_NAME&lt;/B&gt; String {@code =&gt;}
+   * foreign key column name being exported &lt;LI&gt;&lt;B&gt;KEY_SEQ&lt;/B&gt; short {@code =&gt;} sequence number
+   * within foreign key( a value of 1 represents the first column of the foreign key, a value of 2
+   * would represent the second column within the foreign key). &lt;LI&gt;&lt;B&gt;UPDATE_RULE&lt;/B&gt; short {@code
+   * =&gt;} What happens to foreign key when parent key is updated: &lt;UL&gt; &lt;LI&gt; importedNoAction - do not
+   * allow update of parent key if it has been imported &lt;LI&gt; importedKeyCascade - change imported
+   * key to agree with parent key update &lt;LI&gt; importedKeySetNull - change imported key to
+   * &lt;code&gt;NULL&lt;/code&gt; if its parent key has been updated &lt;LI&gt; importedKeySetDefault - change
+   * imported key to default values if its parent key has been updated &lt;LI&gt; importedKeyRestrict -
+   * same as importedKeyNoAction (for ODBC 2.x compatibility) &lt;/UL&gt; &lt;LI&gt;&lt;B&gt;DELETE_RULE&lt;/B&gt; short
+   * {@code =&gt;} What happens to the foreign key when parent key is deleted. &lt;UL&gt; &lt;LI&gt;
+   * importedKeyNoAction - do not allow delete of parent key if it has been imported &lt;LI&gt;
+   * importedKeyCascade - delete rows that import a deleted key
+   * &lt;LI&gt; importedKeySetNull - change imported key to &lt;code&gt;NULL&lt;/code&gt; if its primary key has been
+   * deleted &lt;LI&gt; importedKeyRestrict - same as importedKeyNoAction (for ODBC 2.x compatibility)
+   * &lt;LI&gt; importedKeySetDefault - change imported key to default if its parent key has been deleted
+   * &lt;/UL&gt; &lt;LI&gt;&lt;B&gt;FK_NAME&lt;/B&gt; String {@code =&gt;} foreign key name (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;PK_NAME&lt;/B&gt; String {@code =&gt;} parent key name
+   * (may be &lt;code&gt;null&lt;/code&gt;) &lt;LI&gt;&lt;B&gt;DEFERRABILITY&lt;/B&gt; short {@code =&gt;} can the evaluation of
+   * foreign key constraints be deferred until commit
+   * &lt;UL&gt; &lt;LI&gt; importedKeyInitiallyDeferred - see SQL92 for definition &lt;LI&gt;
+   * importedKeyInitiallyImmediate - see SQL92 for definition &lt;LI&gt; importedKeyNotDeferrable - see
+   * SQL92 for definition &lt;/UL&gt; &lt;/OL&gt;
+   *
+   * @param parentCatalog  a catalog name; must match the catalog name as it is stored in the
+   *                       database; &quot;&quot; retrieves those without a catalog;
+   *                       &lt;code&gt;null&lt;/code&gt; means drop catalog name from the selection criteria
+   * @param parentSchema   a schema name; must match the schema name as it is stored in the
+   *                       database; &quot;&quot; retrieves those without a schema;
+   *                       &lt;code&gt;null&lt;/code&gt; means drop schema name from the selection criteria
+   * @param parentTable    the name of the table that exports the key; must match the table name as
+   *                       it is stored in the database
+   * @param foreignCatalog a catalog name; must match the catalog name as it is stored in the
+   *                       database; &quot;&quot; retrieves those without a catalog;
+   *                       &lt;code&gt;null&lt;/code&gt; means drop catalog name from the selection criteria
+   * @param foreignSchema  a schema name; must match the schema name as it is stored in the
+   *                       database; &quot;&quot; retrieves those without a schema;
+   *                       &lt;code&gt;null&lt;/code&gt; means drop schema name from the selection criteria
+   * @param foreignTable   the name of the table that imports the key; must match the table name as
+   *                       it is stored in the database
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is a foreign key column description
+   * @throws SQLException if a database access error occurs
+   * @see #getImportedKeys
+   */
+  public ResultSet getCrossReference(String parentCatalog, String parentSchema, String parentTable,
+      String foreignCatalog, String foreignSchema, String foreignTable)
+      throws SQLException {
+
+<span class="nc" id="L2258">    String sql =</span>
+        &quot;SELECT KCU.REFERENCED_TABLE_SCHEMA PKTABLE_CAT, NULL PKTABLE_SCHEM,  KCU.REFERENCED_TABLE_NAME PKTABLE_NAME,&quot;
+            + &quot; KCU.REFERENCED_COLUMN_NAME PKCOLUMN_NAME, KCU.TABLE_SCHEMA FKTABLE_CAT, NULL FKTABLE_SCHEM, &quot;
+            + &quot; KCU.TABLE_NAME FKTABLE_NAME, KCU.COLUMN_NAME FKCOLUMN_NAME, KCU.POSITION_IN_UNIQUE_CONSTRAINT KEY_SEQ,&quot;
+            + &quot; CASE update_rule &quot;
+            + &quot;   WHEN 'RESTRICT' THEN 1&quot;
+            + &quot;   WHEN 'NO ACTION' THEN 3&quot;
+            + &quot;   WHEN 'CASCADE' THEN 0&quot;
+            + &quot;   WHEN 'SET NULL' THEN 2&quot;
+            + &quot;   WHEN 'SET DEFAULT' THEN 4&quot;
+            + &quot; END UPDATE_RULE,&quot;
+            + &quot; CASE DELETE_RULE&quot;
+            + &quot;  WHEN 'RESTRICT' THEN 1&quot;
+            + &quot;  WHEN 'NO ACTION' THEN 3&quot;
+            + &quot;  WHEN 'CASCADE' THEN 0&quot;
+            + &quot;  WHEN 'SET NULL' THEN 2&quot;
+            + &quot;  WHEN 'SET DEFAULT' THEN 4&quot;
+            + &quot; END DELETE_RULE,&quot;
+            + &quot; RC.CONSTRAINT_NAME FK_NAME,&quot;
+            + &quot; NULL PK_NAME,&quot;
+            + importedKeyNotDeferrable + &quot; DEFERRABILITY&quot;
+            + &quot; FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE KCU&quot;
+            + &quot; INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS RC&quot;
+            + &quot; ON KCU.CONSTRAINT_SCHEMA = RC.CONSTRAINT_SCHEMA&quot;
+            + &quot; AND KCU.CONSTRAINT_NAME = RC.CONSTRAINT_NAME&quot;
+            + &quot; WHERE &quot;
+<span class="nc" id="L2284">            + catalogCond(&quot;KCU.REFERENCED_TABLE_SCHEMA&quot;, parentCatalog)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L2286">            + catalogCond(&quot;KCU.TABLE_SCHEMA&quot;, foreignCatalog)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L2288">            + &quot; KCU.REFERENCED_TABLE_NAME = &quot; + escapeQuote(parentTable)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L2290">            + &quot; KCU.TABLE_NAME = &quot; + escapeQuote(foreignTable)</span>
+            + &quot; ORDER BY FKTABLE_CAT, FKTABLE_SCHEM, FKTABLE_NAME, KEY_SEQ&quot;;
+
+<span class="nc" id="L2293">    return executeQuery(sql);</span>
+  }
+
+  /**
+   * Retrieves a description of all the data types supported by this database. They are ordered by
+   * DATA_TYPE and then by how closely the data type maps to the corresponding JDBC SQL type.
+   *
+   * &lt;P&gt;If the database supports SQL distinct types, then getTypeInfo() will return a single row
+   * with a TYPE_NAME of DISTINCT and a DATA_TYPE of Types.DISTINCT. If the database supports SQL
+   * structured types, then getTypeInfo() will return a single row with a TYPE_NAME of STRUCT and a
+   * DATA_TYPE of Types.STRUCT.&lt;/p&gt;
+   *
+   * &lt;P&gt;If SQL distinct or structured types are supported, then information on the individual types
+   * may be obtained from the getUDTs() method.&lt;/p&gt;
+   *
+   * &lt;P&gt;Each type description has the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt;
+   * &lt;LI&gt;&lt;B&gt;TYPE_NAME&lt;/B&gt; String {@code =&gt;} Type name
+   * &lt;LI&gt;&lt;B&gt;DATA_TYPE&lt;/B&gt; int {@code =&gt;}
+   * SQL data type from java.sql.Types
+   * &lt;LI&gt;&lt;B&gt;PRECISION&lt;/B&gt; int {@code =&gt;} maximum precision
+   * &lt;LI&gt;&lt;B&gt;LITERAL_PREFIX&lt;/B&gt; String {@code =&gt;} prefix used to quote a literal (may be
+   * &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;LITERAL_SUFFIX&lt;/B&gt; String {@code =&gt;} suffix used to quote a literal (may be
+   * &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;CREATE_PARAMS&lt;/B&gt; String {@code =&gt;} parameters used in creating the type (may be
+   * &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;NULLABLE&lt;/B&gt; short {@code =&gt;} can you use NULL for this type.
+   * &lt;UL&gt;
+   * &lt;LI&gt; typeNoNulls - does not allow NULL values
+   * &lt;LI&gt; typeNullable - allows NULL values
+   * &lt;LI&gt; typeNullableUnknown - nullability unknown
+   * &lt;/UL&gt;
+   * &lt;LI&gt;&lt;B&gt;CASE_SENSITIVE&lt;/B&gt; boolean{@code =&gt;} is it case sensitive.
+   * &lt;LI&gt;&lt;B&gt;SEARCHABLE&lt;/B&gt; short {@code =&gt;} can you use &quot;WHERE&quot; based on this type:
+   * &lt;UL&gt;
+   * &lt;LI&gt; typePredNone - No support
+   * &lt;LI&gt; typePredChar - Only supported with WHERE .. LIKE
+   * &lt;LI&gt; typePredBasic - Supported except for WHERE .. LIKE
+   * &lt;LI&gt; typeSearchable - Supported for all WHERE ..
+   * &lt;/UL&gt;
+   * &lt;LI&gt;&lt;B&gt;UNSIGNED_ATTRIBUTE&lt;/B&gt; boolean {@code =&gt;} is it unsigned.
+   * &lt;LI&gt;&lt;B&gt;FIXED_PREC_SCALE&lt;/B&gt; boolean {@code =&gt;} can it be a money value.
+   * &lt;LI&gt;&lt;B&gt;AUTO_INCREMENT&lt;/B&gt; boolean {@code =&gt;} can it be used for an auto-increment value.
+   * &lt;LI&gt;&lt;B&gt;LOCAL_TYPE_NAME&lt;/B&gt; String {@code =&gt;} localized version of type name (may be
+   * &lt;code&gt;null&lt;/code&gt;)
+   * &lt;LI&gt;&lt;B&gt;MINIMUM_SCALE&lt;/B&gt; short {@code =&gt;} minimum scale supported
+   * &lt;LI&gt;&lt;B&gt;MAXIMUM_SCALE&lt;/B&gt; short {@code =&gt;} maximum scale supported
+   * &lt;LI&gt;&lt;B&gt;SQL_DATA_TYPE&lt;/B&gt; int {@code =&gt;} unused
+   * &lt;LI&gt;&lt;B&gt;SQL_DATETIME_SUB&lt;/B&gt; int {@code =&gt;} unused
+   * &lt;LI&gt;&lt;B&gt;NUM_PREC_RADIX&lt;/B&gt; int {@code =&gt;} usually 2 or 10 &lt;/OL&gt;
+   *
+   * &lt;p&gt;The PRECISION column represents the maximum column size that the server supports for the
+   * given datatype. For numeric data, this is the maximum precision.  For character data, this is
+   * the length in characters. For datetime datatypes, this is the length in characters of the
+   * String representation (assuming the maximum allowed precision of the fractional seconds
+   * component). For binary data, this is the length in bytes. For the ROWID datatype, this is the
+   * length in bytes. Null is returned for data types where the column size is not applicable.&lt;/p&gt;
+   *
+   * @return a &lt;code&gt;ResultSet&lt;/code&gt; object in which each row is an SQL type description
+   */
+  public ResultSet getTypeInfo() {
+<span class="nc" id="L2356">    String[] columnNames = {</span>
+        &quot;TYPE_NAME&quot;, &quot;DATA_TYPE&quot;, &quot;PRECISION&quot;, &quot;LITERAL_PREFIX&quot;, &quot;LITERAL_SUFFIX&quot;,
+        &quot;CREATE_PARAMS&quot;, &quot;NULLABLE&quot;, &quot;CASE_SENSITIVE&quot;, &quot;SEARCHABLE&quot;, &quot;UNSIGNED_ATTRIBUTE&quot;,
+        &quot;FIXED_PREC_SCALE&quot;, &quot;AUTO_INCREMENT&quot;, &quot;LOCAL_TYPE_NAME&quot;, &quot;MINIMUM_SCALE&quot;, &quot;MAXIMUM_SCALE&quot;,
+        &quot;SQL_DATA_TYPE&quot;, &quot;SQL_DATETIME_SUB&quot;, &quot;NUM_PREC_RADIX&quot;
+    };
+<span class="nc" id="L2362">    ColumnType[] columnTypes = {</span>
+        ColumnType.VARCHAR, ColumnType.INTEGER, ColumnType.INTEGER, ColumnType.VARCHAR,
+        ColumnType.VARCHAR,
+        ColumnType.VARCHAR, ColumnType.INTEGER, ColumnType.BIT, ColumnType.SMALLINT, ColumnType.BIT,
+        ColumnType.BIT, ColumnType.BIT, ColumnType.VARCHAR, ColumnType.SMALLINT,
+        ColumnType.SMALLINT,
+        ColumnType.INTEGER, ColumnType.INTEGER, ColumnType.INTEGER
+    };
+
+<span class="nc" id="L2371">    String[][] data = {</span>
+        {&quot;BIT&quot;, &quot;-7&quot;, &quot;1&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;1&quot;, &quot;1&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;BIT&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;10&quot;},
+        {&quot;BOOL&quot;, &quot;-7&quot;, &quot;1&quot;, &quot;&quot;, &quot;&quot;, &quot;&quot;, &quot;1&quot;, &quot;1&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;BOOL&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;10&quot;},
+        {&quot;TINYINT&quot;, &quot;-6&quot;, &quot;3&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [UNSIGNED] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;TINYINT&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;TINYINT UNSIGNED&quot;, &quot;-6&quot;, &quot;3&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [UNSIGNED] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;,
+            &quot;0&quot;, &quot;1&quot;,
+            &quot;TINYINT UNSIGNED&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;BIGINT&quot;, &quot;-5&quot;, &quot;19&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [UNSIGNED] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;BIGINT&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;BIGINT UNSIGNED&quot;, &quot;-5&quot;, &quot;20&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;BIGINT UNSIGNED&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;LONG VARBINARY&quot;, &quot;-4&quot;, &quot;16777215&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;1&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;LONG VARBINARY&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;MEDIUMBLOB&quot;, &quot;-4&quot;, &quot;16777215&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;1&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;MEDIUMBLOB&quot;,
+            &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;LONGBLOB&quot;, &quot;-4&quot;, &quot;2147483647&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;1&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;LONGBLOB&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;10&quot;},
+        {&quot;BLOB&quot;, &quot;-4&quot;, &quot;65535&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;1&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;BLOB&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;10&quot;},
+        {&quot;TINYBLOB&quot;, &quot;-4&quot;, &quot;255&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;1&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;TINYBLOB&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;0&quot;,
+            &quot;10&quot;},
+        {&quot;VARBINARY&quot;, &quot;-3&quot;, &quot;255&quot;, &quot;'&quot;, &quot;'&quot;, &quot;(M)&quot;, &quot;1&quot;, &quot;1&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;VARBINARY&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;10&quot;},
+        {&quot;BINARY&quot;, &quot;-2&quot;, &quot;255&quot;, &quot;'&quot;, &quot;'&quot;, &quot;(M)&quot;, &quot;1&quot;, &quot;1&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;BINARY&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;0&quot;,
+            &quot;10&quot;},
+        {&quot;LONG VARCHAR&quot;, &quot;-1&quot;, &quot;16777215&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;LONG VARCHAR&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;MEDIUMTEXT&quot;, &quot;-1&quot;, &quot;16777215&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;MEDIUMTEXT&quot;,
+            &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;LONGTEXT&quot;, &quot;-1&quot;, &quot;2147483647&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;LONGTEXT&quot;,
+            &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;TEXT&quot;, &quot;-1&quot;, &quot;65535&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;TEXT&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;10&quot;},
+        {&quot;TINYTEXT&quot;, &quot;-1&quot;, &quot;255&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;TINYTEXT&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;,
+            &quot;0&quot;, &quot;10&quot;},
+        {&quot;CHAR&quot;, &quot;1&quot;, &quot;255&quot;, &quot;'&quot;, &quot;'&quot;, &quot;(M)&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;CHAR&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;10&quot;},
+        {&quot;NUMERIC&quot;, &quot;2&quot;, &quot;65&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M,D])] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;NUMERIC&quot;,
+            &quot;-308&quot;, &quot;308&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;DECIMAL&quot;, &quot;3&quot;, &quot;65&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M,D])] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;DECIMAL&quot;, &quot;-308&quot;,
+            &quot;308&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;INTEGER&quot;, &quot;4&quot;, &quot;10&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [UNSIGNED] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;INTEGER&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;INTEGER UNSIGNED&quot;, &quot;4&quot;, &quot;10&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;INTEGER UNSIGNED&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;INT&quot;, &quot;4&quot;, &quot;10&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [UNSIGNED] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;INT&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;INT UNSIGNED&quot;, &quot;4&quot;, &quot;10&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;INT UNSIGNED&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;MEDIUMINT&quot;, &quot;4&quot;, &quot;7&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [UNSIGNED] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;MEDIUMINT&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;MEDIUMINT UNSIGNED&quot;, &quot;4&quot;, &quot;8&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;MEDIUMINT UNSIGNED&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;SMALLINT&quot;, &quot;5&quot;, &quot;5&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [UNSIGNED] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;SMALLINT&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;SMALLINT UNSIGNED&quot;, &quot;5&quot;, &quot;5&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M)] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;1&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;SMALLINT UNSIGNED&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;FLOAT&quot;, &quot;7&quot;, &quot;10&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M|D)] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;1&quot;, &quot;FLOAT&quot;,
+            &quot;-38&quot;, &quot;38&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;DOUBLE&quot;, &quot;8&quot;, &quot;17&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M|D)] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;1&quot;, &quot;DOUBLE&quot;,
+            &quot;-308&quot;,
+            &quot;308&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;DOUBLE PRECISION&quot;, &quot;8&quot;, &quot;17&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M,D)] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;1&quot;,
+            &quot;DOUBLE PRECISION&quot;, &quot;-308&quot;, &quot;308&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;REAL&quot;, &quot;8&quot;, &quot;17&quot;, &quot;&quot;, &quot;&quot;, &quot;[(M,D)] [ZEROFILL]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;1&quot;, &quot;REAL&quot;,
+            &quot;-308&quot;,
+            &quot;308&quot;, &quot;0&quot;, &quot;0&quot;, &quot;10&quot;},
+        {&quot;VARCHAR&quot;, &quot;12&quot;, &quot;255&quot;, &quot;'&quot;, &quot;'&quot;, &quot;(M)&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;VARCHAR&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;,
+            &quot;0&quot;, &quot;10&quot;},
+        {&quot;ENUM&quot;, &quot;12&quot;, &quot;65535&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;ENUM&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;10&quot;},
+        {&quot;SET&quot;, &quot;12&quot;, &quot;64&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;SET&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;10&quot;},
+        {&quot;DATE&quot;, &quot;91&quot;, &quot;10&quot;, &quot;'&quot;, &quot;'&quot;, &quot;&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;DATE&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;10&quot;},
+        {&quot;TIME&quot;, &quot;92&quot;, &quot;18&quot;, &quot;'&quot;, &quot;'&quot;, &quot;[(M)]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;TIME&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;10&quot;},
+        {&quot;DATETIME&quot;, &quot;93&quot;, &quot;27&quot;, &quot;'&quot;, &quot;'&quot;, &quot;[(M)]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;DATETIME&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;0&quot;,
+            &quot;0&quot;, &quot;10&quot;},
+        {&quot;TIMESTAMP&quot;, &quot;93&quot;, &quot;27&quot;, &quot;'&quot;, &quot;'&quot;, &quot;[(M)]&quot;, &quot;1&quot;, &quot;0&quot;, &quot;3&quot;, &quot;0&quot;, &quot;0&quot;, &quot;0&quot;, &quot;TIMESTAMP&quot;, &quot;0&quot;,
+            &quot;0&quot;,
+            &quot;0&quot;, &quot;0&quot;, &quot;10&quot;}
+    };
+
+<span class="nc" id="L2479">    return SelectResultSet</span>
+<span class="nc" id="L2480">        .createResultSet(columnNames, columnTypes, data, connection.getProtocol());</span>
+  }
+
+  /**
+   * Retrieves a description of the given table's indices and statistics. They are ordered by
+   * NON_UNIQUE, TYPE, INDEX_NAME, and ORDINAL_POSITION.
+   *
+   * &lt;p&gt; Each index column description has the following columns:&lt;/p&gt;
+   *
+   * &lt;ol&gt;
+   * &lt;li&gt;&lt;B&gt;TABLE_CAT&lt;/B&gt; String {@code =&gt;} table catalog (may be &lt;code&gt;null&lt;/code&gt;)&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;TABLE_SCHEM&lt;/B&gt; String {@code =&gt;} table schema (may be &lt;code&gt;null&lt;/code&gt;)&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;TABLE_NAME&lt;/B&gt; String {@code =&gt;} table name&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;NON_UNIQUE&lt;/B&gt; boolean {@code =&gt;} Can index values be non-unique. false when TYPE is
+   * tableIndexStatistic&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;INDEX_QUALIFIER&lt;/B&gt; String {@code =&gt;} index catalog (may be &lt;code&gt;null&lt;/code&gt;);
+   * &lt;code&gt;null&lt;/code&gt;
+   * when TYPE is tableIndexStatistic&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;INDEX_NAME&lt;/B&gt; String {@code =&gt;} index name; &lt;code&gt;null&lt;/code&gt; when TYPE is
+   * tableIndexStatistic&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;TYPE&lt;/B&gt; short {@code =&gt;} index type:
+   * &lt;ul&gt;
+   * &lt;li&gt; tableIndexStatistic - this identifies table statistics that are returned in conjuction
+   * with a table's index descriptions
+   * &lt;li&gt; tableIndexClustered - this is a clustered index
+   * &lt;li&gt; tableIndexHashed - this is a hashed index
+   * &lt;li&gt; tableIndexOther - this is some other style of index
+   * &lt;/ul&gt;
+   * &lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;ORDINAL_POSITION&lt;/B&gt; short {@code =&gt;} column sequence number within index; zero when
+   * TYPE is tableIndexStatistic&lt;/li&gt; &lt;li&gt;&lt;B&gt;COLUMN_NAME&lt;/B&gt; String {@code =&gt;} column name;
+   * &lt;code&gt;null&lt;/code&gt; when TYPE is tableIndexStatistic&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;ASC_OR_DESC&lt;/B&gt; String {@code =&gt;} column sort sequence, &quot;A&quot; {@code =&gt;} ascending, &quot;D&quot;
+   * {@code =&gt;} descending, may be &lt;code&gt;null&lt;/code&gt; if sort sequence is not supported;
+   * &lt;code&gt;null&lt;/code&gt; when TYPE is tableIndexStatistic&lt;/li&gt; &lt;li&gt;&lt;B&gt;CARDINALITY&lt;/B&gt; long {@code =&gt;}
+   * When TYPE is tableIndexStatistic, then this is the number of rows in the table; otherwise, it
+   * is the number of unique values in the index.&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;PAGES&lt;/B&gt; long {@code =&gt;} When TYPE is  tableIndexStatisic then this is the number of
+   * pages used for the table, otherwise it is the number of pages used for the current index.&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;FILTER_CONDITION&lt;/B&gt; String {@code =&gt;} Filter condition, if any. (may be
+   * &lt;code&gt;null&lt;/code&gt;)&lt;/li&gt;
+   * &lt;/ol&gt;
+   *
+   * @param catalog     a catalog name; must match the catalog name as it is stored in this
+   *                    database; &quot;&quot; retrieves those without a catalog; &lt;code&gt;null&lt;/code&gt; means that
+   *                    the catalog name should not be used to narrow the search
+   * @param schema      a schema name; must match the schema name as it is stored in this database;
+   *                    &quot;&quot; retrieves those without a schema; &lt;code&gt;null&lt;/code&gt; means that the schema
+   *                    name should not be used to narrow the search
+   * @param table       a table name; must match the table name as it is stored in this database
+   * @param unique      when true, return only indices for unique values; when false, return indices
+   *                    regardless of whether unique or not
+   * @param approximate when true, result is allowed to reflect approximate or out of data values;
+   *                    when false, results are requested to be accurate
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is an index column description
+   * @throws SQLException if a database access error occurs
+   */
+  public ResultSet getIndexInfo(String catalog, String schema, String table,
+      boolean unique, boolean approximate) throws SQLException {
+
+<span class="nc" id="L2540">    String sql =</span>
+        &quot;SELECT TABLE_SCHEMA TABLE_CAT, NULL TABLE_SCHEM, TABLE_NAME, NON_UNIQUE, &quot;
+            + &quot; TABLE_SCHEMA INDEX_QUALIFIER, INDEX_NAME, 3 TYPE,&quot;
+            + &quot; SEQ_IN_INDEX ORDINAL_POSITION, COLUMN_NAME, COLLATION ASC_OR_DESC,&quot;
+            + &quot; CARDINALITY, NULL PAGES, NULL FILTER_CONDITION&quot;
+            + &quot; FROM INFORMATION_SCHEMA.STATISTICS&quot;
+<span class="nc" id="L2546">            + &quot; WHERE TABLE_NAME = &quot; + escapeQuote(table)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L2548">            + catalogCond(&quot;TABLE_SCHEMA&quot;, catalog)</span>
+<span class="nc bnc" id="L2549" title="All 2 branches missed.">            + ((unique) ? &quot; AND NON_UNIQUE = 0&quot; : &quot;&quot;)</span>
+            + &quot; ORDER BY NON_UNIQUE, TYPE, INDEX_NAME, ORDINAL_POSITION&quot;;
+
+<span class="nc" id="L2552">    return executeQuery(sql);</span>
+  }
+
+  /**
+   * Retrieves whether this database supports the given result set type. ResultSet.TYPE_FORWARD_ONLY
+   * and ResultSet.TYPE_SCROLL_INSENSITIVE are supported.
+   *
+   * @param type one of the following &lt;code&gt;ResultSet&lt;/code&gt; constants:
+   *             &lt;ul&gt;
+   *             &lt;li&gt;&lt;code&gt;ResultSet.TYPE_FORWARD_ONLY&lt;/code&gt;&lt;/li&gt;
+   *             &lt;li&gt;&lt;code&gt;ResultSet.TYPE_SCROLL_INSENSITIVE&lt;/code&gt;&lt;/li&gt;
+   *             &lt;li&gt;&lt;code&gt;ResultSet.TYPE_SCROLL_SENSITIVE&lt;/code&gt;&lt;/li&gt;
+   *             &lt;/ul&gt;
+   * @return true if supported
+   */
+  public boolean supportsResultSetType(int type) {
+<span class="nc bnc" id="L2568" title="All 4 branches missed.">    return (type == ResultSet.TYPE_SCROLL_INSENSITIVE || type == ResultSet.TYPE_FORWARD_ONLY);</span>
+  }
+
+  /**
+   * Retrieves whether this database supports the given concurrency type in combination with the
+   * given result set type. All are supported, but combination that use
+   * ResultSet.TYPE_SCROLL_INSENSITIVE.
+   *
+   * @param type        one of the following &lt;code&gt;ResultSet&lt;/code&gt; constants:
+   *                    &lt;ul&gt;
+   *                    &lt;li&gt;&lt;code&gt;ResultSet.TYPE_FORWARD_ONLY&lt;/code&gt;&lt;/li&gt;
+   *                    &lt;li&gt;&lt;code&gt;ResultSet.TYPE_SCROLL_INSENSITIVE&lt;/code&gt;&lt;/li&gt;
+   *                    &lt;li&gt;&lt;code&gt;ResultSet.TYPE_SCROLL_SENSITIVE&lt;/code&gt;&lt;/li&gt;
+   *                    &lt;/ul&gt;
+   * @param concurrency one of the following &lt;code&gt;ResultSet&lt;/code&gt; constants:
+   *                    &lt;ul&gt;
+   *                    &lt;li&gt;&lt;code&gt;ResultSet.CONCUR_READ_ONLY&lt;/code&gt;&lt;/li&gt;
+   *                    &lt;li&gt;&lt;code&gt;ResultSet.CONCUR_UPDATABLE&lt;/code&gt;&lt;/li&gt;
+   *                    &lt;/ul&gt;
+   * @return true if supported
+   */
+  public boolean supportsResultSetConcurrency(int type, int concurrency) {
+    //Support all concurrency (ResultSet.CONCUR_READ_ONLY and ResultSet.CONCUR_UPDATABLE)
+    //so just return scroll type
+<span class="nc bnc" id="L2592" title="All 4 branches missed.">    return type == ResultSet.TYPE_SCROLL_INSENSITIVE || type == ResultSet.TYPE_FORWARD_ONLY;</span>
+  }
+
+  public boolean ownUpdatesAreVisible(int type) {
+<span class="nc" id="L2596">    return supportsResultSetType(type);</span>
+  }
+
+  public boolean ownDeletesAreVisible(int type) {
+<span class="nc" id="L2600">    return supportsResultSetType(type);</span>
+  }
+
+  public boolean ownInsertsAreVisible(int type) {
+<span class="nc" id="L2604">    return supportsResultSetType(type);</span>
+  }
+
+  public boolean othersUpdatesAreVisible(int type) {
+<span class="nc" id="L2608">    return false;</span>
+  }
+
+  public boolean othersDeletesAreVisible(int type) {
+<span class="nc" id="L2612">    return false;</span>
+  }
+
+  public boolean othersInsertsAreVisible(int type) {
+<span class="nc" id="L2616">    return false;</span>
+  }
+
+  public boolean updatesAreDetected(int type) {
+<span class="nc" id="L2620">    return false;</span>
+  }
+
+  public boolean deletesAreDetected(int type) {
+<span class="nc" id="L2624">    return false;</span>
+  }
+
+  public boolean insertsAreDetected(int type) {
+<span class="nc" id="L2628">    return false;</span>
+  }
+
+  public boolean supportsBatchUpdates() {
+<span class="nc" id="L2632">    return true;</span>
+  }
+
+  /**
+   * Retrieves a description of the user-defined types (UDTs) defined in a particular schema.
+   * Schema-specific UDTs may have type &lt;code&gt;JAVA_OBJECT&lt;/code&gt;, &lt;code&gt;STRUCT&lt;/code&gt;, or
+   * &lt;code&gt;DISTINCT&lt;/code&gt;.
+   *
+   * &lt;p&gt; Only types matching the catalog, schema, type name and type criteria
+   * are returned. They are ordered by &lt;code&gt;DATA_TYPE&lt;/code&gt;, &lt;code&gt;TYPE_CAT&lt;/code&gt;,
+   * &lt;code&gt;TYPE_SCHEM&lt;/code&gt;  and
+   * &lt;code&gt;TYPE_NAME&lt;/code&gt;.  The type name parameter may be a fully-qualified name.
+   * In this case, the catalog and schemaPattern parameters are ignored.&lt;/p&gt;
+   *
+   * &lt;p&gt; Each type description has the following columns:&lt;/p&gt;
+   *
+   * &lt;ol&gt;
+   * &lt;li&gt;&lt;B&gt;TYPE_CAT&lt;/B&gt; String {@code =&gt;} the type's catalog (may be &lt;code&gt;null&lt;/code&gt;)&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;TYPE_SCHEM&lt;/B&gt; String {@code =&gt;} type's schema (may be &lt;code&gt;null&lt;/code&gt;)&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;TYPE_NAME&lt;/B&gt; String {@code =&gt;} type name&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;CLASS_NAME&lt;/B&gt; String {@code =&gt;} Java class name&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;DATA_TYPE&lt;/B&gt; int {@code =&gt;} type value defined in java.sql.Types. One of JAVA_OBJECT,
+   * STRUCT, or DISTINCT&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;REMARKS&lt;/B&gt; String {@code =&gt;} explanatory comment on the type&lt;/li&gt;
+   * &lt;li&gt;&lt;B&gt;BASE_TYPE&lt;/B&gt; short {@code =&gt;} type code of the source type of a DISTINCT type or the
+   * type that implements the user-generated reference type of the SELF_REFERENCING_COLUMN of a
+   * structured type as defined in java.sql.Types (&lt;code&gt;null&lt;/code&gt; if DATA_TYPE is not DISTINCT or
+   * not STRUCT with REFERENCE_GENERATION = USER_DEFINED)&lt;/li&gt;
+   * &lt;/ol&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; If the driver does not support UDTs, an empty result set is returned.&lt;/p&gt;
+   *
+   * @param catalog         a catalog name; must match the catalog name as it is stored in the
+   *                        database; &quot;&quot; retrieves those without a catalog;
+   *                        &lt;code&gt;null&lt;/code&gt; means that the catalog name should not be used to
+   *                        narrow the search
+   * @param schemaPattern   a schema pattern name; must match the schema name as it is stored in the
+   *                        database; &quot;&quot; retrieves those without a schema;
+   *                        &lt;code&gt;null&lt;/code&gt; means that the schema name should not be used to
+   *                        narrow the search
+   * @param typeNamePattern a type name pattern; must match the type name as it is stored in the
+   *                        database; may be a fully qualified name
+   * @param types           a list of user-defined types (JAVA_OBJECT, STRUCT, or DISTINCT) to
+   *                        include;
+   *                        &lt;code&gt;null&lt;/code&gt; returns all types
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; object in which each row describes a UDT
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   * @since 1.2
+   */
+  @Override
+  public ResultSet getUDTs(String catalog, String schemaPattern, String typeNamePattern,
+      int[] types)
+      throws SQLException {
+<span class="nc" id="L2686">    String sql =</span>
+        &quot;SELECT ' ' TYPE_CAT, NULL TYPE_SCHEM, ' ' TYPE_NAME, ' ' CLASS_NAME, 0 DATA_TYPE, ' ' REMARKS, 0 BASE_TYPE&quot;
+            + &quot; FROM DUAL WHERE 1=0&quot;;
+
+<span class="nc" id="L2690">    return executeQuery(sql);</span>
+  }
+
+  public Connection getConnection() {
+<span class="nc" id="L2694">    return connection;</span>
+  }
+
+  public boolean supportsSavepoints() {
+<span class="nc" id="L2698">    return true;</span>
+  }
+
+  public boolean supportsNamedParameters() {
+<span class="nc" id="L2702">    return false;</span>
+  }
+
+  public boolean supportsMultipleOpenResults() {
+<span class="nc" id="L2706">    return false;</span>
+  }
+
+  public boolean supportsGetGeneratedKeys() {
+<span class="nc" id="L2710">    return true;</span>
+  }
+
+  /**
+   * Retrieves a description of the user-defined type (UDT) hierarchies defined in a particular
+   * schema in this database. Only the immediate super type/ sub type relationship is modeled. Only
+   * supertype information for UDTs matching the catalog, schema, and type name is returned. The
+   * type name parameter may be a fully-qualified name. When the UDT name supplied is a
+   * fully-qualified name, the catalog and schemaPattern parameters are ignored. If a UDT does not
+   * have a direct super type, it is not listed here. A row of the &lt;code&gt;ResultSet&lt;/code&gt; object
+   * returned by this method describes the designated UDT and a direct supertype. A row has the
+   * following columns:
+   * &lt;OL&gt;
+   * &lt;li&gt;&lt;B&gt;TYPE_CAT&lt;/B&gt; String {@code =&gt;} the UDT's catalog (may
+   * be &lt;code&gt;null&lt;/code&gt;) &lt;li&gt;&lt;B&gt;TYPE_SCHEM&lt;/B&gt; String {@code =&gt;} UDT's schema (may be
+   * &lt;code&gt;null&lt;/code&gt;)
+   * &lt;li&gt;&lt;B&gt;TYPE_NAME&lt;/B&gt; String {@code =&gt;} type name of the UDT &lt;li&gt;&lt;B&gt;SUPERTYPE_CAT&lt;/B&gt;
+   * String {@code =&gt;} the direct super type's catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;li&gt;&lt;B&gt;SUPERTYPE_SCHEM&lt;/B&gt; String {@code =&gt;} the direct super type's schema (may be
+   * &lt;code&gt;null&lt;/code&gt;)
+   * &lt;li&gt;&lt;B&gt;SUPERTYPE_NAME&lt;/B&gt; String {@code
+   * =&gt;} the direct super type's name &lt;/OL&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; If the driver does not support type hierarchies, an empty result set is
+   * returned.&lt;/p&gt;
+   *
+   * @param catalog         a catalog name; &quot;&quot; retrieves those without a catalog; &lt;code&gt;null&lt;/code&gt;
+   *                        means drop catalog name from the selection criteria
+   * @param schemaPattern   a schema name pattern; &quot;&quot; retrieves those without a schema
+   * @param typeNamePattern a UDT name pattern; may be a fully-qualified name
+   * @return a &lt;code&gt;ResultSet&lt;/code&gt; object in which a row gives information about the designated
+   *     UDT
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   * @since 1.4
+   */
+  public ResultSet getSuperTypes(String catalog, String schemaPattern, String typeNamePattern)
+      throws SQLException {
+<span class="nc" id="L2748">    String sql =</span>
+        &quot;SELECT  ' ' TYPE_CAT, NULL TYPE_SCHEM, ' ' TYPE_NAME, ' ' SUPERTYPE_CAT, ' ' SUPERTYPE_SCHEM, ' '  SUPERTYPE_NAME&quot;
+            + &quot; FROM DUAL WHERE 1=0&quot;;
+
+<span class="nc" id="L2752">    return executeQuery(sql);</span>
+  }
+
+  /**
+   * Retrieves a description of the table hierarchies defined in a particular schema in this
+   * database.
+   *
+   * &lt;P&gt;Only supertable information for tables matching the catalog, schema and table name are
+   * returned. The table name parameter may be a fully-qualified name, in which case, the catalog
+   * and schemaPattern parameters are ignored. If a table does not have a super table, it is not
+   * listed here. Supertables have to be defined in the same catalog and schema as the sub tables.
+   * Therefore, the type description does not need to include this information for the
+   * supertable.&lt;/p&gt;
+   *
+   * &lt;P&gt;Each type description has the following columns:&lt;/p&gt;
+   * &lt;OL&gt; &lt;li&gt;&lt;B&gt;TABLE_CAT&lt;/B&gt; String {@code
+   * =&gt;} the type's catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;li&gt;&lt;B&gt;TABLE_SCHEM&lt;/B&gt; String {@code =&gt;} type's schema (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;li&gt;&lt;B&gt;TABLE_NAME&lt;/B&gt; String
+   * {@code =&gt;} type name
+   * &lt;li&gt;&lt;B&gt;SUPERTABLE_NAME&lt;/B&gt; String {@code =&gt;} the direct super type's name &lt;/OL&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; If the driver does not support type hierarchies, an empty result set is
+   * returned.&lt;/p&gt;
+   *
+   * @param catalog          a catalog name; &quot;&quot; retrieves those without a catalog; &lt;code&gt;null&lt;/code&gt;
+   *                         means drop catalog name from the selection criteria
+   * @param schemaPattern    a schema name pattern; &quot;&quot; retrieves those without a schema
+   * @param tableNamePattern a table name pattern; may be a fully-qualified name
+   * @return a &lt;code&gt;ResultSet&lt;/code&gt; object in which each row is a type description
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   * @since 1.4
+   */
+  public ResultSet getSuperTables(String catalog, String schemaPattern, String tableNamePattern)
+      throws SQLException {
+<span class="nc" id="L2788">    String sql =</span>
+        &quot;SELECT  ' ' TABLE_CAT, ' ' TABLE_SCHEM, ' ' TABLE_NAME, ' ' SUPERTABLE_NAME FROM DUAL WHERE 1=0&quot;;
+<span class="nc" id="L2790">    return executeQuery(sql);</span>
+  }
+
+  /**
+   * Retrieves a description of the given attribute of the given type for a user-defined type (UDT)
+   * that is available in the given schema and catalog. Descriptions are returned only for
+   * attributes of UDTs matching the catalog, schema, type, and attribute name criteria. They are
+   * ordered by &lt;code&gt;TYPE_CAT&lt;/code&gt;, &lt;code&gt;TYPE_SCHEM&lt;/code&gt;, &lt;code&gt;TYPE_NAME&lt;/code&gt; and
+   * &lt;code&gt;ORDINAL_POSITION&lt;/code&gt;. This description does not contain inherited attributes.
+   * The &lt;code&gt;ResultSet&lt;/code&gt; object that is returned has the following columns: &lt;OL&gt;
+   * &lt;li&gt;&lt;B&gt;TYPE_CAT&lt;/B&gt; String {@code =&gt;} type catalog (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;li&gt;&lt;B&gt;TYPE_SCHEM&lt;/B&gt; String {@code =&gt;} type schema (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;li&gt;&lt;B&gt;TYPE_NAME&lt;/B&gt; String {@code =&gt;} type name &lt;li&gt;&lt;B&gt;ATTR_NAME&lt;/B&gt; String {@code =&gt;}
+   * attribute name &lt;li&gt;&lt;B&gt;DATA_TYPE&lt;/B&gt; int {@code =&gt;} attribute type SQL type from java.sql.Types
+   * &lt;li&gt;&lt;B&gt;ATTR_TYPE_NAME&lt;/B&gt; String {@code =&gt;} Data source dependent type name. For a UDT, the
+   * type name is fully qualified. For a REF, the type name is fully qualified and represents the
+   * target type of the reference type.
+   * &lt;li&gt;&lt;B&gt;ATTR_SIZE&lt;/B&gt; int {@code =&gt;} column size.  For char or date types this is the maximum
+   * number of characters; for numeric or decimal types this is precision. &lt;li&gt;&lt;B&gt;DECIMAL_DIGITS&lt;/B&gt;
+   * int {@code =&gt;} the number of fractional digits. Null is returned for data types where
+   * DECIMAL_DIGITS is not applicable.
+   * &lt;li&gt;&lt;B&gt;NUM_PREC_RADIX&lt;/B&gt; int {@code =&gt;} Radix (typically either 10 or 2) &lt;li&gt;&lt;B&gt;NULLABLE&lt;/B&gt;
+   * int {@code =&gt;} whether NULL is allowed &lt;UL&gt; &lt;li&gt; attributeNoNulls - might not allow NULL
+   * values
+   * &lt;li&gt; attributeNullable - definitely allows NULL values
+   * &lt;li&gt; attributeNullableUnknown - nullability unknown
+   * &lt;/UL&gt;
+   * &lt;li&gt;&lt;B&gt;REMARKS&lt;/B&gt; String {@code =&gt;} comment describing column (may be &lt;code&gt;null&lt;/code&gt;)
+   * &lt;li&gt;&lt;B&gt;ATTR_DEF&lt;/B&gt; String {@code =&gt;} default value (may be&lt;code&gt;null&lt;/code&gt;)
+   * &lt;li&gt;&lt;B&gt;SQL_DATA_TYPE&lt;/B&gt; int {@code =&gt;} unused &lt;li&gt;&lt;B&gt;SQL_DATETIME_SUB&lt;/B&gt; int {@code =&gt;}
+   * unused
+   * &lt;li&gt;&lt;B&gt;CHAR_OCTET_LENGTH&lt;/B&gt; int {@code =&gt;} for char types the maximum number of bytes in the
+   * column
+   * &lt;li&gt;&lt;B&gt;ORDINAL_POSITION&lt;/B&gt; int {@code =&gt;} index of the attribute in the UDT (starting at 1)
+   * &lt;li&gt;&lt;B&gt;IS_NULLABLE&lt;/B&gt; String  {@code =&gt;} ISO rules are used to determine the nullability for
+   * a attribute.
+   * &lt;UL&gt;
+   * &lt;li&gt; YES --- if the attribute can include NULLs
+   * &lt;li&gt; NO  --- if the attribute cannot include NULLs
+   * &lt;li&gt; empty string  --- if the nullability for the attribute is unknown
+   * &lt;/UL&gt;
+   * &lt;li&gt;&lt;B&gt;SCOPE_CATALOG&lt;/B&gt; String {@code =&gt;} catalog of table that is the scope of a reference
+   * attribute (&lt;code&gt;null&lt;/code&gt; if DATA_TYPE isn't REF)
+   * &lt;li&gt;&lt;B&gt;SCOPE_SCHEMA&lt;/B&gt; String {@code =&gt;} schema of table that is the scope of a reference
+   * attribute (&lt;code&gt;null&lt;/code&gt; if DATA_TYPE isn't REF)
+   * &lt;li&gt;&lt;B&gt;SCOPE_TABLE&lt;/B&gt; String {@code =&gt;} table name that is the scope of a reference attribute
+   * (&lt;code&gt;null&lt;/code&gt; if the DATA_TYPE isn't REF)
+   * &lt;li&gt;&lt;B&gt;SOURCE_DATA_TYPE&lt;/B&gt; short {@code =&gt;} source type of a distinct type or user-generated
+   * Ref type,SQL type from java.sql.Types (&lt;code&gt;null&lt;/code&gt; if DATA_TYPE isn't DISTINCT or
+   * user-generated REF)
+   * &lt;/OL&gt;
+   *
+   * @param catalog              a catalog name; must match the catalog name as it is stored in the
+   *                             database; &quot;&quot; retrieves those without a catalog; &lt;code&gt;null&lt;/code&gt;
+   *                             means that the catalog name should not be used to narrow the
+   *                             search
+   * @param schemaPattern        a schema name pattern; must match the schema name as it is stored
+   *                             in the database; &quot;&quot; retrieves those without a schema;
+   *                             &lt;code&gt;null&lt;/code&gt; means that the schema name should not be used to
+   *                             narrow the search
+   * @param typeNamePattern      a type name pattern; must match the type name as it is stored in
+   *                             the database
+   * @param attributeNamePattern an attribute name pattern; must match the attribute name as it is
+   *                             declared in the database
+   * @return a &lt;code&gt;ResultSet&lt;/code&gt; object in which each row is an attribute description
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   * @since 1.4
+   */
+  public ResultSet getAttributes(String catalog, String schemaPattern, String typeNamePattern,
+      String attributeNamePattern) throws SQLException {
+
+<span class="nc" id="L2862">    String sql =</span>
+        &quot;SELECT ' ' TYPE_CAT, ' ' TYPE_SCHEM, ' ' TYPE_NAME, ' ' ATTR_NAME, 0 DATA_TYPE,&quot;
+            + &quot; ' ' ATTR_TYPE_NAME, 0 ATTR_SIZE, 0 DECIMAL_DIGITS, 0 NUM_PREC_RADIX, 0 NULLABLE,&quot;
+            + &quot; ' ' REMARKS, ' ' ATTR_DEF,  0 SQL_DATA_TYPE, 0 SQL_DATETIME_SUB, 0 CHAR_OCTET_LENGTH,&quot;
+            + &quot; 0 ORDINAL_POSITION, ' ' IS_NULLABLE, ' ' SCOPE_CATALOG, ' ' SCOPE_SCHEMA, ' ' SCOPE_TABLE,&quot;
+            + &quot; 0 SOURCE_DATA_TYPE&quot;
+            + &quot; FROM DUAL &quot;
+            + &quot; WHERE 1=0&quot;;
+
+<span class="nc" id="L2871">    return executeQuery(sql);</span>
+  }
+
+  public boolean supportsResultSetHoldability(int holdability) {
+<span class="nc bnc" id="L2875" title="All 2 branches missed.">    return holdability == ResultSet.HOLD_CURSORS_OVER_COMMIT;</span>
+  }
+
+  public int getResultSetHoldability() {
+<span class="nc" id="L2879">    return ResultSet.HOLD_CURSORS_OVER_COMMIT;</span>
+  }
+
+  public int getDatabaseMajorVersion() {
+<span class="nc" id="L2883">    return connection.getProtocol().getMajorServerVersion();</span>
+  }
+
+  public int getDatabaseMinorVersion() {
+<span class="nc" id="L2887">    return connection.getProtocol().getMinorServerVersion();</span>
+  }
+
+  @Override
+  public int getJDBCMajorVersion() {
+<span class="nc" id="L2892">    return 4;</span>
+  }
+
+  @Override
+  public int getJDBCMinorVersion() {
+<span class="nc" id="L2897">    return 2;</span>
+  }
+
+  @Override
+  public int getSQLStateType() {
+<span class="nc" id="L2902">    return sqlStateSQL;</span>
+  }
+
+  public boolean locatorsUpdateCopy() {
+<span class="nc" id="L2906">    return false;</span>
+  }
+
+  public boolean supportsStatementPooling() {
+<span class="nc" id="L2910">    return false;</span>
+  }
+
+  public RowIdLifetime getRowIdLifetime() {
+<span class="nc" id="L2914">    return RowIdLifetime.ROWID_UNSUPPORTED;</span>
+  }
+
+  public boolean supportsStoredFunctionsUsingCallSyntax() {
+<span class="nc" id="L2918">    return true;</span>
+  }
+
+  public boolean autoCommitFailureClosesAllResultSets() {
+<span class="nc" id="L2922">    return false;</span>
+  }
+
+  /**
+   * Retrieves a list of the client info properties that the driver supports. The result set
+   * contains the following columns
+   * &lt;ol&gt;
+   * &lt;li&gt;NAME String : The name of the client info property&lt;/li&gt;
+   * &lt;li&gt;MAX_LEN int : The maximum length of the value for the property&lt;/li&gt;
+   * &lt;li&gt;DEFAULT_VALUE String : The default value of the property&lt;/li&gt;
+   * &lt;li&gt;DESCRIPTION String : A description of the property.
+   * This will typically contain information as to where this property is stored in the
+   * database.&lt;/li&gt;
+   * &lt;/ol&gt;
+   * The ResultSet is sorted by the NAME column
+   *
+   * @return A ResultSet object; each row is a supported client info property
+   */
+  public ResultSet getClientInfoProperties() {
+<span class="nc" id="L2941">    ColumnInformation[] columns = new ColumnInformation[4];</span>
+<span class="nc" id="L2942">    columns[0] = ColumnInformation.create(&quot;NAME&quot;, ColumnType.STRING);</span>
+<span class="nc" id="L2943">    columns[1] = ColumnInformation.create(&quot;MAX_LEN&quot;, ColumnType.INTEGER);</span>
+<span class="nc" id="L2944">    columns[2] = ColumnInformation.create(&quot;DEFAULT_VALUE&quot;, ColumnType.STRING);</span>
+<span class="nc" id="L2945">    columns[3] = ColumnInformation.create(&quot;DESCRIPTION&quot;, ColumnType.STRING);</span>
+
+<span class="nc" id="L2947">    byte[] sixteenMb = new byte[]{(byte) 49, (byte) 54, (byte) 55, (byte) 55, (byte) 55, (byte) 50,</span>
+        (byte) 49, (byte) 53};
+<span class="nc" id="L2949">    byte[] empty = new byte[0];</span>
+
+<span class="nc" id="L2951">    ColumnType[] types = new ColumnType[]{ColumnType.STRING, ColumnType.INTEGER, ColumnType.STRING,</span>
+        ColumnType.STRING};
+<span class="nc" id="L2953">    List&lt;byte[]&gt; rows = new ArrayList&lt;&gt;(3);</span>
+
+<span class="nc" id="L2955">    rows.add(StandardPacketInputStream.create(new byte[][]{</span>
+<span class="nc" id="L2956">        &quot;ApplicationName&quot;.getBytes(), sixteenMb, empty,</span>
+<span class="nc" id="L2957">        &quot;The name of the application currently utilizing the connection&quot;.getBytes()}, types));</span>
+
+<span class="nc" id="L2959">    rows.add(StandardPacketInputStream.create(new byte[][]{</span>
+<span class="nc" id="L2960">            &quot;ClientUser&quot;.getBytes(), sixteenMb, empty,</span>
+            (&quot;The name of the user that the application using the connection is performing work for. &quot;
+<span class="nc" id="L2962">                + &quot;This may not be the same as the user name that was used in establishing the connection.&quot;).getBytes()},</span>
+        types));
+
+<span class="nc" id="L2965">    rows.add(StandardPacketInputStream.create(new byte[][]{</span>
+<span class="nc" id="L2966">            &quot;ClientHostname&quot;.getBytes(), sixteenMb, empty,</span>
+<span class="nc" id="L2967">            &quot;The hostname of the computer the application using the connection is running on&quot;.getBytes()},</span>
+        types));
+
+<span class="nc" id="L2970">    return new SelectResultSet(columns, rows, connection.getProtocol(),</span>
+        ResultSet.TYPE_SCROLL_INSENSITIVE);
+  }
+
+  /**
+   * Retrieves a description of the  system and user functions available in the given catalog. Only
+   * system and user function descriptions matching the schema and function name criteria are
+   * returned. They are ordered by &lt;code&gt;FUNCTION_CAT&lt;/code&gt;, &lt;code&gt;FUNCTION_SCHEM&lt;/code&gt;,
+   * &lt;code&gt;FUNCTION_NAME&lt;/code&gt; and
+   * &lt;code&gt;SPECIFIC_ NAME&lt;/code&gt;.
+   *
+   * &lt;P&gt;Each function description has the the following columns:&lt;/p&gt;
+   *
+   * &lt;OL&gt;
+   *   &lt;li&gt;&lt;B&gt;FUNCTION_CAT&lt;/B&gt; String {@code =&gt;} function catalog (may be &lt;code&gt;null&lt;/code&gt;)&lt;/li&gt;
+   *   &lt;li&gt;&lt;B&gt;FUNCTION_SCHEM&lt;/B&gt; String {@code =&gt;} function schema (may be &lt;code&gt;null&lt;/code&gt;)&lt;/li&gt;
+   *   &lt;li&gt;&lt;B&gt;FUNCTION_NAME&lt;/B&gt; String {@code =&gt;} function name. This is the name used to invoke
+   *   the function &lt;/li&gt;
+   *   &lt;li&gt;&lt;B&gt;REMARKS&lt;/B&gt; String {@code =&gt;} explanatory comment on the function&lt;/li&gt;
+   *   &lt;li&gt;&lt;B&gt;FUNCTION_TYPE&lt;/B&gt; short {@code =&gt;} kind of function:
+   *     &lt;UL&gt;
+   *       &lt;li&gt;functionResultUnknown - Cannot determine if a return value or table will be
+   *       returned&lt;/li&gt;
+   *       &lt;li&gt; functionNoTable- Does not return a table&lt;/li&gt;
+   *       &lt;li&gt; functionReturnsTable - Returns a table&lt;/li&gt;
+   *     &lt;/UL&gt;
+   *   &lt;/li&gt;
+   *   &lt;li&gt;&lt;B&gt;SPECIFIC_NAME&lt;/B&gt; String  {@code =&gt;} the name which uniquely identifies this function
+   *   within its schema.  This is a user specified, or DBMS generated, name that may be different
+   *   then the &lt;code&gt;FUNCTION_NAME&lt;/code&gt; for example with overload functions&lt;/li&gt;
+   * &lt;/OL&gt;
+   *
+   * &lt;p&gt;A user may not have
+   * permission to execute any of the functions that are returned by &lt;code&gt;getFunctions&lt;/code&gt;&lt;/p&gt;
+   *
+   * @param catalog             a catalog name; must match the catalog name as it is stored in the
+   *                            database; &quot;&quot; retrieves those without a catalog; &lt;code&gt;null&lt;/code&gt;
+   *                            means that the catalog name should not be used to narrow the search
+   * @param schemaPattern       a schema name pattern; must match the schema name as it is stored in
+   *                            the database; &quot;&quot; retrieves those without a schema; &lt;code&gt;null&lt;/code&gt;
+   *                            means that the schema name should not be used to narrow the search
+   * @param functionNamePattern a function name pattern; must match the function name as it is
+   *                            stored in the database
+   * @return &lt;code&gt;ResultSet&lt;/code&gt; - each row is a function description
+   * @throws SQLException if a database access error occurs
+   * @see #getSearchStringEscape
+   * @since 1.6
+   */
+  public ResultSet getFunctions(String catalog, String schemaPattern, String functionNamePattern)
+      throws SQLException {
+<span class="nc" id="L3020">    String sql =</span>
+        &quot;SELECT ROUTINE_SCHEMA FUNCTION_CAT,NULL FUNCTION_SCHEM, ROUTINE_NAME FUNCTION_NAME,&quot;
+            + &quot; ROUTINE_COMMENT REMARKS,&quot; + functionNoTable + &quot; FUNCTION_TYPE, SPECIFIC_NAME &quot;
+            + &quot; FROM INFORMATION_SCHEMA.ROUTINES &quot;
+            + &quot; WHERE &quot;
+<span class="nc" id="L3025">            + catalogCond(&quot;ROUTINE_SCHEMA&quot;, catalog)</span>
+            + &quot; AND &quot;
+<span class="nc" id="L3027">            + patternCond(&quot;ROUTINE_NAME&quot;, functionNamePattern)</span>
+            + &quot; AND ROUTINE_TYPE='FUNCTION'&quot;;
+
+<span class="nc" id="L3030">    return executeQuery(sql);</span>
+  }
+
+  public &lt;T&gt; T unwrap(final Class&lt;T&gt; iface) {
+<span class="nc" id="L3034">    return null;</span>
+  }
+
+  public boolean isWrapperFor(final Class&lt;?&gt; iface) {
+<span class="nc" id="L3038">    return false;</span>
+  }
+
+  @Override
+  public long getMaxLogicalLobSize() {
+<span class="nc" id="L3043">    return 4294967295L;</span>
+  }
+
+  @Override
+  public boolean supportsRefCursors() {
+<span class="nc" id="L3048">    return false;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

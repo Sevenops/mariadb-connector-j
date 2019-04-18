@@ -1,0 +1,1645 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>UpdatableResultSet.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.read.resultset</a> &gt; <span class="el_source">UpdatableResultSet.java</span></div><h1>UpdatableResultSet.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.com.read.resultset;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
+import java.math.BigDecimal;
+import java.sql.Array;
+import java.sql.Blob;
+import java.sql.Clob;
+import java.sql.Date;
+import java.sql.NClob;
+import java.sql.PreparedStatement;
+import java.sql.Ref;
+import java.sql.ResultSet;
+import java.sql.RowId;
+import java.sql.SQLDataException;
+import java.sql.SQLException;
+import java.sql.SQLXML;
+import java.sql.Statement;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.sql.Types;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.ZonedDateTime;
+import java.util.Arrays;
+import java.util.TimeZone;
+import org.mariadb.jdbc.BasePrepareStatement;
+import org.mariadb.jdbc.ClientSidePreparedStatement;
+import org.mariadb.jdbc.MariaDbConnection;
+import org.mariadb.jdbc.ServerSidePreparedStatement;
+import org.mariadb.jdbc.internal.ColumnType;
+import org.mariadb.jdbc.internal.com.read.dao.Results;
+import org.mariadb.jdbc.internal.com.send.parameters.BigDecimalParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.ByteArrayParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.ByteParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.DateParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.DefaultParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.DoubleParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.FloatParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.IntParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.LongParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.NullParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.OffsetTimeParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.ParameterHolder;
+import org.mariadb.jdbc.internal.com.send.parameters.ReaderParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.ShortParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.StreamParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.StringParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.TimeParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.TimestampParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.ZonedDateTimeParameter;
+import org.mariadb.jdbc.internal.io.input.PacketInputStream;
+import org.mariadb.jdbc.internal.protocol.Protocol;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+public class UpdatableResultSet extends SelectResultSet {
+
+  private static final int STATE_STANDARD = 0;
+  private static final int STATE_UPDATE = 1;
+  private static final int STATE_UPDATED = 2;
+  private static final int STATE_INSERT = 3;
+  private String database;
+  private String table;
+
+  private boolean canBeUpdate;
+  private boolean canBeInserted;
+  private boolean canBeRefresh;
+  private int notInsertRowPointer;
+
+  private String exceptionUpdateMsg;
+  private String exceptionInsertMsg;
+<span class="nc" id="L129">  private int state = STATE_STANDARD;</span>
+  private ParameterHolder[] parameterHolders;
+  private MariaDbConnection connection;
+<span class="nc" id="L132">  private PreparedStatement refreshPreparedStatement = null;</span>
+<span class="nc" id="L133">  private ClientSidePreparedStatement insertPreparedStatement = null;</span>
+<span class="nc" id="L134">  private ClientSidePreparedStatement deletePreparedStatement = null;</span>
+
+
+  /**
+   * Constructor.
+   *
+   * @param columnsInformation column information
+   * @param results            results
+   * @param protocol           current protocol
+   * @param reader             stream fetcher
+   * @param callableResult     is it from a callableStatement ?
+   * @param eofDeprecated      is EOF deprecated
+   * @throws IOException  if any connection error occur
+   * @throws SQLException if any connection error occur
+   */
+  public UpdatableResultSet(ColumnInformation[] columnsInformation, Results results,
+      Protocol protocol, PacketInputStream reader, boolean callableResult, boolean eofDeprecated)
+      throws IOException, SQLException {
+<span class="nc" id="L152">    super(columnsInformation, results, protocol, reader, callableResult, eofDeprecated);</span>
+<span class="nc" id="L153">    checkIfUpdatable(results);</span>
+<span class="nc" id="L154">    parameterHolders = new ParameterHolder[columnInformationLength];</span>
+<span class="nc" id="L155">  }</span>
+
+
+  @Override
+  public int getConcurrency() {
+<span class="nc" id="L160">    return CONCUR_UPDATABLE;</span>
+  }
+
+  private void checkIfUpdatable(Results results) throws SQLException {
+
+<span class="nc" id="L165">    database = null;</span>
+<span class="nc" id="L166">    table = null;</span>
+<span class="nc" id="L167">    canBeUpdate = true;</span>
+<span class="nc" id="L168">    canBeInserted = true;</span>
+<span class="nc" id="L169">    canBeRefresh = false;</span>
+
+    //check that resultSet concern one table and database exactly
+<span class="nc bnc" id="L172" title="All 2 branches missed.">    for (ColumnInformation columnInformation : columnsInformation) {</span>
+
+<span class="nc bnc" id="L174" title="All 2 branches missed.">      if (columnInformation.getDatabase() == null</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">          || columnInformation.getDatabase().isEmpty()) {</span>
+
+<span class="nc" id="L177">        cannotUpdateInsertRow(</span>
+            &quot;The result-set contains fields without without any database information&quot;);
+<span class="nc" id="L179">        return;</span>
+
+      } else {
+
+<span class="nc bnc" id="L183" title="All 4 branches missed.">        if (database != null &amp;&amp; !database.equals(columnInformation.getDatabase())) {</span>
+<span class="nc" id="L184">          cannotUpdateInsertRow(&quot;The result-set contains more than one database&quot;);</span>
+<span class="nc" id="L185">          return;</span>
+        }
+
+<span class="nc" id="L188">        database = columnInformation.getDatabase();</span>
+      }
+
+<span class="nc bnc" id="L191" title="All 2 branches missed.">      if (columnInformation.getOriginalTable() == null</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">          || columnInformation.getOriginalTable().isEmpty()) {</span>
+
+<span class="nc" id="L194">        cannotUpdateInsertRow(</span>
+            &quot;The result-set contains fields without without any table information&quot;);
+<span class="nc" id="L196">        return;</span>
+
+      } else {
+
+<span class="nc bnc" id="L200" title="All 4 branches missed.">        if (table != null &amp;&amp; !table.equals(columnInformation.getOriginalTable())) {</span>
+<span class="nc" id="L201">          cannotUpdateInsertRow(&quot;The result-set contains fields on different tables&quot;);</span>
+<span class="nc" id="L202">          return;</span>
+        }
+
+<span class="nc" id="L205">        table = columnInformation.getOriginalTable();</span>
+      }
+    }
+
+<span class="nc bnc" id="L209" title="All 2 branches missed.">    if (database == null) {</span>
+<span class="nc" id="L210">      cannotUpdateInsertRow(&quot;The result-set does not contain any table information&quot;);</span>
+<span class="nc" id="L211">      return;</span>
+    }
+
+<span class="nc bnc" id="L214" title="All 2 branches missed.">    if (table == null) {</span>
+<span class="nc" id="L215">      cannotUpdateInsertRow(&quot;The result-set does not contain any table information&quot;);</span>
+<span class="nc" id="L216">      return;</span>
+    }
+
+    //read table metadata
+<span class="nc bnc" id="L220" title="All 2 branches missed.">    if (canBeUpdate) {</span>
+<span class="nc bnc" id="L221" title="All 4 branches missed.">      if (results.getStatement() != null &amp;&amp; results.getStatement().getConnection() != null) {</span>
+
+<span class="nc" id="L223">        connection = results.getStatement().getConnection();</span>
+<span class="nc" id="L224">        Statement stmt = connection</span>
+<span class="nc" id="L225">            .createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);</span>
+<span class="nc" id="L226">        ResultSet rs = stmt.executeQuery(&quot;SHOW COLUMNS FROM `&quot; + database + &quot;`.`&quot; + table + &quot;`&quot;);</span>
+
+<span class="nc" id="L228">        UpdatableColumnInformation[] updatableColumns = new UpdatableColumnInformation[columnInformationLength];</span>
+
+<span class="nc" id="L230">        boolean primaryFound = false;</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">        while (rs.next()) {</span>
+          //read SHOW COLUMNS informations
+<span class="nc" id="L233">          String fieldName = rs.getString(&quot;Field&quot;);</span>
+<span class="nc" id="L234">          boolean canBeNull = &quot;YES&quot;.equals(rs.getString(&quot;Null&quot;));</span>
+<span class="nc bnc" id="L235" title="All 2 branches missed.">          boolean hasDefault = rs.getString(&quot;Default&quot;) == null;</span>
+<span class="nc" id="L236">          String extra = rs.getString(&quot;Extra&quot;);</span>
+<span class="nc bnc" id="L237" title="All 4 branches missed.">          boolean generated = extra != null &amp;&amp; !extra.isEmpty();</span>
+<span class="nc bnc" id="L238" title="All 4 branches missed.">          boolean autoIncrement = extra != null &amp;&amp; &quot;auto_increment&quot;.equals(extra);</span>
+<span class="nc" id="L239">          boolean primary = &quot;PRI&quot;.equals(rs.getString(&quot;Key&quot;));</span>
+
+<span class="nc" id="L241">          boolean found = false;</span>
+
+          //update column information with SHOW COLUMNS additional informations
+<span class="nc bnc" id="L244" title="All 2 branches missed.">          for (int index = 0; index &lt; columnInformationLength; index++) {</span>
+<span class="nc" id="L245">            ColumnInformation columnInformation = columnsInformation[index];</span>
+<span class="nc bnc" id="L246" title="All 2 branches missed.">            if (fieldName.equals(columnInformation.getOriginalName())) {</span>
+<span class="nc" id="L247">              updatableColumns[index] = new UpdatableColumnInformation(</span>
+                  columnInformation, canBeNull, hasDefault, generated, primary, autoIncrement);
+<span class="nc" id="L249">              found = true;</span>
+            }
+          }
+
+<span class="nc bnc" id="L253" title="All 2 branches missed.">          if (primary) {</span>
+<span class="nc" id="L254">            primaryFound = true;</span>
+          }
+
+<span class="nc bnc" id="L257" title="All 2 branches missed.">          if (!found) {</span>
+<span class="nc bnc" id="L258" title="All 2 branches missed.">            if (primary) {</span>
+              //without primary key in resultSet, update/delete cannot be done, since query need
+              //to be updated/deleted for this unknown identifier
+              //
+              // For insert, key is not mandatory in resultSet if automatically generated, but data
+              // cannot be added to rows in adequate format
+<span class="nc" id="L264">              cannotUpdateInsertRow(&quot;Primary key field `&quot; + fieldName + &quot;` is not in result-set&quot;);</span>
+<span class="nc" id="L265">              return;</span>
+            }
+
+            //check that missing field can be null / have default values / are generated automatically
+<span class="nc bnc" id="L269" title="All 6 branches missed.">            if (!canBeNull &amp;&amp; !hasDefault &amp;&amp; !generated) {</span>
+<span class="nc" id="L270">              cannotInsertRow(&quot;Field `&quot; + fieldName + &quot;` is not present in query returning &quot;</span>
+                  + &quot;fields and cannot be null&quot;);
+            }
+          }
+<span class="nc" id="L274">        }</span>
+
+<span class="nc bnc" id="L276" title="All 2 branches missed.">        if (!primaryFound) {</span>
+          //if there is no primary key (UNIQUE key are considered as primary by SHOW COLUMNS),
+          //rows cannot be updated.
+<span class="nc" id="L279">          cannotUpdateInsertRow(&quot;Table `&quot; + database + &quot;`.`&quot; + table</span>
+              + &quot;` has no primary key&quot;);
+<span class="nc" id="L281">          return;</span>
+        } else {
+<span class="nc" id="L283">          canBeRefresh = true;</span>
+        }
+
+<span class="nc" id="L286">        boolean ensureAllColumnHaveMeta = true;</span>
+<span class="nc bnc" id="L287" title="All 2 branches missed.">        for (int index = 0; index &lt; columnInformationLength; index++) {</span>
+<span class="nc bnc" id="L288" title="All 2 branches missed.">          if (updatableColumns[index] == null) {</span>
+            //abnormal error : some field in META are not listed in SHOW COLUMNS
+<span class="nc" id="L290">            cannotUpdateInsertRow(&quot;Metadata information not available for table `&quot;</span>
+                + database + &quot;`.`&quot; + table + &quot;`, field `&quot; + columnsInformation[index]
+<span class="nc" id="L292">                .getOriginalName() + &quot;`&quot;);</span>
+<span class="nc" id="L293">            ensureAllColumnHaveMeta = false;</span>
+          }
+        }
+<span class="nc bnc" id="L296" title="All 2 branches missed.">        if (ensureAllColumnHaveMeta) {</span>
+<span class="nc" id="L297">          columnsInformation = updatableColumns;</span>
+        }
+<span class="nc" id="L299">      } else {</span>
+<span class="nc" id="L300">        throw new SQLException(&quot;abnormal error : connection is null&quot;);</span>
+      }
+    }
+<span class="nc" id="L303">  }</span>
+
+  private UpdatableColumnInformation[] getUpdatableColumns() {
+<span class="nc" id="L306">    return (UpdatableColumnInformation[]) columnsInformation;</span>
+  }
+
+  private void cannotUpdateInsertRow(String reason) {
+<span class="nc bnc" id="L310" title="All 2 branches missed.">    if (exceptionUpdateMsg == null) {</span>
+<span class="nc" id="L311">      exceptionUpdateMsg = &quot;ResultSet cannot be updated. &quot; + reason;</span>
+    }
+<span class="nc bnc" id="L313" title="All 2 branches missed.">    if (exceptionInsertMsg == null) {</span>
+<span class="nc" id="L314">      exceptionInsertMsg = &quot;No row can be inserted. &quot; + reason;</span>
+    }
+<span class="nc" id="L316">    canBeUpdate = false;</span>
+<span class="nc" id="L317">    canBeInserted = false;</span>
+<span class="nc" id="L318">  }</span>
+
+  private void cannotInsertRow(String reason) {
+<span class="nc bnc" id="L321" title="All 2 branches missed.">    if (exceptionInsertMsg == null) {</span>
+<span class="nc" id="L322">      exceptionInsertMsg = &quot;No row can be inserted. &quot; + reason;</span>
+    }
+<span class="nc" id="L324">    canBeInserted = false;</span>
+<span class="nc" id="L325">  }</span>
+
+  private void checkUpdatable(int position) throws SQLException {
+
+<span class="nc bnc" id="L329" title="All 4 branches missed.">    if (position &lt;= 0 || position &gt; columnInformationLength) {</span>
+<span class="nc" id="L330">      throw new SQLDataException(&quot;No such column: &quot; + position, &quot;22023&quot;);</span>
+    }
+
+<span class="nc bnc" id="L333" title="All 2 branches missed.">    if (state == STATE_STANDARD) {</span>
+<span class="nc" id="L334">      state = STATE_UPDATE;</span>
+    }
+<span class="nc bnc" id="L336" title="All 2 branches missed.">    if (state == STATE_UPDATE) {</span>
+<span class="nc bnc" id="L337" title="All 2 branches missed.">      if (getRowPointer() &lt; 0) {</span>
+<span class="nc" id="L338">        throw new SQLDataException(&quot;Current position is before the first row&quot;, &quot;22023&quot;);</span>
+      }
+
+<span class="nc bnc" id="L341" title="All 2 branches missed.">      if (getRowPointer() &gt;= getDataSize()) {</span>
+<span class="nc" id="L342">        throw new SQLDataException(&quot;Current position is after the last row&quot;, &quot;22023&quot;);</span>
+      }
+
+<span class="nc bnc" id="L345" title="All 2 branches missed.">      if (!canBeUpdate) {</span>
+<span class="nc" id="L346">        throw new SQLException(exceptionUpdateMsg);</span>
+      }
+    }
+<span class="nc bnc" id="L349" title="All 4 branches missed.">    if (state == STATE_INSERT &amp;&amp; !canBeInserted) {</span>
+<span class="nc" id="L350">      throw new SQLException(exceptionInsertMsg);</span>
+    }
+<span class="nc" id="L352">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNull(int columnIndex) throws SQLException {
+<span class="nc" id="L358">    checkUpdatable(columnIndex);</span>
+
+<span class="nc" id="L360">    parameterHolders[columnIndex - 1] = new NullParameter();</span>
+<span class="nc" id="L361">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNull(String columnLabel) throws SQLException {
+<span class="nc" id="L367">    updateNull(findColumn(columnLabel));</span>
+<span class="nc" id="L368">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBoolean(int columnIndex, boolean bool) throws SQLException {
+<span class="nc" id="L374">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L375" title="All 2 branches missed.">    parameterHolders[columnIndex - 1] = new ByteParameter(bool ? (byte) 1 : (byte) 0);</span>
+<span class="nc" id="L376">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBoolean(String columnLabel, boolean value) throws SQLException {
+<span class="nc" id="L382">    updateBoolean(findColumn(columnLabel), value);</span>
+<span class="nc" id="L383">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateByte(int columnIndex, byte value) throws SQLException {
+<span class="nc" id="L389">    checkUpdatable(columnIndex);</span>
+<span class="nc" id="L390">    parameterHolders[columnIndex - 1] = new ByteParameter(value);</span>
+<span class="nc" id="L391">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateByte(String columnLabel, byte value) throws SQLException {
+<span class="nc" id="L397">    updateByte(findColumn(columnLabel), value);</span>
+<span class="nc" id="L398">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateShort(int columnIndex, short value) throws SQLException {
+<span class="nc" id="L404">    checkUpdatable(columnIndex);</span>
+<span class="nc" id="L405">    parameterHolders[columnIndex - 1] = new ShortParameter(value);</span>
+<span class="nc" id="L406">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateShort(String columnLabel, short value) throws SQLException {
+<span class="nc" id="L412">    updateShort(findColumn(columnLabel), value);</span>
+<span class="nc" id="L413">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateInt(int columnIndex, int value) throws SQLException {
+<span class="nc" id="L419">    checkUpdatable(columnIndex);</span>
+<span class="nc" id="L420">    parameterHolders[columnIndex - 1] = new IntParameter(value);</span>
+<span class="nc" id="L421">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateInt(String columnLabel, int value) throws SQLException {
+<span class="nc" id="L427">    updateInt(findColumn(columnLabel), value);</span>
+<span class="nc" id="L428">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateFloat(int columnIndex, float value) throws SQLException {
+<span class="nc" id="L434">    checkUpdatable(columnIndex);</span>
+<span class="nc" id="L435">    parameterHolders[columnIndex - 1] = new FloatParameter(value);</span>
+<span class="nc" id="L436">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateFloat(String columnLabel, float value) throws SQLException {
+<span class="nc" id="L442">    updateFloat(findColumn(columnLabel), value);</span>
+<span class="nc" id="L443">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateDouble(int columnIndex, double value) throws SQLException {
+<span class="nc" id="L449">    checkUpdatable(columnIndex);</span>
+<span class="nc" id="L450">    parameterHolders[columnIndex - 1] = new DoubleParameter(value);</span>
+<span class="nc" id="L451">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateDouble(String columnLabel, double value) throws SQLException {
+<span class="nc" id="L457">    updateDouble(findColumn(columnLabel), value);</span>
+<span class="nc" id="L458">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBigDecimal(int columnIndex, BigDecimal value) throws SQLException {
+<span class="nc" id="L464">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L465" title="All 2 branches missed.">    if (value == null) {</span>
+<span class="nc" id="L466">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.DECIMAL);</span>
+<span class="nc" id="L467">      return;</span>
+    }
+<span class="nc" id="L469">    parameterHolders[columnIndex - 1] = new BigDecimalParameter(value);</span>
+<span class="nc" id="L470">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBigDecimal(String columnLabel, BigDecimal value) throws SQLException {
+<span class="nc" id="L476">    updateBigDecimal(findColumn(columnLabel), value);</span>
+<span class="nc" id="L477">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateString(int columnIndex, String value) throws SQLException {
+<span class="nc" id="L483">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L484" title="All 2 branches missed.">    if (value == null) {</span>
+<span class="nc" id="L485">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.STRING);</span>
+<span class="nc" id="L486">      return;</span>
+    }
+<span class="nc" id="L488">    parameterHolders[columnIndex - 1] = new StringParameter(value, noBackslashEscapes);</span>
+<span class="nc" id="L489">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateString(String columnLabel, String value) throws SQLException {
+<span class="nc" id="L495">    updateString(findColumn(columnLabel), value);</span>
+<span class="nc" id="L496">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBytes(int columnIndex, byte[] value) throws SQLException {
+<span class="nc" id="L502">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L503" title="All 2 branches missed.">    if (value == null) {</span>
+<span class="nc" id="L504">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.BLOB);</span>
+<span class="nc" id="L505">      return;</span>
+    }
+<span class="nc" id="L507">    parameterHolders[columnIndex - 1] = new ByteArrayParameter(value, noBackslashEscapes);</span>
+<span class="nc" id="L508">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBytes(String columnLabel, byte[] value) throws SQLException {
+<span class="nc" id="L514">    updateBytes(findColumn(columnLabel), value);</span>
+<span class="nc" id="L515">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateDate(int columnIndex, Date date) throws SQLException {
+<span class="nc" id="L521">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L522" title="All 2 branches missed.">    if (date == null) {</span>
+<span class="nc" id="L523">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.DATE);</span>
+<span class="nc" id="L524">      return;</span>
+    }
+<span class="nc" id="L526">    parameterHolders[columnIndex - 1] = new DateParameter(date, TimeZone.getDefault(), options);</span>
+<span class="nc" id="L527">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateDate(String columnLabel, Date value) throws SQLException {
+<span class="nc" id="L533">    updateDate(findColumn(columnLabel), value);</span>
+<span class="nc" id="L534">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateTime(int columnIndex, Time time) throws SQLException {
+<span class="nc" id="L540">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L541" title="All 2 branches missed.">    if (time == null) {</span>
+<span class="nc" id="L542">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.TIME);</span>
+<span class="nc" id="L543">      return;</span>
+    }
+<span class="nc" id="L545">    parameterHolders[columnIndex - 1] = new TimeParameter(time, TimeZone.getDefault(),</span>
+        options.useFractionalSeconds);
+<span class="nc" id="L547">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateTime(String columnLabel, Time value) throws SQLException {
+<span class="nc" id="L553">    updateTime(findColumn(columnLabel), value);</span>
+<span class="nc" id="L554">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateTimestamp(int columnIndex, Timestamp timeStamp) throws SQLException {
+<span class="nc" id="L560">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L561" title="All 2 branches missed.">    if (timeStamp == null) {</span>
+<span class="nc" id="L562">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.DATETIME);</span>
+<span class="nc" id="L563">      return;</span>
+    }
+<span class="nc" id="L565">    parameterHolders[columnIndex - 1] = new TimestampParameter(timeStamp, timeZone,</span>
+        options.useFractionalSeconds);
+<span class="nc" id="L567">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateTimestamp(String columnLabel, Timestamp value) throws SQLException {
+<span class="nc" id="L573">    updateTimestamp(findColumn(columnLabel), value);</span>
+<span class="nc" id="L574">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(int columnIndex, InputStream inputStream) throws SQLException {
+<span class="nc" id="L580">    updateAsciiStream(columnIndex, inputStream, Long.MAX_VALUE);</span>
+<span class="nc" id="L581">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(String columnLabel, InputStream inputStream) throws SQLException {
+<span class="nc" id="L587">    updateAsciiStream(findColumn(columnLabel), inputStream);</span>
+<span class="nc" id="L588">  }</span>
+
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(int columnIndex, InputStream inputStream, int length)
+      throws SQLException {
+<span class="nc" id="L596">    updateAsciiStream(columnIndex, inputStream, (long) length);</span>
+<span class="nc" id="L597">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(String columnLabel, InputStream inputStream, int length)
+      throws SQLException {
+<span class="nc" id="L604">    updateAsciiStream(findColumn(columnLabel), inputStream, length);</span>
+<span class="nc" id="L605">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(int columnIndex, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L612">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L613" title="All 2 branches missed.">    if (inputStream == null) {</span>
+<span class="nc" id="L614">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.BLOB);</span>
+<span class="nc" id="L615">      return;</span>
+    }
+<span class="nc" id="L617">    parameterHolders[columnIndex - 1] = new StreamParameter(inputStream, length,</span>
+        noBackslashEscapes);
+<span class="nc" id="L619">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(String columnLabel, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L626">    updateAsciiStream(findColumn(columnLabel), inputStream, length);</span>
+<span class="nc" id="L627">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(int columnIndex, InputStream inputStream, int length)
+      throws SQLException {
+<span class="nc" id="L634">    updateBinaryStream(columnIndex, inputStream, (long) length);</span>
+<span class="nc" id="L635">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(int columnIndex, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L642">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L643" title="All 2 branches missed.">    if (inputStream == null) {</span>
+<span class="nc" id="L644">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.BLOB);</span>
+<span class="nc" id="L645">      return;</span>
+    }
+<span class="nc" id="L647">    parameterHolders[columnIndex - 1] = new StreamParameter(inputStream, length,</span>
+        noBackslashEscapes);
+<span class="nc" id="L649">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(String columnLabel, InputStream inputStream, int length)
+      throws SQLException {
+<span class="nc" id="L656">    updateBinaryStream(findColumn(columnLabel), inputStream, (long) length);</span>
+<span class="nc" id="L657">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(String columnLabel, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L664">    updateBinaryStream(findColumn(columnLabel), inputStream, length);</span>
+<span class="nc" id="L665">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(int columnIndex, InputStream inputStream) throws SQLException {
+<span class="nc" id="L671">    updateBinaryStream(columnIndex, inputStream, Long.MAX_VALUE);</span>
+<span class="nc" id="L672">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(String columnLabel, InputStream inputStream) throws SQLException {
+<span class="nc" id="L678">    updateBinaryStream(findColumn(columnLabel), inputStream);</span>
+<span class="nc" id="L679">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(int columnIndex, Reader reader, int length)
+      throws SQLException {
+<span class="nc" id="L686">    updateCharacterStream(columnIndex, reader, (long) length);</span>
+<span class="nc" id="L687">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(int columnIndex, Reader value) throws SQLException {
+<span class="nc" id="L693">    updateCharacterStream(columnIndex, value, Long.MAX_VALUE);</span>
+<span class="nc" id="L694">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(String columnLabel, Reader reader, int length)
+      throws SQLException {
+<span class="nc" id="L701">    updateCharacterStream(findColumn(columnLabel), reader, (long) length);</span>
+<span class="nc" id="L702">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(int columnIndex, Reader value, long length)
+      throws SQLException {
+<span class="nc" id="L709">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L710" title="All 2 branches missed.">    if (value == null) {</span>
+<span class="nc" id="L711">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.BLOB);</span>
+<span class="nc" id="L712">      return;</span>
+    }
+<span class="nc" id="L714">    parameterHolders[columnIndex - 1] = new ReaderParameter(value, length, noBackslashEscapes);</span>
+<span class="nc" id="L715">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(String columnLabel, Reader reader, long length)
+      throws SQLException {
+<span class="nc" id="L722">    updateCharacterStream(findColumn(columnLabel), reader, length);</span>
+<span class="nc" id="L723">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(String columnLabel, Reader reader) throws SQLException {
+<span class="nc" id="L729">    updateCharacterStream(findColumn(columnLabel), reader, Long.MAX_VALUE);</span>
+<span class="nc" id="L730">  }</span>
+
+
+  private void updateInternalObject(final int parameterIndex, final Object obj,
+      final int targetSqlType,
+      final long scaleOrLength) throws SQLException {
+<span class="nc bnc" id="L736" title="All 2 branches missed.">    switch (targetSqlType) {</span>
+      case Types.ARRAY:
+      case Types.DATALINK:
+      case Types.JAVA_OBJECT:
+      case Types.REF:
+      case Types.ROWID:
+      case Types.SQLXML:
+      case Types.STRUCT:
+<span class="nc" id="L744">        throw ExceptionMapper.getFeatureNotSupportedException(&quot;Type not supported&quot;);</span>
+      default:
+        break;
+    }
+
+<span class="nc bnc" id="L749" title="All 2 branches missed.">    if (obj == null) {</span>
+<span class="nc" id="L750">      updateNull(parameterIndex);</span>
+<span class="nc bnc" id="L751" title="All 2 branches missed.">    } else if (obj instanceof String) {</span>
+<span class="nc bnc" id="L752" title="All 2 branches missed.">      if (targetSqlType == Types.BLOB) {</span>
+<span class="nc" id="L753">        throw ExceptionMapper.getSqlException(&quot;Cannot convert a String to a Blob&quot;);</span>
+      }
+<span class="nc" id="L755">      String str = (String) obj;</span>
+      try {
+<span class="nc bnc" id="L757" title="All 14 branches missed.">        switch (targetSqlType) {</span>
+          case Types.BIT:
+          case Types.BOOLEAN:
+<span class="nc bnc" id="L760" title="All 4 branches missed.">            updateBoolean(parameterIndex, !(&quot;false&quot;.equalsIgnoreCase(str) || &quot;0&quot;.equals(str)));</span>
+<span class="nc" id="L761">            break;</span>
+          case Types.TINYINT:
+<span class="nc" id="L763">            updateByte(parameterIndex, Byte.parseByte(str));</span>
+<span class="nc" id="L764">            break;</span>
+          case Types.SMALLINT:
+<span class="nc" id="L766">            updateShort(parameterIndex, Short.parseShort(str));</span>
+<span class="nc" id="L767">            break;</span>
+          case Types.INTEGER:
+<span class="nc" id="L769">            updateInt(parameterIndex, Integer.parseInt(str));</span>
+<span class="nc" id="L770">            break;</span>
+          case Types.DOUBLE:
+          case Types.FLOAT:
+<span class="nc" id="L773">            updateDouble(parameterIndex, Double.valueOf(str));</span>
+<span class="nc" id="L774">            break;</span>
+          case Types.REAL:
+<span class="nc" id="L776">            updateFloat(parameterIndex, Float.valueOf(str));</span>
+<span class="nc" id="L777">            break;</span>
+          case Types.BIGINT:
+<span class="nc" id="L779">            updateLong(parameterIndex, Long.valueOf(str));</span>
+<span class="nc" id="L780">            break;</span>
+          case Types.DECIMAL:
+          case Types.NUMERIC:
+<span class="nc" id="L783">            updateBigDecimal(parameterIndex, new BigDecimal(str));</span>
+<span class="nc" id="L784">            break;</span>
+          case Types.CLOB:
+          case Types.NCLOB:
+          case Types.CHAR:
+          case Types.VARCHAR:
+          case Types.LONGVARCHAR:
+          case Types.NCHAR:
+          case Types.NVARCHAR:
+          case Types.LONGNVARCHAR:
+<span class="nc" id="L793">            updateString(parameterIndex, str);</span>
+<span class="nc" id="L794">            break;</span>
+          case Types.TIMESTAMP:
+<span class="nc bnc" id="L796" title="All 2 branches missed.">            if (str.startsWith(&quot;0000-00-00&quot;)) {</span>
+<span class="nc" id="L797">              updateTimestamp(parameterIndex, null);</span>
+            } else {
+<span class="nc" id="L799">              updateTimestamp(parameterIndex, Timestamp.valueOf(str));</span>
+            }
+<span class="nc" id="L801">            break;</span>
+          case Types.TIME:
+<span class="nc" id="L803">            updateTime(parameterIndex, Time.valueOf((String) obj));</span>
+<span class="nc" id="L804">            break;</span>
+          case Types.TIME_WITH_TIMEZONE:
+<span class="nc" id="L806">            parameterHolders[parameterIndex - 1] = new OffsetTimeParameter(</span>
+<span class="nc" id="L807">                OffsetTime.parse(str),</span>
+<span class="nc" id="L808">                timeZone.toZoneId(),</span>
+                options.useFractionalSeconds,
+                options);
+<span class="nc" id="L811">            break;</span>
+          case Types.TIMESTAMP_WITH_TIMEZONE:
+
+<span class="nc" id="L814">            parameterHolders[parameterIndex - 1] =</span>
+                new ZonedDateTimeParameter(
+<span class="nc" id="L816">                    ZonedDateTime.parse(str, BasePrepareStatement.SPEC_ISO_ZONED_DATE_TIME),</span>
+<span class="nc" id="L817">                    timeZone.toZoneId(),</span>
+                    options.useFractionalSeconds,
+                    options);
+<span class="nc" id="L820">            break;</span>
+          default:
+<span class="nc" id="L822">            throw ExceptionMapper</span>
+<span class="nc" id="L823">                .getSqlException(&quot;Could not convert [&quot; + str + &quot;] to &quot; + targetSqlType);</span>
+        }
+<span class="nc" id="L825">      } catch (IllegalArgumentException e) {</span>
+<span class="nc" id="L826">        throw ExceptionMapper</span>
+<span class="nc" id="L827">            .getSqlException(&quot;Could not convert [&quot; + str + &quot;] to &quot; + targetSqlType, e);</span>
+<span class="nc" id="L828">      }</span>
+<span class="nc bnc" id="L829" title="All 2 branches missed.">    } else if (obj instanceof Number) {</span>
+<span class="nc" id="L830">      Number bd = (Number) obj;</span>
+<span class="nc bnc" id="L831" title="All 10 branches missed.">      switch (targetSqlType) {</span>
+        case Types.TINYINT:
+<span class="nc" id="L833">          updateByte(parameterIndex, bd.byteValue());</span>
+<span class="nc" id="L834">          break;</span>
+        case Types.SMALLINT:
+<span class="nc" id="L836">          updateShort(parameterIndex, bd.shortValue());</span>
+<span class="nc" id="L837">          break;</span>
+        case Types.INTEGER:
+<span class="nc" id="L839">          updateInt(parameterIndex, bd.intValue());</span>
+<span class="nc" id="L840">          break;</span>
+        case Types.BIGINT:
+<span class="nc" id="L842">          updateLong(parameterIndex, bd.longValue());</span>
+<span class="nc" id="L843">          break;</span>
+        case Types.FLOAT:
+        case Types.DOUBLE:
+<span class="nc" id="L846">          updateDouble(parameterIndex, bd.doubleValue());</span>
+<span class="nc" id="L847">          break;</span>
+        case Types.REAL:
+<span class="nc" id="L849">          updateFloat(parameterIndex, bd.floatValue());</span>
+<span class="nc" id="L850">          break;</span>
+        case Types.DECIMAL:
+        case Types.NUMERIC:
+<span class="nc bnc" id="L853" title="All 2 branches missed.">          if (obj instanceof BigDecimal) {</span>
+<span class="nc" id="L854">            updateBigDecimal(parameterIndex, (BigDecimal) obj);</span>
+<span class="nc bnc" id="L855" title="All 4 branches missed.">          } else if (obj instanceof Double || obj instanceof Float) {</span>
+<span class="nc" id="L856">            updateDouble(parameterIndex, bd.doubleValue());</span>
+          } else {
+<span class="nc" id="L858">            updateLong(parameterIndex, bd.longValue());</span>
+          }
+<span class="nc" id="L860">          break;</span>
+        case Types.BIT:
+<span class="nc bnc" id="L862" title="All 2 branches missed.">          updateBoolean(parameterIndex, bd.shortValue() != 0);</span>
+<span class="nc" id="L863">          break;</span>
+        case Types.CHAR:
+        case Types.VARCHAR:
+<span class="nc" id="L866">          updateString(parameterIndex, bd.toString());</span>
+<span class="nc" id="L867">          break;</span>
+        default:
+<span class="nc" id="L869">          throw ExceptionMapper</span>
+<span class="nc" id="L870">              .getSqlException(&quot;Could not convert [&quot; + bd + &quot;] to &quot; + targetSqlType);</span>
+
+      }
+<span class="nc bnc" id="L873" title="All 2 branches missed.">    } else if (obj instanceof byte[]) {</span>
+<span class="nc bnc" id="L874" title="All 6 branches missed.">      if (targetSqlType == Types.BINARY || targetSqlType == Types.VARBINARY</span>
+          || targetSqlType == Types.LONGVARBINARY) {
+<span class="nc" id="L876">        updateBytes(parameterIndex, (byte[]) obj);</span>
+      } else {
+<span class="nc" id="L878">        throw ExceptionMapper</span>
+<span class="nc" id="L879">            .getSqlException(&quot;Can only convert a byte[] to BINARY, VARBINARY or LONGVARBINARY&quot;);</span>
+      }
+
+<span class="nc bnc" id="L882" title="All 2 branches missed.">    } else if (obj instanceof Time) {</span>
+<span class="nc" id="L883">      updateTime(parameterIndex, (Time) obj);      // it is just a string anyway</span>
+<span class="nc bnc" id="L884" title="All 2 branches missed.">    } else if (obj instanceof Timestamp) {</span>
+<span class="nc" id="L885">      updateTimestamp(parameterIndex, (Timestamp) obj);</span>
+<span class="nc bnc" id="L886" title="All 2 branches missed.">    } else if (obj instanceof Date) {</span>
+<span class="nc" id="L887">      updateDate(parameterIndex, (Date) obj);</span>
+<span class="nc bnc" id="L888" title="All 2 branches missed.">    } else if (obj instanceof java.util.Date) {</span>
+<span class="nc" id="L889">      long timemillis = ((java.util.Date) obj).getTime();</span>
+<span class="nc bnc" id="L890" title="All 2 branches missed.">      if (targetSqlType == Types.DATE) {</span>
+<span class="nc" id="L891">        updateDate(parameterIndex, new Date(timemillis));</span>
+<span class="nc bnc" id="L892" title="All 2 branches missed.">      } else if (targetSqlType == Types.TIME) {</span>
+<span class="nc" id="L893">        updateTime(parameterIndex, new Time(timemillis));</span>
+<span class="nc bnc" id="L894" title="All 2 branches missed.">      } else if (targetSqlType == Types.TIMESTAMP) {</span>
+<span class="nc" id="L895">        updateTimestamp(parameterIndex, new Timestamp(timemillis));</span>
+      }
+<span class="nc bnc" id="L897" title="All 2 branches missed.">    } else if (obj instanceof Boolean) {</span>
+<span class="nc" id="L898">      updateBoolean(parameterIndex, (Boolean) obj);</span>
+<span class="nc bnc" id="L899" title="All 2 branches missed.">    } else if (obj instanceof Blob) {</span>
+<span class="nc" id="L900">      updateBlob(parameterIndex, (Blob) obj);</span>
+<span class="nc bnc" id="L901" title="All 2 branches missed.">    } else if (obj instanceof Clob) {</span>
+<span class="nc" id="L902">      updateClob(parameterIndex, (Clob) obj);</span>
+<span class="nc bnc" id="L903" title="All 2 branches missed.">    } else if (obj instanceof InputStream) {</span>
+<span class="nc" id="L904">      updateBinaryStream(parameterIndex, (InputStream) obj, scaleOrLength);</span>
+<span class="nc bnc" id="L905" title="All 2 branches missed.">    } else if (obj instanceof Reader) {</span>
+<span class="nc" id="L906">      updateCharacterStream(parameterIndex, (Reader) obj, scaleOrLength);</span>
+<span class="nc bnc" id="L907" title="All 2 branches missed.">    } else if (obj instanceof LocalDateTime) {</span>
+<span class="nc" id="L908">      updateTimestamp(parameterIndex, Timestamp.valueOf((LocalDateTime) obj));</span>
+<span class="nc bnc" id="L909" title="All 2 branches missed.">    } else if (obj instanceof Instant) {</span>
+<span class="nc" id="L910">      updateTimestamp(parameterIndex, Timestamp.from((Instant) obj));</span>
+<span class="nc bnc" id="L911" title="All 2 branches missed.">    } else if (obj instanceof LocalDate) {</span>
+<span class="nc" id="L912">      updateDate(parameterIndex, Date.valueOf((LocalDate) obj));</span>
+<span class="nc bnc" id="L913" title="All 2 branches missed.">    } else if (obj instanceof OffsetDateTime) {</span>
+<span class="nc" id="L914">      parameterHolders[parameterIndex - 1] =</span>
+          new ZonedDateTimeParameter(
+<span class="nc" id="L916">              ((OffsetDateTime) obj).toZonedDateTime(),</span>
+<span class="nc" id="L917">              timeZone.toZoneId(),</span>
+              options.useFractionalSeconds,
+              options);
+<span class="nc bnc" id="L920" title="All 2 branches missed.">    } else if (obj instanceof OffsetTime) {</span>
+<span class="nc" id="L921">      parameterHolders[parameterIndex - 1] =</span>
+          new OffsetTimeParameter(
+                  (OffsetTime) obj,
+<span class="nc" id="L924">              timeZone.toZoneId(),</span>
+              options.useFractionalSeconds,
+              options);
+<span class="nc bnc" id="L927" title="All 2 branches missed.">    } else if (obj instanceof ZonedDateTime) {</span>
+<span class="nc" id="L928">      parameterHolders[parameterIndex - 1] =</span>
+          new ZonedDateTimeParameter(
+                  (ZonedDateTime) obj,
+<span class="nc" id="L931">              timeZone.toZoneId(),</span>
+              options.useFractionalSeconds,
+              options);
+<span class="nc bnc" id="L934" title="All 2 branches missed.">    } else if (obj instanceof LocalTime) {</span>
+<span class="nc" id="L935">      updateTime(parameterIndex, Time.valueOf((LocalTime) obj));</span>
+    } else {
+<span class="nc" id="L937">      throw ExceptionMapper.getSqlException(</span>
+<span class="nc" id="L938">          &quot;Could not set parameter in setObject, could not convert: &quot; + obj.getClass() + &quot; to &quot;</span>
+              + targetSqlType);
+    }
+<span class="nc" id="L941">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateObject(int columnIndex, Object value, int scaleOrLength) throws SQLException {
+<span class="nc" id="L947">    checkUpdatable(columnIndex);</span>
+<span class="nc" id="L948">    updateInternalObject(columnIndex, value,</span>
+<span class="nc" id="L949">        columnsInformation[columnIndex - 1].getColumnType().getSqlType(), scaleOrLength);</span>
+<span class="nc" id="L950">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateObject(int columnIndex, Object value) throws SQLException {
+<span class="nc" id="L956">    checkUpdatable(columnIndex);</span>
+<span class="nc" id="L957">    updateInternalObject(columnIndex, value,</span>
+<span class="nc" id="L958">        columnsInformation[columnIndex - 1].getColumnType().getSqlType(), Long.MAX_VALUE);</span>
+<span class="nc" id="L959">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateObject(String columnLabel, Object value, int scaleOrLength)
+      throws SQLException {
+<span class="nc" id="L966">    updateObject(findColumn(columnLabel), value, scaleOrLength);</span>
+<span class="nc" id="L967">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateObject(String columnLabel, Object value) throws SQLException {
+<span class="nc" id="L973">    updateObject(findColumn(columnLabel), value);</span>
+<span class="nc" id="L974">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateLong(int columnIndex, long value) throws SQLException {
+<span class="nc" id="L980">    checkUpdatable(columnIndex);</span>
+<span class="nc" id="L981">    parameterHolders[columnIndex - 1] = new LongParameter(value);</span>
+<span class="nc" id="L982">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateLong(String columnLabel, long value) throws SQLException {
+<span class="nc" id="L988">    updateLong(findColumn(columnLabel), value);</span>
+<span class="nc" id="L989">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateRef(int columnIndex, Ref ref) throws SQLException {
+<span class="nc" id="L995">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;REF not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateRef(String columnLabel, Ref ref) throws SQLException {
+<span class="nc" id="L1002">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;REF not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(int columnIndex, Blob blob) throws SQLException {
+<span class="nc" id="L1009">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L1010" title="All 2 branches missed.">    if (blob == null) {</span>
+<span class="nc" id="L1011">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.BLOB);</span>
+<span class="nc" id="L1012">      return;</span>
+    }
+<span class="nc" id="L1014">    parameterHolders[columnIndex - 1] = new StreamParameter(blob.getBinaryStream(), blob.length(),</span>
+        noBackslashEscapes);
+<span class="nc" id="L1016">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(String columnLabel, Blob blob) throws SQLException {
+<span class="nc" id="L1022">    updateBlob(findColumn(columnLabel), blob);</span>
+<span class="nc" id="L1023">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(int columnIndex, InputStream inputStream) throws SQLException {
+<span class="nc" id="L1029">    updateBlob(columnIndex, inputStream, Long.MAX_VALUE);</span>
+<span class="nc" id="L1030">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(String columnLabel, InputStream inputStream) throws SQLException {
+<span class="nc" id="L1036">    updateBlob(findColumn(columnLabel), inputStream, Long.MAX_VALUE);</span>
+<span class="nc" id="L1037">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(int columnIndex, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L1044">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L1045" title="All 2 branches missed.">    if (inputStream == null) {</span>
+<span class="nc" id="L1046">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.BLOB);</span>
+<span class="nc" id="L1047">      return;</span>
+    }
+<span class="nc" id="L1049">    parameterHolders[columnIndex - 1] = new StreamParameter(inputStream, length,</span>
+        noBackslashEscapes);
+<span class="nc" id="L1051">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(String columnLabel, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L1058">    updateBlob(findColumn(columnLabel), inputStream, length);</span>
+<span class="nc" id="L1059">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(int columnIndex, Clob clob) throws SQLException {
+<span class="nc" id="L1065">    checkUpdatable(columnIndex);</span>
+<span class="nc bnc" id="L1066" title="All 2 branches missed.">    if (clob == null) {</span>
+<span class="nc" id="L1067">      parameterHolders[columnIndex - 1] = new NullParameter(ColumnType.BLOB);</span>
+<span class="nc" id="L1068">      return;</span>
+    }
+<span class="nc" id="L1070">    parameterHolders[columnIndex - 1] = new ReaderParameter(clob.getCharacterStream(),</span>
+<span class="nc" id="L1071">        clob.length(), noBackslashEscapes);</span>
+<span class="nc" id="L1072">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(String columnLabel, Clob clob) throws SQLException {
+<span class="nc" id="L1078">    updateClob(findColumn(columnLabel), clob);</span>
+<span class="nc" id="L1079">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(int columnIndex, Reader reader, long length) throws SQLException {
+<span class="nc" id="L1085">    updateCharacterStream(columnIndex, reader, length);</span>
+<span class="nc" id="L1086">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(String columnLabel, Reader reader, long length) throws SQLException {
+<span class="nc" id="L1092">    updateCharacterStream(findColumn(columnLabel), reader, length);</span>
+<span class="nc" id="L1093">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(int columnIndex, Reader reader) throws SQLException {
+<span class="nc" id="L1099">    updateCharacterStream(columnIndex, reader);</span>
+<span class="nc" id="L1100">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(String columnLabel, Reader reader) throws SQLException {
+<span class="nc" id="L1106">    updateCharacterStream(findColumn(columnLabel), reader);</span>
+<span class="nc" id="L1107">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateArray(int columnIndex, Array array) throws SQLException {
+<span class="nc" id="L1113">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;Arrays not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateArray(String columnLabel, Array array) throws SQLException {
+<span class="nc" id="L1120">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;Arrays not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateRowId(int columnIndex, RowId rowId) throws SQLException {
+<span class="nc" id="L1127">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;RowIDs not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateRowId(String columnLabel, RowId rowId) throws SQLException {
+<span class="nc" id="L1134">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;RowIDs not supported&quot;);</span>
+
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNString(int columnIndex, String nstring) throws SQLException {
+<span class="nc" id="L1142">    updateString(columnIndex, nstring);</span>
+<span class="nc" id="L1143">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNString(String columnLabel, String nstring) throws SQLException {
+<span class="nc" id="L1149">    updateString(columnLabel, nstring);</span>
+<span class="nc" id="L1150">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(int columnIndex, NClob nclob) throws SQLException {
+<span class="nc" id="L1156">    updateClob(columnIndex, nclob);</span>
+<span class="nc" id="L1157">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(String columnLabel, NClob nclob) throws SQLException {
+<span class="nc" id="L1163">    updateClob(columnLabel, nclob);</span>
+<span class="nc" id="L1164">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(int columnIndex, Reader reader) throws SQLException {
+<span class="nc" id="L1170">    updateClob(columnIndex, reader);</span>
+<span class="nc" id="L1171">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(String columnLabel, Reader reader) throws SQLException {
+<span class="nc" id="L1177">    updateClob(columnLabel, reader);</span>
+<span class="nc" id="L1178">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(int columnIndex, Reader reader, long length) throws SQLException {
+<span class="nc" id="L1184">    updateClob(columnIndex, reader, length);</span>
+<span class="nc" id="L1185">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(String columnLabel, Reader reader, long length) throws SQLException {
+<span class="nc" id="L1191">    updateClob(columnLabel, reader, length);</span>
+<span class="nc" id="L1192">  }</span>
+
+
+  /**
+   * {inheritDoc}.
+   */
+  @Override
+  public void updateSQLXML(int columnIndex, SQLXML xmlObject) throws SQLException {
+<span class="nc" id="L1200">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;SQlXML not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  @Override
+  public void updateSQLXML(String columnLabel, SQLXML xmlObject) throws SQLException {
+<span class="nc" id="L1208">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;SQLXML not supported&quot;);</span>
+  }
+
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNCharacterStream(int columnIndex, Reader value, long length)
+      throws SQLException {
+<span class="nc" id="L1217">    updateCharacterStream(columnIndex, value, length);</span>
+<span class="nc" id="L1218">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNCharacterStream(String columnLabel, Reader reader, long length)
+      throws SQLException {
+<span class="nc" id="L1225">    updateCharacterStream(columnLabel, reader, length);</span>
+<span class="nc" id="L1226">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNCharacterStream(int columnIndex, Reader reader) throws SQLException {
+<span class="nc" id="L1232">    updateCharacterStream(columnIndex, reader);</span>
+<span class="nc" id="L1233">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNCharacterStream(String columnLabel, Reader reader) throws SQLException {
+<span class="nc" id="L1239">    updateCharacterStream(columnLabel, reader);</span>
+<span class="nc" id="L1240">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void insertRow() throws SQLException {
+<span class="nc bnc" id="L1246" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc bnc" id="L1247" title="All 2 branches missed.">      if (insertPreparedStatement == null) {</span>
+        //Create query will all field with WHERE clause contain primary field.
+        //if field are not updated, value DEFAULT will be set
+        //(if field has no default, then insert will throw an exception that will be return to user)
+<span class="nc" id="L1251">        StringBuilder insertSql = new StringBuilder(&quot;INSERT `&quot; + database + &quot;`.`&quot; + table + &quot;` ( &quot;);</span>
+<span class="nc" id="L1252">        StringBuilder valueClause = new StringBuilder();</span>
+
+<span class="nc bnc" id="L1254" title="All 2 branches missed.">        for (int pos = 0; pos &lt; columnInformationLength; pos++) {</span>
+<span class="nc" id="L1255">          UpdatableColumnInformation colInfo = getUpdatableColumns()[pos];</span>
+
+<span class="nc bnc" id="L1257" title="All 2 branches missed.">          if (pos != 0) {</span>
+<span class="nc" id="L1258">            insertSql.append(&quot;,&quot;);</span>
+<span class="nc" id="L1259">            valueClause.append(&quot;, &quot;);</span>
+          }
+
+<span class="nc" id="L1262">          insertSql.append(&quot;`&quot;)</span>
+<span class="nc" id="L1263">              .append(colInfo.getOriginalName())</span>
+<span class="nc" id="L1264">              .append(&quot;`&quot;);</span>
+<span class="nc" id="L1265">          valueClause.append(&quot;?&quot;);</span>
+        }
+<span class="nc" id="L1267">        insertSql.append(&quot;) VALUES (&quot;).append(valueClause).append(&quot;)&quot;);</span>
+<span class="nc" id="L1268">        insertPreparedStatement = connection.clientPrepareStatement(insertSql.toString());</span>
+      }
+
+<span class="nc" id="L1271">      int fieldsIndex = 0;</span>
+<span class="nc" id="L1272">      boolean hasGeneratedPrimaryFields = false;</span>
+<span class="nc" id="L1273">      int generatedSqlType = 0;</span>
+<span class="nc bnc" id="L1274" title="All 2 branches missed.">      for (int pos = 0; pos &lt; columnInformationLength; pos++) {</span>
+<span class="nc" id="L1275">        ParameterHolder value = parameterHolders[pos];</span>
+<span class="nc bnc" id="L1276" title="All 2 branches missed.">        if (value != null) {</span>
+<span class="nc" id="L1277">          insertPreparedStatement.setParameter((fieldsIndex++) + 1, value);</span>
+        } else {
+<span class="nc" id="L1279">          UpdatableColumnInformation colInfo = getUpdatableColumns()[pos];</span>
+<span class="nc bnc" id="L1280" title="All 4 branches missed.">          if (colInfo.isPrimary() &amp;&amp; colInfo.isAutoIncrement()) {</span>
+<span class="nc" id="L1281">            hasGeneratedPrimaryFields = true;</span>
+<span class="nc" id="L1282">            generatedSqlType = colInfo.getColumnType().getSqlType();</span>
+          }
+<span class="nc" id="L1284">          insertPreparedStatement.setParameter((fieldsIndex++) + 1, new DefaultParameter());</span>
+        }
+      }
+
+<span class="nc" id="L1288">      insertPreparedStatement.execute();</span>
+
+<span class="nc bnc" id="L1290" title="All 2 branches missed.">      if (hasGeneratedPrimaryFields) {</span>
+        //primary is auto_increment (only one field)
+<span class="nc" id="L1292">        ResultSet rsKey = insertPreparedStatement.getGeneratedKeys();</span>
+<span class="nc bnc" id="L1293" title="All 2 branches missed.">        if (rsKey.next()) {</span>
+
+<span class="nc" id="L1295">          prepareRefreshStmt();</span>
+<span class="nc" id="L1296">          refreshPreparedStatement.setObject(1, rsKey.getObject(1), generatedSqlType);</span>
+<span class="nc" id="L1297">          SelectResultSet rs = (SelectResultSet) refreshPreparedStatement.executeQuery();</span>
+
+          //update row data only if not deleted externally
+<span class="nc bnc" id="L1300" title="All 2 branches missed.">          if (rs.next()) {</span>
+<span class="nc" id="L1301">            addRowData(rs.getCurrentRowData());</span>
+          }
+        }
+
+<span class="nc" id="L1305">      } else {</span>
+<span class="nc" id="L1306">        addRowData(refreshRawData());</span>
+      }
+
+<span class="nc" id="L1309">      Arrays.fill(parameterHolders, null);</span>
+    }
+<span class="nc" id="L1311">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateRow() throws SQLException {
+
+<span class="nc bnc" id="L1318" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc" id="L1319">      throw new SQLException(&quot;Cannot call updateRow() when inserting a new row&quot;);</span>
+    }
+
+<span class="nc bnc" id="L1322" title="All 2 branches missed.">    if (state == STATE_UPDATE) {</span>
+
+      //state is STATE_UPDATE, meaning that at least one field is modified, update query can be run.
+      //Construct UPDATE query according to modified field only
+<span class="nc" id="L1326">      StringBuilder updateSql = new StringBuilder(&quot;UPDATE `&quot; + database + &quot;`.`&quot; + table + &quot;` SET &quot;);</span>
+<span class="nc" id="L1327">      StringBuilder whereClause = new StringBuilder(&quot; WHERE &quot;);</span>
+
+<span class="nc" id="L1329">      boolean firstUpdate = true;</span>
+<span class="nc" id="L1330">      boolean firstPrimary = true;</span>
+<span class="nc" id="L1331">      int fieldsToUpdate = 0;</span>
+<span class="nc bnc" id="L1332" title="All 2 branches missed.">      for (int pos = 0; pos &lt; columnInformationLength; pos++) {</span>
+<span class="nc" id="L1333">        UpdatableColumnInformation colInfo = getUpdatableColumns()[pos];</span>
+
+<span class="nc" id="L1335">        ParameterHolder value = parameterHolders[pos];</span>
+<span class="nc bnc" id="L1336" title="All 2 branches missed.">        if (colInfo.isPrimary()) {</span>
+<span class="nc bnc" id="L1337" title="All 2 branches missed.">          if (!firstPrimary) {</span>
+<span class="nc" id="L1338">            whereClause.append(&quot;AND &quot;);</span>
+          }
+<span class="nc" id="L1340">          firstPrimary = false;</span>
+<span class="nc" id="L1341">          whereClause.append(&quot;`&quot;)</span>
+<span class="nc" id="L1342">              .append(colInfo.getOriginalName())</span>
+<span class="nc" id="L1343">              .append(&quot;` = ? &quot;);</span>
+        }
+
+<span class="nc bnc" id="L1346" title="All 2 branches missed.">        if (value != null) {</span>
+<span class="nc bnc" id="L1347" title="All 2 branches missed.">          if (!firstUpdate) {</span>
+<span class="nc" id="L1348">            updateSql.append(&quot;,&quot;);</span>
+          }
+<span class="nc" id="L1350">          firstUpdate = false;</span>
+<span class="nc" id="L1351">          fieldsToUpdate++;</span>
+<span class="nc" id="L1352">          updateSql.append(&quot;`&quot;)</span>
+<span class="nc" id="L1353">              .append(colInfo.getOriginalName())</span>
+<span class="nc" id="L1354">              .append(&quot;` = ? &quot;);</span>
+        }
+      }
+<span class="nc" id="L1357">      updateSql.append(whereClause.toString());</span>
+
+<span class="nc" id="L1359">      ClientSidePreparedStatement preparedStatement = connection</span>
+<span class="nc" id="L1360">          .clientPrepareStatement(updateSql.toString());</span>
+<span class="nc" id="L1361">      int fieldsIndex = 0;</span>
+<span class="nc" id="L1362">      int fieldsPrimaryIndex = 0;</span>
+<span class="nc bnc" id="L1363" title="All 2 branches missed.">      for (int pos = 0; pos &lt; columnInformationLength; pos++) {</span>
+<span class="nc" id="L1364">        UpdatableColumnInformation colInfo = getUpdatableColumns()[pos];</span>
+<span class="nc" id="L1365">        ParameterHolder value = parameterHolders[pos];</span>
+
+<span class="nc bnc" id="L1367" title="All 2 branches missed.">        if (value != null) {</span>
+<span class="nc" id="L1368">          preparedStatement.setParameter((fieldsIndex++) + 1, value);</span>
+        }
+
+<span class="nc bnc" id="L1371" title="All 2 branches missed.">        if (colInfo.isPrimary()) {</span>
+<span class="nc" id="L1372">          preparedStatement.setObject(fieldsToUpdate + (fieldsPrimaryIndex++) + 1,</span>
+<span class="nc" id="L1373">              getObject(pos + 1),</span>
+<span class="nc" id="L1374">              colInfo.getColumnType().getSqlType());</span>
+        }
+      }
+<span class="nc" id="L1377">      preparedStatement.execute();</span>
+
+<span class="nc" id="L1379">      state = STATE_UPDATED;</span>
+
+<span class="nc" id="L1381">      refreshRow();</span>
+
+<span class="nc" id="L1383">      Arrays.fill(parameterHolders, null);</span>
+<span class="nc" id="L1384">      state = STATE_STANDARD;</span>
+    }
+
+<span class="nc" id="L1387">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void deleteRow() throws SQLException {
+
+<span class="nc bnc" id="L1394" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc" id="L1395">      throw new SQLException(&quot;Cannot call deleteRow() when inserting a new row&quot;);</span>
+    }
+
+<span class="nc bnc" id="L1398" title="All 2 branches missed.">    if (!canBeUpdate) {</span>
+<span class="nc" id="L1399">      throw new SQLDataException(exceptionUpdateMsg);</span>
+    }
+
+<span class="nc bnc" id="L1402" title="All 2 branches missed.">    if (getRowPointer() &lt; 0) {</span>
+<span class="nc" id="L1403">      throw new SQLDataException(&quot;Current position is before the first row&quot;, &quot;22023&quot;);</span>
+    }
+
+<span class="nc bnc" id="L1406" title="All 2 branches missed.">    if (getRowPointer() &gt;= getDataSize()) {</span>
+<span class="nc" id="L1407">      throw new SQLDataException(&quot;Current position is after the last row&quot;, &quot;22023&quot;);</span>
+    }
+
+<span class="nc bnc" id="L1410" title="All 2 branches missed.">    if (deletePreparedStatement == null) {</span>
+      //Create query with WHERE clause contain primary field.
+<span class="nc" id="L1412">      StringBuilder deleteSql = new StringBuilder(</span>
+          &quot;DELETE FROM `&quot; + database + &quot;`.`&quot; + table + &quot;` WHERE &quot;);
+<span class="nc" id="L1414">      boolean firstPrimary = true;</span>
+<span class="nc bnc" id="L1415" title="All 2 branches missed.">      for (int pos = 0; pos &lt; columnInformationLength; pos++) {</span>
+<span class="nc" id="L1416">        UpdatableColumnInformation colInfo = getUpdatableColumns()[pos];</span>
+
+<span class="nc bnc" id="L1418" title="All 2 branches missed.">        if (colInfo.isPrimary()) {</span>
+<span class="nc bnc" id="L1419" title="All 2 branches missed.">          if (!firstPrimary) {</span>
+<span class="nc" id="L1420">            deleteSql.append(&quot;AND &quot;);</span>
+          }
+<span class="nc" id="L1422">          firstPrimary = false;</span>
+<span class="nc" id="L1423">          deleteSql.append(&quot;`&quot;)</span>
+<span class="nc" id="L1424">              .append(colInfo.getOriginalName())</span>
+<span class="nc" id="L1425">              .append(&quot;` = ? &quot;);</span>
+        }
+      }
+<span class="nc" id="L1428">      deletePreparedStatement = connection.clientPrepareStatement(deleteSql.toString());</span>
+    }
+
+<span class="nc" id="L1431">    int fieldsPrimaryIndex = 1;</span>
+
+<span class="nc bnc" id="L1433" title="All 2 branches missed.">    for (int pos = 0; pos &lt; columnInformationLength; pos++) {</span>
+<span class="nc" id="L1434">      UpdatableColumnInformation colInfo = getUpdatableColumns()[pos];</span>
+<span class="nc bnc" id="L1435" title="All 2 branches missed.">      if (colInfo.isPrimary()) {</span>
+<span class="nc" id="L1436">        deletePreparedStatement.setObject(fieldsPrimaryIndex++, getObject(pos + 1),</span>
+<span class="nc" id="L1437">            colInfo.getColumnType().getSqlType());</span>
+      }
+    }
+
+<span class="nc" id="L1441">    deletePreparedStatement.executeUpdate();</span>
+
+<span class="nc" id="L1443">    deleteCurrentRowData();</span>
+<span class="nc" id="L1444">  }</span>
+
+
+  private void prepareRefreshStmt() throws SQLException {
+<span class="nc bnc" id="L1448" title="All 2 branches missed.">    if (refreshPreparedStatement == null) {</span>
+      //Construct SELECT query according to column metadata, with WHERE part containing primary fields
+<span class="nc" id="L1450">      StringBuilder selectSql = new StringBuilder(&quot;SELECT &quot;);</span>
+<span class="nc" id="L1451">      StringBuilder whereClause = new StringBuilder(&quot; WHERE &quot;);</span>
+
+<span class="nc" id="L1453">      boolean firstPrimary = true;</span>
+<span class="nc bnc" id="L1454" title="All 2 branches missed.">      for (int pos = 0; pos &lt; columnInformationLength; pos++) {</span>
+<span class="nc" id="L1455">        UpdatableColumnInformation colInfo = getUpdatableColumns()[pos];</span>
+<span class="nc bnc" id="L1456" title="All 2 branches missed.">        if (pos != 0) {</span>
+<span class="nc" id="L1457">          selectSql.append(&quot;,&quot;);</span>
+        }
+<span class="nc" id="L1459">        selectSql.append(&quot;`&quot;)</span>
+<span class="nc" id="L1460">            .append(colInfo.getOriginalName())</span>
+<span class="nc" id="L1461">            .append(&quot;`&quot;);</span>
+
+<span class="nc bnc" id="L1463" title="All 2 branches missed.">        if (colInfo.isPrimary()) {</span>
+<span class="nc bnc" id="L1464" title="All 2 branches missed.">          if (!firstPrimary) {</span>
+<span class="nc" id="L1465">            whereClause.append(&quot;AND &quot;);</span>
+          }
+<span class="nc" id="L1467">          firstPrimary = false;</span>
+<span class="nc" id="L1468">          whereClause.append(&quot;`&quot;)</span>
+<span class="nc" id="L1469">              .append(colInfo.getOriginalName())</span>
+<span class="nc" id="L1470">              .append(&quot;` = ? &quot;);</span>
+        }
+      }
+<span class="nc" id="L1473">      selectSql.append(&quot; FROM `&quot;).append(database).append(&quot;`.`&quot;).append(table).append(&quot;`&quot;)</span>
+<span class="nc" id="L1474">          .append(whereClause);</span>
+
+      //row's raw bytes must be encoded according to current resultSet type
+      //Create Server or Client PrepareStatement accordingly
+<span class="nc bnc" id="L1478" title="All 2 branches missed.">      if (isBinaryEncoded()) {</span>
+<span class="nc" id="L1479">        refreshPreparedStatement = connection.serverPrepareStatement(selectSql.toString());</span>
+      } else {
+<span class="nc" id="L1481">        refreshPreparedStatement = connection.clientPrepareStatement(selectSql.toString());</span>
+      }
+    }
+<span class="nc" id="L1484">  }</span>
+
+  private byte[] refreshRawData() throws SQLException {
+<span class="nc" id="L1487">    prepareRefreshStmt();</span>
+<span class="nc" id="L1488">    int fieldsPrimaryIndex = 1;</span>
+<span class="nc bnc" id="L1489" title="All 2 branches missed.">    for (int pos = 0; pos &lt; columnInformationLength; pos++) {</span>
+<span class="nc" id="L1490">      UpdatableColumnInformation colInfo = getUpdatableColumns()[pos];</span>
+<span class="nc bnc" id="L1491" title="All 2 branches missed.">      if (colInfo.isPrimary()) {</span>
+<span class="nc" id="L1492">        ParameterHolder value = parameterHolders[pos];</span>
+
+<span class="nc bnc" id="L1494" title="All 4 branches missed.">        if (state != STATE_STANDARD &amp;&amp; value != null) {</span>
+          //Row has just been updated using updateRow() methods.
+          //updateRow has changed primary key, must use the new value.
+<span class="nc bnc" id="L1497" title="All 2 branches missed.">          if (isBinaryEncoded()) {</span>
+<span class="nc" id="L1498">            ((ServerSidePreparedStatement) refreshPreparedStatement)</span>
+<span class="nc" id="L1499">                .setParameter(fieldsPrimaryIndex++, value);</span>
+          } else {
+<span class="nc" id="L1501">            ((ClientSidePreparedStatement) refreshPreparedStatement)</span>
+<span class="nc" id="L1502">                .setParameter(fieldsPrimaryIndex++, value);</span>
+          }
+        } else {
+<span class="nc" id="L1505">          refreshPreparedStatement.setObject(fieldsPrimaryIndex++, getObject(pos + 1),</span>
+<span class="nc" id="L1506">              colInfo.getColumnType().getSqlType());</span>
+        }
+
+      }
+    }
+
+<span class="nc" id="L1512">    SelectResultSet rs = (SelectResultSet) refreshPreparedStatement.executeQuery();</span>
+
+    //update row data only if not deleted externally
+<span class="nc bnc" id="L1515" title="All 2 branches missed.">    if (rs.next()) {</span>
+<span class="nc" id="L1516">      return rs.getCurrentRowData();</span>
+    }
+<span class="nc" id="L1518">    return new byte[0];</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void refreshRow() throws SQLException {
+<span class="nc bnc" id="L1525" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc" id="L1526">      throw new SQLException(&quot;Cannot call deleteRow() when inserting a new row&quot;);</span>
+    }
+
+<span class="nc bnc" id="L1529" title="All 2 branches missed.">    if (getRowPointer() &lt; 0) {</span>
+<span class="nc" id="L1530">      throw new SQLDataException(&quot;Current position is before the first row&quot;, &quot;22023&quot;);</span>
+    }
+
+<span class="nc bnc" id="L1533" title="All 2 branches missed.">    if (getRowPointer() &gt;= getDataSize()) {</span>
+<span class="nc" id="L1534">      throw new SQLDataException(&quot;Current position is after the last row&quot;, &quot;22023&quot;);</span>
+    }
+
+<span class="nc bnc" id="L1537" title="All 2 branches missed.">    if (canBeRefresh) {</span>
+<span class="nc" id="L1538">      updateRowData(refreshRawData());</span>
+    }
+<span class="nc" id="L1540">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void cancelRowUpdates() {
+<span class="nc" id="L1546">    Arrays.fill(parameterHolders, null);</span>
+<span class="nc" id="L1547">    state = STATE_STANDARD;</span>
+<span class="nc" id="L1548">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void moveToInsertRow() throws SQLException {
+<span class="nc bnc" id="L1554" title="All 2 branches missed.">    if (!canBeInserted) {</span>
+<span class="nc" id="L1555">      throw new SQLException(exceptionInsertMsg);</span>
+    }
+<span class="nc" id="L1557">    Arrays.fill(parameterHolders, null);</span>
+<span class="nc" id="L1558">    state = STATE_INSERT;</span>
+<span class="nc" id="L1559">    notInsertRowPointer = getRowPointer();</span>
+<span class="nc" id="L1560">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public void moveToCurrentRow() {
+<span class="nc" id="L1566">    Arrays.fill(parameterHolders, null);</span>
+<span class="nc" id="L1567">    state = STATE_STANDARD;</span>
+<span class="nc" id="L1568">    setRowPointer(notInsertRowPointer);</span>
+<span class="nc" id="L1569">  }</span>
+
+
+  @Override
+  public void beforeFirst() throws SQLException {
+<span class="nc bnc" id="L1574" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc" id="L1575">      state = STATE_UPDATE;</span>
+<span class="nc" id="L1576">      setRowPointer(notInsertRowPointer);</span>
+    }
+<span class="nc" id="L1578">    super.beforeFirst();</span>
+<span class="nc" id="L1579">  }</span>
+
+  @Override
+  public boolean first() throws SQLException {
+<span class="nc bnc" id="L1583" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc" id="L1584">      state = STATE_UPDATE;</span>
+<span class="nc" id="L1585">      setRowPointer(notInsertRowPointer);</span>
+    }
+<span class="nc" id="L1587">    return super.first();</span>
+  }
+
+  @Override
+  public boolean last() throws SQLException {
+<span class="nc bnc" id="L1592" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc" id="L1593">      state = STATE_UPDATE;</span>
+<span class="nc" id="L1594">      setRowPointer(notInsertRowPointer);</span>
+    }
+<span class="nc" id="L1596">    return super.last();</span>
+  }
+
+  @Override
+  public void afterLast() throws SQLException {
+<span class="nc bnc" id="L1601" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc" id="L1602">      state = STATE_UPDATE;</span>
+<span class="nc" id="L1603">      setRowPointer(notInsertRowPointer);</span>
+    }
+<span class="nc" id="L1605">    super.afterLast();</span>
+<span class="nc" id="L1606">  }</span>
+
+  @Override
+  public boolean absolute(int row) throws SQLException {
+<span class="nc bnc" id="L1610" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc" id="L1611">      state = STATE_UPDATE;</span>
+<span class="nc" id="L1612">      setRowPointer(notInsertRowPointer);</span>
+    }
+<span class="nc" id="L1614">    return super.absolute(row);</span>
+  }
+
+  @Override
+  public boolean relative(int rows) throws SQLException {
+<span class="nc bnc" id="L1619" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc" id="L1620">      state = STATE_UPDATE;</span>
+<span class="nc" id="L1621">      setRowPointer(notInsertRowPointer);</span>
+    }
+<span class="nc" id="L1623">    return super.relative(rows);</span>
+  }
+
+  @Override
+  public boolean next() throws SQLException {
+<span class="nc bnc" id="L1628" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc" id="L1629">      state = STATE_UPDATE;</span>
+<span class="nc" id="L1630">      setRowPointer(notInsertRowPointer);</span>
+    }
+<span class="nc" id="L1632">    return super.next();</span>
+  }
+
+  @Override
+  public boolean previous() throws SQLException {
+<span class="nc bnc" id="L1637" title="All 2 branches missed.">    if (state == STATE_INSERT) {</span>
+<span class="nc" id="L1638">      state = STATE_UPDATE;</span>
+<span class="nc" id="L1639">      setRowPointer(notInsertRowPointer);</span>
+    }
+<span class="nc" id="L1641">    return super.previous();</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

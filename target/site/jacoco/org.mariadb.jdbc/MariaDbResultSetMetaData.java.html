@@ -1,0 +1,440 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MariaDbResultSetMetaData.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">MariaDbResultSetMetaData.java</span></div><h1>MariaDbResultSetMetaData.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc;
+
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.Types;
+import org.mariadb.jdbc.internal.ColumnType;
+import org.mariadb.jdbc.internal.com.read.resultset.ColumnInformation;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.constant.ColumnFlags;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+
+public class MariaDbResultSetMetaData implements ResultSetMetaData {
+
+  private final ColumnInformation[] fieldPackets;
+  private final Options options;
+  private final boolean returnTableAlias;
+
+  /**
+   * Constructor.
+   *
+   * @param fieldPackets     column informations
+   * @param options          connection options
+   * @param returnTableAlias must return table alias or real table name
+   */
+  public MariaDbResultSetMetaData(ColumnInformation[] fieldPackets, Options options,
+<span class="nc" id="L79">      boolean returnTableAlias) {</span>
+<span class="nc" id="L80">    this.fieldPackets = fieldPackets;</span>
+<span class="nc" id="L81">    this.options = options;</span>
+<span class="nc" id="L82">    this.returnTableAlias = returnTableAlias;</span>
+<span class="nc" id="L83">  }</span>
+
+  /**
+   * Returns the number of columns in this &lt;code&gt;ResultSet&lt;/code&gt; object.
+   *
+   * @return the number of columns
+   */
+  public int getColumnCount() {
+<span class="nc" id="L91">    return fieldPackets.length;</span>
+  }
+
+  /**
+   * Indicates whether the designated column is automatically numbered.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return &lt;code&gt;true&lt;/code&gt; if so; &lt;code&gt;false&lt;/code&gt; otherwise
+   * @throws SQLException if a database access error occurs
+   */
+  public boolean isAutoIncrement(final int column) throws SQLException {
+<span class="nc bnc" id="L102" title="All 2 branches missed.">    return (getColumnInformation(column).getFlags() &amp; ColumnFlags.AUTO_INCREMENT) != 0;</span>
+  }
+
+  /**
+   * Indicates whether a column's case matters.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return &lt;code&gt;true&lt;/code&gt; if so; &lt;code&gt;false&lt;/code&gt; otherwise
+   * @throws SQLException if a database access error occurs
+   */
+  public boolean isCaseSensitive(final int column) throws SQLException {
+<span class="nc bnc" id="L113" title="All 2 branches missed.">    return (getColumnInformation(column).getFlags() &amp; ColumnFlags.BINARY_COLLATION) != 0;</span>
+  }
+
+  /**
+   * Indicates whether the designated column can be used in a where clause.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return &lt;code&gt;true&lt;/code&gt; if so; &lt;code&gt;false&lt;/code&gt; otherwise
+   */
+  public boolean isSearchable(final int column) {
+<span class="nc" id="L123">    return true;</span>
+  }
+
+  /**
+   * Indicates whether the designated column is a cash value.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return &lt;code&gt;true&lt;/code&gt; if so; &lt;code&gt;false&lt;/code&gt; otherwise
+   */
+  public boolean isCurrency(final int column) {
+<span class="nc" id="L133">    return false;</span>
+  }
+
+  /**
+   * Indicates the nullability of values in the designated column.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return the nullability status of the given column; one of &lt;code&gt;columnNoNulls&lt;/code&gt;,
+   * &lt;code&gt;columnNullable&lt;/code&gt; or &lt;code&gt;columnNullableUnknown&lt;/code&gt;
+   * @throws SQLException if a database access error occurs
+   */
+  public int isNullable(final int column) throws SQLException {
+<span class="nc bnc" id="L145" title="All 2 branches missed.">    if ((getColumnInformation(column).getFlags() &amp; ColumnFlags.NOT_NULL) == 0) {</span>
+<span class="nc" id="L146">      return ResultSetMetaData.columnNullable;</span>
+    } else {
+<span class="nc" id="L148">      return ResultSetMetaData.columnNoNulls;</span>
+    }
+  }
+
+  /**
+   * Indicates whether values in the designated column are signed numbers.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return &lt;code&gt;true&lt;/code&gt; if so; &lt;code&gt;false&lt;/code&gt; otherwise
+   * @throws SQLException if a database access error occurs
+   */
+  public boolean isSigned(int column) throws SQLException {
+<span class="nc" id="L160">    return getColumnInformation(column).isSigned();</span>
+  }
+
+  /**
+   * Indicates the designated column's normal maximum width in characters.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return the normal maximum number of characters allowed as the width of the designated column
+   * @throws SQLException if a database access error occurs
+   */
+  public int getColumnDisplaySize(final int column) throws SQLException {
+<span class="nc" id="L171">    return getColumnInformation(column).getDisplaySize();</span>
+  }
+
+  /**
+   * Gets the designated column's suggested title for use in printouts and displays. The suggested
+   * title is usually specified by the SQL &lt;code&gt;AS&lt;/code&gt; clause.  If a SQL &lt;code&gt;AS&lt;/code&gt; is not
+   * specified, the value returned from
+   * &lt;code&gt;getColumnLabel&lt;/code&gt; will be the same as the value returned by the
+   * &lt;code&gt;getColumnName&lt;/code&gt; method.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return the suggested column title
+   * @throws SQLException if a database access error occurs
+   */
+  public String getColumnLabel(final int column) throws SQLException {
+<span class="nc" id="L186">    return getColumnInformation(column).getName();</span>
+  }
+
+  /**
+   * Get the designated column's name.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return column name
+   * @throws SQLException if a database access error occurs
+   */
+  public String getColumnName(final int column) throws SQLException {
+<span class="nc" id="L197">    String columnName = getColumnInformation(column).getOriginalName();</span>
+<span class="nc bnc" id="L198" title="All 2 branches missed.">    if (returnTableAlias) {</span>
+<span class="nc" id="L199">      columnName = getColumnInformation(column).getName(); //for old mysql compatibility</span>
+    }
+
+<span class="nc bnc" id="L202" title="All 2 branches missed.">    if (&quot;&quot;.equals(columnName)) {</span>
+      // odd things that are no columns, e.g count(*)
+<span class="nc" id="L204">      columnName = getColumnLabel(column);</span>
+    }
+<span class="nc" id="L206">    return columnName;</span>
+  }
+
+  /**
+   * Get the designated column's table's schema.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return schema name or &quot;&quot; if not applicable
+   * @throws SQLException if a database access error occurs
+   */
+  public String getCatalogName(int column) throws SQLException {
+<span class="nc" id="L217">    return getColumnInformation(column).getDatabase();</span>
+  }
+
+  /**
+   * Get the designated column's specified column size. For numeric data, this is the maximum
+   * precision.  For character data, this is the length in characters. For datetime datatypes, this
+   * is the length in characters of the String representation (assuming the maximum allowed
+   * precision of the fractional seconds component). For binary data, this is the length in bytes.
+   * For the ROWID datatype, this is the length in bytes. 0 is returned for data types where the
+   * column size is not applicable.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return precision
+   * @throws SQLException if a database access error occurs
+   */
+  public int getPrecision(final int column) throws SQLException {
+<span class="nc" id="L233">    return (int) getColumnInformation(column).getPrecision();</span>
+  }
+
+  /**
+   * Gets the designated column's number of digits to right of the decimal point. 0 is returned for
+   * data types where the scale is not applicable.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return scale
+   * @throws SQLException if a database access error occurs
+   */
+  public int getScale(final int column) throws SQLException {
+<span class="nc" id="L245">    return getColumnInformation(column).getDecimals();</span>
+  }
+
+  /**
+   * Gets the designated column's table name.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return table name or &quot;&quot; if not applicable
+   * @throws SQLException if a database access error occurs
+   */
+  public String getTableName(final int column) throws SQLException {
+<span class="nc bnc" id="L256" title="All 2 branches missed.">    if (returnTableAlias) {</span>
+<span class="nc" id="L257">      return getColumnInformation(column).getTable();</span>
+    } else {
+<span class="nc" id="L259">      return getColumnInformation(column).getOriginalTable();</span>
+    }
+  }
+
+
+  public String getSchemaName(int column) {
+<span class="nc" id="L265">    return &quot;&quot;;</span>
+  }
+
+  /**
+   * Retrieves the designated column's SQL type.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return SQL type from java.sql.Types
+   * @throws SQLException if a database access error occurs
+   * @see Types
+   */
+  public int getColumnType(final int column) throws SQLException {
+<span class="nc" id="L277">    ColumnInformation ci = getColumnInformation(column);</span>
+<span class="nc bnc" id="L278" title="All 7 branches missed.">    switch (ci.getColumnType()) {</span>
+      case BIT:
+<span class="nc bnc" id="L280" title="All 2 branches missed.">        if (ci.getLength() == 1) {</span>
+<span class="nc" id="L281">          return Types.BIT;</span>
+        }
+<span class="nc" id="L283">        return Types.VARBINARY;</span>
+      case TINYINT:
+<span class="nc bnc" id="L285" title="All 4 branches missed.">        if (ci.getLength() == 1 &amp;&amp; options.tinyInt1isBit) {</span>
+<span class="nc" id="L286">          return Types.BIT;</span>
+        }
+<span class="nc" id="L288">        return Types.TINYINT;</span>
+      case YEAR:
+<span class="nc bnc" id="L290" title="All 2 branches missed.">        if (options.yearIsDateType) {</span>
+<span class="nc" id="L291">          return Types.DATE;</span>
+        }
+<span class="nc" id="L293">        return Types.SMALLINT;</span>
+      case BLOB:
+<span class="nc bnc" id="L295" title="All 4 branches missed.">        if (ci.getLength() &lt; 0 || ci.getLength() &gt; 16777215) {</span>
+<span class="nc" id="L296">          return Types.LONGVARBINARY;</span>
+        }
+<span class="nc" id="L298">        return Types.VARBINARY;</span>
+      case VARCHAR:
+      case VARSTRING:
+<span class="nc bnc" id="L301" title="All 2 branches missed.">        if (ci.isBinary()) {</span>
+<span class="nc" id="L302">          return Types.VARBINARY;</span>
+        }
+<span class="nc bnc" id="L304" title="All 2 branches missed.">        if (ci.getLength() &lt; 0) {</span>
+<span class="nc" id="L305">          return Types.LONGVARCHAR;</span>
+        }
+<span class="nc" id="L307">        return Types.VARCHAR;</span>
+      case STRING:
+<span class="nc bnc" id="L309" title="All 2 branches missed.">        if (ci.isBinary()) {</span>
+<span class="nc" id="L310">          return Types.BINARY;</span>
+        }
+<span class="nc" id="L312">        return Types.CHAR;</span>
+      default:
+<span class="nc" id="L314">        return ci.getColumnType().getSqlType();</span>
+    }
+
+  }
+
+  /**
+   * Retrieves the designated column's database-specific type name.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return type name used by the database. If the column type is a user-defined type, then a
+   *     fully-qualified type name is returned.
+   * @throws SQLException if a database access error occurs
+   */
+  public String getColumnTypeName(final int column) throws SQLException {
+<span class="nc" id="L328">    ColumnInformation ci = getColumnInformation(column);</span>
+<span class="nc" id="L329">    return ColumnType</span>
+<span class="nc" id="L330">        .getColumnTypeName(ci.getColumnType(), ci.getLength(), ci.isSigned(), ci.isBinary());</span>
+
+  }
+
+  /**
+   * Indicates whether the designated column is definitely not writable.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return &lt;code&gt;true&lt;/code&gt; if so; &lt;code&gt;false&lt;/code&gt; otherwise
+   */
+  public boolean isReadOnly(final int column) {
+<span class="nc" id="L341">    return false;</span>
+  }
+
+  /**
+   * Indicates whether it is possible for a write on the designated column to succeed.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return &lt;code&gt;true&lt;/code&gt; if so; &lt;code&gt;false&lt;/code&gt; otherwise
+   */
+  public boolean isWritable(final int column) {
+<span class="nc bnc" id="L351" title="All 2 branches missed.">    return !isReadOnly(column);</span>
+  }
+
+  /**
+   * Indicates whether a write on the designated column will definitely succeed.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return &lt;code&gt;true&lt;/code&gt; if so; &lt;code&gt;false&lt;/code&gt; otherwise
+   */
+  public boolean isDefinitelyWritable(final int column) {
+<span class="nc bnc" id="L361" title="All 2 branches missed.">    return !isReadOnly(column);</span>
+  }
+
+  /**
+   * Returns the fully-qualified name of the Java class whose instances are manufactured if the
+   * method
+   * &lt;code&gt;ResultSet.getObject&lt;/code&gt; is called to retrieve a value from the column.
+   * &lt;code&gt;ResultSet.getObject&lt;/code&gt;
+   * may return a subclass of the class returned by this method.
+   *
+   * @param column the first column is 1, the second is 2, ...
+   * @return the fully-qualified name of the class in the Java programming language that would be
+   *     used by the method &lt;code&gt;ResultSet.getObject&lt;/code&gt; to retrieve the value in the specified
+   *     column. This is the class name used for custom mapping.
+   * @throws SQLException if a database access error occurs
+   */
+
+  public String getColumnClassName(int column) throws SQLException {
+<span class="nc" id="L379">    ColumnInformation ci = getColumnInformation(column);</span>
+<span class="nc" id="L380">    ColumnType type = ci.getColumnType();</span>
+<span class="nc" id="L381">    return ColumnType</span>
+<span class="nc" id="L382">        .getClassName(type, (int) ci.getLength(), ci.isSigned(), ci.isBinary(), options);</span>
+  }
+
+  private ColumnInformation getColumnInformation(int column) throws SQLException {
+<span class="nc bnc" id="L386" title="All 4 branches missed.">    if (column &gt;= 1 &amp;&amp; column &lt;= fieldPackets.length) {</span>
+<span class="nc" id="L387">      return fieldPackets[column - 1];</span>
+    }
+<span class="nc" id="L389">    throw ExceptionMapper.getSqlException(&quot;No such column&quot;);</span>
+  }
+
+  /**
+   * Returns an object that implements the given interface to allow access to non-standard methods,
+   * or standard methods not exposed by the proxy.
+   * &lt;br&gt;
+   * If the receiver implements the interface then the result is the receiver or a proxy for the
+   * receiver. If the receiver is a wrapper and the wrapped object implements the interface then the
+   * result is the wrapped object or a proxy for the wrapped object. Otherwise return the the result
+   * of calling &lt;code&gt;unwrap&lt;/code&gt; recursively on the wrapped object or a proxy for that result. If
+   * the receiver is not a wrapper and does not implement the interface, then an
+   * &lt;code&gt;SQLException&lt;/code&gt; is thrown.
+   *
+   * @param iface A Class defining an interface that the result must implement.
+   * @return an object that implements the interface. May be a proxy for the actual implementing
+   *     object.
+   * @throws SQLException If no object found that implements the interface
+   */
+  public &lt;T&gt; T unwrap(final Class&lt;T&gt; iface) throws SQLException {
+    try {
+<span class="nc bnc" id="L410" title="All 2 branches missed.">      if (isWrapperFor(iface)) {</span>
+<span class="nc" id="L411">        return iface.cast(this);</span>
+      } else {
+<span class="nc" id="L413">        throw new SQLException(&quot;The receiver is not a wrapper for &quot; + iface.getName());</span>
+      }
+<span class="nc" id="L415">    } catch (Exception e) {</span>
+<span class="nc" id="L416">      throw new SQLException(&quot;The receiver is not a wrapper and does not implement the interface&quot;);</span>
+    }
+  }
+
+  /**
+   * Returns true if this either implements the interface argument or is directly or indirectly a
+   * wrapper for an object that does. Returns false otherwise. If this implements the interface then
+   * return true, else if this is a wrapper then return the result of recursively calling
+   * &lt;code&gt;isWrapperFor&lt;/code&gt; on the wrapped object. If this does not implement the interface and
+   * is not a wrapper, return false. This method should be implemented as a low-cost operation
+   * compared to &lt;code&gt;unwrap&lt;/code&gt; so that callers can use this method to avoid expensive
+   * &lt;code&gt;unwrap&lt;/code&gt; calls that may fail. If this method returns true then calling
+   * &lt;code&gt;unwrap&lt;/code&gt; with the same argument should succeed.
+   *
+   * @param iface a Class defining an interface.
+   * @return true if this implements the interface or directly or indirectly wraps an object that
+   *     does.
+   * @throws SQLException if an error occurs while determining whether this is a wrapper for an
+   *                      object with the given interface.
+   */
+  public boolean isWrapperFor(final Class&lt;?&gt; iface) throws SQLException {
+<span class="nc" id="L437">    return iface.isInstance(this);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

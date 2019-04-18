@@ -1,0 +1,1448 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MariaDbStatement.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">MariaDbStatement.java</span></div><h1>MariaDbStatement.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc;
+
+import java.io.InputStream;
+import java.nio.charset.Charset;
+import java.sql.BatchUpdateException;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.SQLTimeoutException;
+import java.sql.SQLWarning;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+import org.mariadb.jdbc.internal.com.read.dao.CmdInformation;
+import org.mariadb.jdbc.internal.com.read.dao.Results;
+import org.mariadb.jdbc.internal.com.read.resultset.SelectResultSet;
+import org.mariadb.jdbc.internal.logging.Logger;
+import org.mariadb.jdbc.internal.logging.LoggerFactory;
+import org.mariadb.jdbc.internal.protocol.Protocol;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.Utils;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+import org.mariadb.jdbc.internal.util.scheduler.SchedulerServiceProviderHolder;
+
+
+<span class="nc bnc" id="L84" title="All 2 branches missed.">public class MariaDbStatement implements Statement, Cloneable {</span>
+
+  //timeout scheduler
+  private static final ScheduledExecutorService timeoutScheduler = SchedulerServiceProviderHolder
+<span class="nc" id="L88">      .getTimeoutScheduler();</span>
+<span class="nc" id="L89">  private static final Logger logger = LoggerFactory.getLogger(MariaDbStatement.class);</span>
+  protected final ReentrantLock lock;
+  protected final int resultSetScrollType;
+  protected final int resultSetConcurrency;
+  protected final Options options;
+  protected final boolean canUseServerTimeout;
+  /**
+   * the protocol used to talk to the server.
+   */
+  protected Protocol protocol;
+  /**
+   * the  Connection object.
+   */
+  protected MariaDbConnection connection;
+<span class="nc" id="L103">  protected volatile boolean closed = false;</span>
+  protected int queryTimeout;
+  protected long maxRows;
+  protected Results results;
+  protected int fetchSize;
+  protected volatile boolean executing;
+  //are warnings cleared?
+  private boolean warningsCleared;
+<span class="nc" id="L111">  private boolean mustCloseOnCompletion = false;</span>
+  private List&lt;String&gt; batchQueries;
+  private Future&lt;?&gt; timerTaskFuture;
+  private boolean isTimedout;
+  private int maxFieldSize;
+
+  /**
+   * Creates a new Statement.
+   *
+   * @param connection           the connection to return in getConnection.
+   * @param resultSetScrollType  one of the following &lt;code&gt;ResultSet&lt;/code&gt; constants:
+   *                             &lt;code&gt;ResultSet.TYPE_FORWARD_ONLY&lt;/code&gt;,
+   *                             &lt;code&gt;ResultSet.TYPE_SCROLL_INSENSITIVE&lt;/code&gt;, or
+   *                             &lt;code&gt;ResultSet.TYPE_SCROLL_SENSITIVE&lt;/code&gt;
+   * @param resultSetConcurrency a concurrency type; one of &lt;code&gt;ResultSet.CONCUR_READ_ONLY&lt;/code&gt;
+   *                             or
+   *                             &lt;code&gt;ResultSet.CONCUR_UPDATABLE&lt;/code&gt;
+   */
+<span class="nc" id="L129">  public MariaDbStatement(MariaDbConnection connection, int resultSetScrollType, int resultSetConcurrency) {</span>
+<span class="nc" id="L130">    this.protocol = connection.getProtocol();</span>
+<span class="nc" id="L131">    this.connection = connection;</span>
+<span class="nc" id="L132">    this.canUseServerTimeout = connection.canUseServerTimeout();</span>
+<span class="nc" id="L133">    this.resultSetScrollType = resultSetScrollType;</span>
+<span class="nc" id="L134">    this.resultSetConcurrency = resultSetConcurrency;</span>
+<span class="nc" id="L135">    this.lock = this.connection.lock;</span>
+<span class="nc" id="L136">    this.options = this.protocol.getOptions();</span>
+<span class="nc" id="L137">  }</span>
+
+  /**
+   * Clone statement.
+   *
+   * @param connection connection
+   * @return Clone statement.
+   * @throws CloneNotSupportedException if any error occur.
+   */
+  public MariaDbStatement clone(MariaDbConnection connection) throws CloneNotSupportedException {
+<span class="nc" id="L147">    MariaDbStatement clone = (MariaDbStatement) super.clone();</span>
+<span class="nc" id="L148">    clone.connection = connection;</span>
+<span class="nc" id="L149">    clone.protocol = connection.getProtocol();</span>
+<span class="nc" id="L150">    clone.timerTaskFuture = null;</span>
+<span class="nc" id="L151">    clone.batchQueries = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L152">    clone.closed = false;</span>
+<span class="nc" id="L153">    clone.warningsCleared = true;</span>
+<span class="nc" id="L154">    clone.fetchSize = 0;</span>
+<span class="nc" id="L155">    clone.maxRows = 0;</span>
+<span class="nc" id="L156">    return clone;</span>
+  }
+
+  // Part of query prolog - setup timeout timer
+  protected void setTimerTask(boolean isBatch) {
+<span class="nc bnc" id="L161" title="All 4 branches missed.">    assert (timerTaskFuture == null);</span>
+
+<span class="nc" id="L163">    timerTaskFuture = timeoutScheduler.schedule(() -&gt; {</span>
+      try {
+<span class="nc" id="L165">        isTimedout = true;</span>
+<span class="nc bnc" id="L166" title="All 2 branches missed.">        if (!isBatch) {</span>
+<span class="nc" id="L167">          protocol.cancelCurrentQuery();</span>
+        }
+<span class="nc" id="L169">        protocol.interrupt();</span>
+<span class="nc" id="L170">      } catch (Throwable e) {</span>
+        //eat
+<span class="nc" id="L172">      }</span>
+<span class="nc" id="L173">    }, queryTimeout, TimeUnit.SECONDS);</span>
+<span class="nc" id="L174">  }</span>
+
+  /**
+   * Command prolog.
+   * &lt;ol&gt;
+   * &lt;li&gt;clear previous query state&lt;/li&gt;
+   * &lt;li&gt;launch timeout timer if needed&lt;/li&gt;
+   * &lt;/ol&gt;
+   *
+   * @param isBatch is batch
+   * @throws SQLException if statement is closed
+   */
+  protected void executeQueryPrologue(boolean isBatch) throws SQLException {
+<span class="nc" id="L187">    executing = true;</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">    if (closed) {</span>
+<span class="nc" id="L189">      throw new SQLException(&quot;execute() is called on closed statement&quot;);</span>
+    }
+<span class="nc bnc" id="L191" title="All 2 branches missed.">    protocol.prolog(maxRows, protocol.getProxy() != null, connection, this);</span>
+<span class="nc bnc" id="L192" title="All 6 branches missed.">    if (queryTimeout != 0 &amp;&amp; (!canUseServerTimeout || isBatch)) {</span>
+<span class="nc" id="L193">      setTimerTask(isBatch);</span>
+    }
+<span class="nc" id="L195">  }</span>
+
+  private void stopTimeoutTask() {
+<span class="nc bnc" id="L198" title="All 2 branches missed.">    if (timerTaskFuture != null) {</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">      if (!timerTaskFuture.cancel(true)) {</span>
+        // could not cancel, task either started or already finished
+        // we must now wait for task to finish to ensure state modifications are done
+        try {
+<span class="nc" id="L203">          timerTaskFuture.get();</span>
+<span class="nc" id="L204">        } catch (InterruptedException e) {</span>
+          // reset interrupt status
+<span class="nc" id="L206">          Thread.currentThread().interrupt();</span>
+<span class="nc" id="L207">        } catch (ExecutionException e) {</span>
+          // ignore error, likely due to interrupting during cancel
+<span class="nc" id="L209">        }</span>
+        // we don't catch the exception if already canceled, that would indicate we tried
+        // to cancel in parallel (which this code currently is not designed for)
+      }
+<span class="nc" id="L213">      timerTaskFuture = null;</span>
+    }
+<span class="nc" id="L215">  }</span>
+
+  /**
+   * Reset timeout after query, re-throw SQL exception.
+   *
+   * @param sqle current exception
+   * @return SQLException exception with new message in case of timer timeout.
+   */
+  protected SQLException executeExceptionEpilogue(SQLException sqle) {
+    //if has a failover, closing the statement
+<span class="nc bnc" id="L225" title="All 4 branches missed.">    if (sqle.getSQLState() != null &amp;&amp; sqle.getSQLState().startsWith(&quot;08&quot;)) {</span>
+      try {
+<span class="nc" id="L227">        close();</span>
+<span class="nc" id="L228">      } catch (SQLException sqlee) {</span>
+        //eat exception
+<span class="nc" id="L230">      }</span>
+    }
+
+<span class="nc bnc" id="L233" title="All 2 branches missed.">    if (isTimedout) {</span>
+<span class="nc" id="L234">      return new SQLTimeoutException(&quot;(conn:&quot; + getServerThreadId() + &quot;) Query timed out&quot;, &quot;JZ0002&quot;,</span>
+          1317, sqle);
+    }
+<span class="nc bnc" id="L237" title="All 2 branches missed.">    SQLException sqlException = ExceptionMapper</span>
+<span class="nc" id="L238">        .getException(sqle, connection, this, queryTimeout != 0);</span>
+<span class="nc" id="L239">    logger.error(&quot;error executing query&quot;, sqlException);</span>
+<span class="nc" id="L240">    return sqlException;</span>
+  }
+
+  protected void executeEpilogue() {
+<span class="nc" id="L244">    stopTimeoutTask();</span>
+<span class="nc" id="L245">    isTimedout = false;</span>
+<span class="nc" id="L246">    executing = false;</span>
+<span class="nc" id="L247">  }</span>
+
+
+  protected void executeBatchEpilogue() {
+<span class="nc" id="L251">    executing = false;</span>
+<span class="nc" id="L252">    stopTimeoutTask();</span>
+<span class="nc" id="L253">    isTimedout = false;</span>
+<span class="nc" id="L254">    clearBatch();</span>
+<span class="nc" id="L255">  }</span>
+
+  private SQLException handleFailoverAndTimeout(SQLException sqle) {
+
+    //if has a failover, closing the statement
+<span class="nc bnc" id="L260" title="All 4 branches missed.">    if (sqle.getSQLState() != null &amp;&amp; sqle.getSQLState().startsWith(&quot;08&quot;)) {</span>
+      try {
+<span class="nc" id="L262">        close();</span>
+<span class="nc" id="L263">      } catch (SQLException sqlee) {</span>
+        //eat exception
+<span class="nc" id="L265">      }</span>
+    }
+
+<span class="nc bnc" id="L268" title="All 2 branches missed.">    if (isTimedout) {</span>
+<span class="nc" id="L269">      sqle = new SQLTimeoutException(&quot;(conn:&quot; + getServerThreadId() + &quot;) Query timed out&quot;, &quot;JZ0002&quot;,</span>
+          1317, sqle);
+    }
+<span class="nc" id="L272">    return sqle;</span>
+  }
+
+  protected BatchUpdateException executeBatchExceptionEpilogue(SQLException initialSqle, int size) {
+<span class="nc" id="L276">    SQLException sqle = handleFailoverAndTimeout(initialSqle);</span>
+    int[] ret;
+<span class="nc bnc" id="L278" title="All 4 branches missed.">    if (results == null || !results.commandEnd()) {</span>
+<span class="nc" id="L279">      ret = new int[size];</span>
+<span class="nc" id="L280">      Arrays.fill(ret, Statement.EXECUTE_FAILED);</span>
+    } else {
+<span class="nc" id="L282">      ret = results.getCmdInformation().getUpdateCounts();</span>
+    }
+
+<span class="nc bnc" id="L285" title="All 2 branches missed.">    sqle = ExceptionMapper.getException(sqle, connection, this, queryTimeout != 0);</span>
+<span class="nc" id="L286">    logger.error(&quot;error executing query&quot;, sqle);</span>
+
+<span class="nc" id="L288">    return new BatchUpdateException(sqle.getMessage(), sqle.getSQLState(), sqle.getErrorCode(), ret,</span>
+        sqle);
+  }
+
+  /**
+   * Executes a query.
+   *
+   * @param sql               the query
+   * @param fetchSize         fetch size
+   * @param autoGeneratedKeys a flag indicating whether auto-generated keys should be returned; one
+   *                          of
+   *                          &lt;code&gt;Statement.RETURN_GENERATED_KEYS&lt;/code&gt;
+   *                          or &lt;code&gt;Statement.NO_GENERATED_KEYS&lt;/code&gt;
+   * @return true if there was a result set, false otherwise.
+   * @throws SQLException the error description
+   */
+  private boolean executeInternal(String sql, int fetchSize, int autoGeneratedKeys)
+      throws SQLException {
+
+<span class="nc" id="L307">    lock.lock();</span>
+    try {
+
+<span class="nc" id="L310">      executeQueryPrologue(false);</span>
+<span class="nc" id="L311">      results = new Results(this,</span>
+          fetchSize,
+          false,
+          1,
+          false,
+          resultSetScrollType,
+          resultSetConcurrency,
+          autoGeneratedKeys,
+<span class="nc" id="L319">          protocol.getAutoIncrementIncrement());</span>
+
+<span class="nc" id="L321">      protocol.executeQuery(protocol.isMasterConnection(), results,</span>
+<span class="nc" id="L322">          getTimeoutSql(Utils.nativeSql(sql, protocol.noBackslashEscapes())));</span>
+<span class="nc" id="L323">      results.commandEnd();</span>
+<span class="nc bnc" id="L324" title="All 2 branches missed.">      return results.getResultSet() != null;</span>
+
+<span class="nc" id="L326">    } catch (SQLException exception) {</span>
+<span class="nc" id="L327">      throw executeExceptionEpilogue(exception);</span>
+    } finally {
+<span class="nc" id="L329">      executeEpilogue();</span>
+<span class="nc" id="L330">      lock.unlock();</span>
+    }
+
+  }
+
+  private String getTimeoutSql(String sql) {
+<span class="nc bnc" id="L336" title="All 4 branches missed.">    if (queryTimeout != 0 &amp;&amp; canUseServerTimeout) {</span>
+<span class="nc" id="L337">      return &quot;SET STATEMENT max_statement_time=&quot; + queryTimeout + &quot; FOR &quot; + sql;</span>
+    }
+<span class="nc" id="L339">    return sql;</span>
+  }
+
+  /**
+   * ! This method is for test only ! This permit sending query using specific charset.
+   *
+   * @param sql     sql
+   * @param charset charset
+   * @return boolean if execution went well
+   * @throws SQLException if any exception occur
+   */
+  public boolean testExecute(String sql, Charset charset) throws SQLException {
+<span class="nc" id="L351">    lock.lock();</span>
+    try {
+
+<span class="nc" id="L354">      executeQueryPrologue(false);</span>
+<span class="nc" id="L355">      results = new Results(this, fetchSize, false, 1, false, resultSetScrollType,</span>
+<span class="nc" id="L356">          resultSetConcurrency, Statement.NO_GENERATED_KEYS, protocol.getAutoIncrementIncrement());</span>
+<span class="nc" id="L357">      protocol.executeQuery(protocol.isMasterConnection(), results,</span>
+<span class="nc" id="L358">          getTimeoutSql(Utils.nativeSql(sql, protocol.noBackslashEscapes())), charset);</span>
+<span class="nc" id="L359">      results.commandEnd();</span>
+<span class="nc bnc" id="L360" title="All 2 branches missed.">      return results.getResultSet() != null;</span>
+
+<span class="nc" id="L362">    } catch (SQLException exception) {</span>
+<span class="nc" id="L363">      throw executeExceptionEpilogue(exception);</span>
+    } finally {
+<span class="nc" id="L365">      executeEpilogue();</span>
+<span class="nc" id="L366">      lock.unlock();</span>
+    }
+  }
+
+  /**
+   * executes a query.
+   *
+   * @param sql the query
+   * @return true if there was a result set, false otherwise.
+   * @throws SQLException if the query could not be sent to server
+   */
+  public boolean execute(String sql) throws SQLException {
+<span class="nc" id="L378">    return executeInternal(sql, fetchSize, Statement.NO_GENERATED_KEYS);</span>
+  }
+
+  /**
+   * &lt;p&gt;Executes the given SQL statement, which may return multiple results, and signals the driver
+   * that any auto-generated keys should be made available for retrieval.  The driver will ignore
+   * this signal if the SQL statement is not an &lt;code&gt;INSERT&lt;/code&gt; statement, or an SQL statement
+   * able to return auto-generated keys (the list of such statements is vendor-specific).&lt;/p&gt;
+   * &lt;p&gt;In some (uncommon) situations, a single SQL statement may return multiple result sets
+   * and/or update counts. Normally you can ignore this unless you are (1) executing a stored
+   * procedure that you know may return multiple results or (2) you are dynamically executing an
+   * unknown SQL string. &lt;/p&gt; The
+   * &lt;code&gt;execute&lt;/code&gt; method executes an SQL statement and indicates the form of the first
+   * result.  You must then use the methods
+   * &lt;code&gt;getResultSet&lt;/code&gt; or
+   * &lt;code&gt;getUpdateCount&lt;/code&gt; to retrieve the result, and &lt;code&gt;getInternalMoreResults&lt;/code&gt; to
+   * move to any subsequent result(s).
+   *
+   * @param sql               any SQL statement
+   * @param autoGeneratedKeys a constant indicating whether auto-generated keys should be made
+   *                          available for retrieval using the method&lt;code&gt;getGeneratedKeys&lt;/code&gt;;
+   *                          one of the following constants:
+   *                          &lt;code&gt;Statement.RETURN_GENERATED_KEYS&lt;/code&gt; or
+   *                          &lt;code&gt;Statement.NO_GENERATED_KEYS&lt;/code&gt;
+   * @return &lt;code&gt;true&lt;/code&gt; if the first result is a &lt;code&gt;ResultSet&lt;/code&gt; object;
+   *     &lt;code&gt;false&lt;/code&gt; if it is an update count or there are no results
+   * @throws SQLException                    if a database access error occurs, this method is
+   *                                         called on a closed
+   *                                         &lt;code&gt;Statement&lt;/code&gt; or the second parameter
+   *                                         supplied
+   *                                         to this method is not &lt;code&gt;Statement.RETURN_GENERATED_KEYS&lt;/code&gt;
+   *                                         or
+   *                                         &lt;code&gt;Statement.NO_GENERATED_KEYS&lt;/code&gt;.
+   * @see #getResultSet
+   * @see #getUpdateCount
+   * @see #getMoreResults
+   * @see #getGeneratedKeys
+   */
+  public boolean execute(final String sql, final int autoGeneratedKeys) throws SQLException {
+<span class="nc" id="L417">    return executeInternal(sql, fetchSize, autoGeneratedKeys);</span>
+  }
+
+
+  /**
+   * Executes the given SQL statement, which may return multiple results, and signals the driver
+   * that the auto-generated keys indicated in the given array should be made available for
+   * retrieval.  This array contains the indexes of the columns in the target table that contain the
+   * auto-generated keys that should be made available. The driver will ignore the array if the SQL
+   * statement is not an &lt;code&gt;INSERT&lt;/code&gt; statement, or an SQL statement able to return
+   * auto-generated keys (the list of such statements is vendor-specific).
+   * &lt;p&gt;Under some (uncommon) situations, a single SQL statement may return multiple result sets
+   * and/or update counts. Normally you can ignore this unless you are (1) executing a stored
+   * procedure that you know may return multiple results or (2) you are dynamically executing an
+   * unknown SQL string.&lt;/p&gt; The
+   * &lt;code&gt;execute&lt;/code&gt; method executes an SQL statement and indicates the form of the first
+   * result. You must then use the methods &lt;code&gt;getResultSet&lt;/code&gt; or &lt;code&gt;getUpdateCount&lt;/code&gt;
+   * to retrieve the result, and &lt;code&gt;getInternalMoreResults&lt;/code&gt; to move to any subsequent
+   * result(s).
+   *
+   * @param sql           any SQL statement
+   * @param columnIndexes an array of the indexes of the columns in the inserted row that should be
+   *                      made available for retrieval by a call to the method
+   *                      &lt;code&gt;getGeneratedKeys&lt;/code&gt;
+   * @return &lt;code&gt;true&lt;/code&gt; if the first result is a &lt;code&gt;ResultSet&lt;/code&gt; object;
+   *     &lt;code&gt;false&lt;/code&gt; if it is an update count or there are no results
+   * @throws SQLException                    if a database access error occurs, this method is
+   *                                         called on a closed
+   *                                         &lt;code&gt;Statement&lt;/code&gt; or the elements in
+   *                                         the &lt;code&gt;int&lt;/code&gt; array passed to this method are
+   *                                         not valid column indexes
+   * @see #getResultSet
+   * @see #getUpdateCount
+   * @see #getMoreResults
+   */
+  public boolean execute(final String sql, final int[] columnIndexes) throws SQLException {
+<span class="nc" id="L453">    return executeInternal(sql, fetchSize, Statement.RETURN_GENERATED_KEYS);</span>
+  }
+
+
+  /**
+   * &lt;p&gt;Executes the given SQL statement, which may return multiple results, and signals the driver
+   * that the auto-generated keys indicated in the given array should be made available for
+   * retrieval. This array contains the names of the columns in the target table that contain the
+   * auto-generated keys that should be made available. The driver will ignore the array if the SQL
+   * statement is not an &lt;code&gt;INSERT&lt;/code&gt; statement, or an SQL statement able to return
+   * auto-generated keys (the list of such statements is vendor-specific). &lt;/p&gt;
+   * &lt;p&gt; In some (uncommon) situations, a single SQL statement may return multiple result sets
+   * and/or update counts. Normally you can ignore this unless you are (1) executing a stored
+   * procedure that you know may return multiple results or (2) you are dynamically executing an
+   * unknown SQL string. &lt;/p&gt;
+   * &lt;p&gt;The &lt;code&gt;execute&lt;/code&gt; method executes an SQL statement and indicates the form of the
+   * first result. You must then use the methods &lt;code&gt;getResultSet&lt;/code&gt; or
+   * &lt;code&gt;getUpdateCount&lt;/code&gt; to retrieve the result, and &lt;code&gt;getInternalMoreResults&lt;/code&gt; to
+   * move to any subsequent result(s).&lt;/p&gt;
+   *
+   * @param sql         any SQL statement
+   * @param columnNames an array of the names of the columns in the inserted row that should be made
+   *                    available for retrieval by a call to the method &lt;code&gt;getGeneratedKeys&lt;/code&gt;
+   * @return &lt;code&gt;true&lt;/code&gt; if the next result is a &lt;code&gt;ResultSet&lt;/code&gt; object;
+   *     &lt;code&gt;false&lt;/code&gt; if it is an update count or there are no more results
+   * @throws SQLException                    if a database access error occurs, this method is
+   *                                         called on a closed
+   *                                         &lt;code&gt;Statement&lt;/code&gt; or the elements of
+   *                                         the &lt;code&gt;String&lt;/code&gt; array passed to this method are
+   *                                         not valid column names
+   * @see #getResultSet
+   * @see #getUpdateCount
+   * @see #getMoreResults
+   * @see #getGeneratedKeys
+   */
+  public boolean execute(final String sql, final String[] columnNames) throws SQLException {
+<span class="nc" id="L489">    return executeInternal(sql, fetchSize, Statement.RETURN_GENERATED_KEYS);</span>
+  }
+
+
+  /**
+   * executes a select query.
+   *
+   * @param sql the query to send to the server
+   * @return a result set
+   * @throws SQLException if something went wrong
+   */
+  public ResultSet executeQuery(String sql) throws SQLException {
+<span class="nc bnc" id="L501" title="All 2 branches missed.">    if (executeInternal(sql, fetchSize, Statement.NO_GENERATED_KEYS)) {</span>
+<span class="nc" id="L502">      return results.getResultSet();</span>
+    }
+<span class="nc" id="L504">    return SelectResultSet.createEmptyResultSet();</span>
+  }
+
+
+  /**
+   * Executes an update.
+   *
+   * @param sql the update query.
+   * @return update count
+   * @throws SQLException if the query could not be sent to server.
+   */
+  public int executeUpdate(String sql) throws SQLException {
+<span class="nc bnc" id="L516" title="All 2 branches missed.">    if (executeInternal(sql, fetchSize, Statement.NO_GENERATED_KEYS)) {</span>
+<span class="nc" id="L517">      return 0;</span>
+    }
+<span class="nc" id="L519">    return getUpdateCount();</span>
+  }
+
+
+  /**
+   * Executes the given SQL statement and signals the driver with the given flag about whether the
+   * auto-generated keys produced by this &lt;code&gt;Statement&lt;/code&gt; object should be made available for
+   * retrieval.  The driver will ignore the flag if the SQL statement is not an
+   * &lt;code&gt;INSERT&lt;/code&gt; statement, or an SQL statement able to return auto-generated keys (the
+   * list of such statements is vendor-specific).
+   *
+   * @param sql               an SQL Data Manipulation Language (DML) statement, such as
+   *                          &lt;code&gt;INSERT&lt;/code&gt;,
+   *                          &lt;code&gt;UPDATE&lt;/code&gt; or &lt;code&gt;DELETE&lt;/code&gt;; or an
+   *                          SQL statement that returns nothing, such as a DDL statement.
+   * @param autoGeneratedKeys a flag indicating whether auto-generated keys should be made available
+   *                          for retrieval; one of the following constants:
+   *                          &lt;code&gt;Statement.RETURN_GENERATED_KEYS&lt;/code&gt; &lt;code&gt;Statement.NO_GENERATED_KEYS&lt;/code&gt;
+   * @return either (1) the row count for SQL Data Manipulation Language (DML) statements or (2) 0
+   *     for SQL statements that return nothing
+   * @throws SQLException                    if a database access error occurs, this method is
+   *                                         called on a closed
+   *                                         &lt;code&gt;Statement&lt;/code&gt;, the given SQL
+   *                                         statement returns a &lt;code&gt;ResultSet&lt;/code&gt; object, or
+   *                                         the given constant is not one of those allowed
+   */
+  public int executeUpdate(final String sql, final int autoGeneratedKeys) throws SQLException {
+<span class="nc bnc" id="L546" title="All 2 branches missed.">    if (executeInternal(sql, fetchSize, autoGeneratedKeys)) {</span>
+<span class="nc" id="L547">      return 0;</span>
+    }
+<span class="nc" id="L549">    return getUpdateCount();</span>
+  }
+
+  /**
+   * Executes the given SQL statement and signals the driver that the auto-generated keys indicated
+   * in the given array should be made available for retrieval.   This array contains the indexes of
+   * the columns in the target table that contain the auto-generated keys that should be made
+   * available. The driver will ignore the array if the SQL statement is not an &lt;code&gt;INSERT&lt;/code&gt;
+   * statement, or an SQL statement able to return auto-generated keys (the list of such statements
+   * is vendor-specific).
+   *
+   * @param sql           an SQL Data Manipulation Language (DML) statement, such as
+   *                      &lt;code&gt;INSERT&lt;/code&gt;,
+   *                      &lt;code&gt;UPDATE&lt;/code&gt; or &lt;code&gt;DELETE&lt;/code&gt;; or an SQL statement that
+   *                      returns nothing, such as a DDL statement.
+   * @param columnIndexes an array of column indexes indicating the columns that should be returned
+   *                      from the inserted row
+   * @return either (1) the row count for SQL Data Manipulation Language (DML) statements or (2) 0
+   *     for SQL statements that return nothing
+   * @throws SQLException                    if a database access error occurs, this method is
+   *                                         called on a closed
+   *                                         &lt;code&gt;Statement&lt;/code&gt;, the SQL statement returns a
+   *                                         &lt;code&gt;ResultSet&lt;/code&gt;
+   *                                         object, or the second argument supplied to this method
+   *                                         is not an &lt;code&gt;int&lt;/code&gt; array whose elements are
+   *                                         valid column indexes
+   */
+  public int executeUpdate(final String sql, final int[] columnIndexes) throws SQLException {
+<span class="nc" id="L577">    return executeUpdate(sql, Statement.RETURN_GENERATED_KEYS);</span>
+  }
+
+  /**
+   * Executes the given SQL statement and signals the driver that the auto-generated keys indicated
+   * in the given array should be made available for retrieval. This array contains the names of the
+   * columns in the target table that contain the auto-generated keys that should be made available.
+   * The driver will ignore the array if the SQL statement is not an &lt;code&gt;INSERT&lt;/code&gt; statement,
+   * or an SQL statement able to return auto-generated keys (the list of such statements is
+   * vendor-specific).
+   *
+   * @param sql         an SQL Data Manipulation Language (DML) statement, such as
+   *                    &lt;code&gt;INSERT&lt;/code&gt;,
+   *                    &lt;code&gt;UPDATE&lt;/code&gt; or &lt;code&gt;DELETE&lt;/code&gt;; or an
+   *                    SQL statement that returns nothing, such as a DDL statement.
+   * @param columnNames an array of the names of the columns that should be returned from the
+   *                    inserted row
+   * @return either the row count for &lt;code&gt;INSERT&lt;/code&gt;, &lt;code&gt;UPDATE&lt;/code&gt;, or
+   *     &lt;code&gt;DELETE&lt;/code&gt; statements, or 0 for SQL statements that return nothing
+   * @throws SQLException                    if a database access error occurs, this method is
+   *                                         called on a closed
+   *                                         &lt;code&gt;Statement&lt;/code&gt;, the SQL statement returns a
+   *                                         &lt;code&gt;ResultSet&lt;/code&gt;
+   *                                         object, or the second argument supplied to this method
+   *                                         is not a &lt;code&gt;String&lt;/code&gt; array whose elements are
+   *                                         valid column names
+   */
+  public int executeUpdate(final String sql, final String[] columnNames) throws SQLException {
+<span class="nc" id="L605">    return executeUpdate(sql, Statement.RETURN_GENERATED_KEYS);</span>
+  }
+
+
+  /**
+   * Executes the given SQL statement, which may be an INSERT, UPDATE, or DELETE statement or an SQL
+   * statement that returns nothing, such as an SQL DDL statement. This method should be used when
+   * the returned row count may exceed Integer.MAX_VALUE.
+   *
+   * @param sql sql command
+   * @return update counts
+   * @throws SQLException if any error occur during execution
+   */
+  @Override
+  public long executeLargeUpdate(String sql) throws SQLException {
+<span class="nc bnc" id="L620" title="All 2 branches missed.">    if (executeInternal(sql, fetchSize, Statement.NO_GENERATED_KEYS)) {</span>
+<span class="nc" id="L621">      return 0;</span>
+    }
+<span class="nc" id="L623">    return getLargeUpdateCount();</span>
+  }
+
+  /**
+   * Identical to executeLargeUpdate(String sql), with a flag that indicate that autoGeneratedKeys
+   * (primary key fields with &quot;auto_increment&quot;) generated id's must be retrieved.
+   *
+   * &lt;p&gt;Those id's will be available using getGeneratedKeys() method.&lt;/p&gt;
+   *
+   * @param sql               sql command
+   * @param autoGeneratedKeys a flag indicating whether auto-generated keys should be made available
+   *                          for retrieval; one of the following constants: Statement.RETURN_GENERATED_KEYS
+   *                          Statement.NO_GENERATED_KEYS
+   * @return update counts
+   * @throws SQLException if any error occur during execution
+   */
+  @Override
+  public long executeLargeUpdate(String sql, int autoGeneratedKeys) throws SQLException {
+<span class="nc bnc" id="L641" title="All 2 branches missed.">    if (executeInternal(sql, fetchSize, autoGeneratedKeys)) {</span>
+<span class="nc" id="L642">      return 0;</span>
+    }
+<span class="nc" id="L644">    return getLargeUpdateCount();</span>
+  }
+
+  /**
+   * Identical to executeLargeUpdate(String sql, int autoGeneratedKeys) with autoGeneratedKeys =
+   * Statement.RETURN_GENERATED_KEYS set.
+   *
+   * @param sql           sql command
+   * @param columnIndexes column Indexes
+   * @return update counts
+   * @throws SQLException if any error occur during execution
+   */
+  @Override
+  public long executeLargeUpdate(String sql, int[] columnIndexes) throws SQLException {
+<span class="nc" id="L658">    return executeLargeUpdate(sql, Statement.RETURN_GENERATED_KEYS);</span>
+  }
+
+  /**
+   * Identical to executeLargeUpdate(String sql, int autoGeneratedKeys) with autoGeneratedKeys =
+   * Statement.RETURN_GENERATED_KEYS set.
+   *
+   * @param sql         sql command
+   * @param columnNames columns names
+   * @return update counts
+   * @throws SQLException if any error occur during execution
+   */
+  @Override
+  public long executeLargeUpdate(String sql, String[] columnNames) throws SQLException {
+<span class="nc" id="L672">    return executeLargeUpdate(sql, Statement.RETURN_GENERATED_KEYS);</span>
+  }
+
+  /**
+   * Releases this &lt;code&gt;Statement&lt;/code&gt; object's database and JDBC resources immediately instead
+   * of waiting for this to happen when it is automatically closed. It is generally good practice to
+   * release resources as soon as you are finished with them to avoid tying up database resources.
+   * Calling the method &lt;code&gt;close&lt;/code&gt; on a &lt;code&gt;Statement&lt;/code&gt; object that is already closed
+   * has no effect. &lt;B&gt;Note:&lt;/B&gt;When a
+   * &lt;code&gt;Statement&lt;/code&gt; object is closed, its current &lt;code&gt;ResultSet&lt;/code&gt; object, if one
+   * exists, is also closed.
+   *
+   * @throws SQLException if a database access error occurs
+   */
+  public void close() throws SQLException {
+<span class="nc" id="L687">    lock.lock();</span>
+    try {
+<span class="nc" id="L689">      closed = true;</span>
+<span class="nc bnc" id="L690" title="All 2 branches missed.">      if (results != null) {</span>
+<span class="nc bnc" id="L691" title="All 2 branches missed.">        if (results.getFetchSize() != 0) {</span>
+<span class="nc" id="L692">          skipMoreResults();</span>
+        }
+
+<span class="nc" id="L695">        results.close();</span>
+      }
+<span class="nc" id="L697">      protocol = null;</span>
+
+<span class="nc bnc" id="L699" title="All 4 branches missed.">      if (connection == null || connection.pooledConnection == null</span>
+<span class="nc bnc" id="L700" title="All 2 branches missed.">          || connection.pooledConnection.noStmtEventListeners()) {</span>
+<span class="nc" id="L701">        return;</span>
+      }
+<span class="nc" id="L703">      connection.pooledConnection.fireStatementClosed(this);</span>
+    } finally {
+<span class="nc" id="L705">      lock.unlock();</span>
+    }
+<span class="nc" id="L707">  }</span>
+
+  /**
+   * Retrieves the maximum number of bytes that can be returned for character and binary column
+   * values in a &lt;code&gt;ResultSet&lt;/code&gt; object produced by this &lt;code&gt;Statement&lt;/code&gt; object. This
+   * limit applies only to
+   * &lt;code&gt;BINARY&lt;/code&gt;,
+   * &lt;code&gt;VARBINARY&lt;/code&gt;,
+   * &lt;code&gt;LONGVARBINARY&lt;/code&gt;,
+   * &lt;code&gt;CHAR&lt;/code&gt;,
+   * &lt;code&gt;VARCHAR&lt;/code&gt;,
+   * &lt;code&gt;NCHAR&lt;/code&gt;,
+   * &lt;code&gt;NVARCHAR&lt;/code&gt;,
+   * &lt;code&gt;LONGNVARCHAR&lt;/code&gt; and
+   * &lt;code&gt;LONGVARCHAR&lt;/code&gt;
+   * columns.  If the limit is exceeded, the excess data is silently discarded.
+   *
+   * @return the current column size limit for columns storing character and binary values; zero
+   *     means there is no limit
+   * @see #setMaxFieldSize
+   */
+  public int getMaxFieldSize() {
+<span class="nc" id="L729">    return maxFieldSize;</span>
+  }
+
+  /**
+   * Sets the limit for the maximum number of bytes that can be returned for character and binary
+   * column values in a &lt;code&gt;ResultSet&lt;/code&gt; object produced by this &lt;code&gt;Statement&lt;/code&gt;
+   * object. This limit applies only to &lt;code&gt;BINARY&lt;/code&gt;, &lt;code&gt;VARBINARY&lt;/code&gt;,
+   * &lt;code&gt;LONGVARBINARY&lt;/code&gt;, &lt;code&gt;CHAR&lt;/code&gt;, &lt;code&gt;VARCHAR&lt;/code&gt;, &lt;code&gt;NCHAR&lt;/code&gt;,
+   * &lt;code&gt;NVARCHAR&lt;/code&gt;, &lt;code&gt;LONGNVARCHAR&lt;/code&gt; and
+   * &lt;code&gt;LONGVARCHAR&lt;/code&gt; fields.  If the limit is exceeded, the excess data is silently
+   * discarded. For maximum portability, use values greater than 256.
+   *
+   * @param max the new column size limit in bytes; zero means there is no limit
+   * @see #getMaxFieldSize
+   */
+  public void setMaxFieldSize(final int max) {
+<span class="nc" id="L745">    maxFieldSize = max;</span>
+<span class="nc" id="L746">  }</span>
+
+  /**
+   * Retrieves the maximum number of rows that a &lt;code&gt;ResultSet&lt;/code&gt; object produced by this
+   * &lt;code&gt;Statement&lt;/code&gt; object can contain.  If this limit is exceeded, the excess rows are
+   * silently dropped.
+   *
+   * @return the current maximum number of rows for a &lt;code&gt;ResultSet&lt;/code&gt; object produced by this
+   * &lt;code&gt;Statement&lt;/code&gt; object; zero means there is no limit
+   * @see #setMaxRows
+   */
+  public int getMaxRows() {
+<span class="nc" id="L758">    return (int) maxRows;</span>
+  }
+
+  /**
+   * Sets the limit for the maximum number of rows that any &lt;code&gt;ResultSet&lt;/code&gt; object  generated
+   * by this &lt;code&gt;Statement&lt;/code&gt; object can contain to the given number. If the limit is
+   * exceeded, the excess rows are silently dropped.
+   *
+   * @param max the new max rows limit; zero means there is no limit
+   * @throws SQLException if the condition max &amp;gt;= 0 is not satisfied
+   * @see #getMaxRows
+   */
+  public void setMaxRows(final int max) throws SQLException {
+<span class="nc bnc" id="L771" title="All 2 branches missed.">    if (max &lt; 0) {</span>
+<span class="nc" id="L772">      throw new SQLException(&quot;max rows cannot be negative : asked for &quot; + max);</span>
+    }
+<span class="nc" id="L774">    maxRows = max;</span>
+<span class="nc" id="L775">  }</span>
+
+  /**
+   * Retrieves the maximum number of rows that a ResultSet object produced by this Statement object
+   * can contain. If this limit is exceeded, the excess rows are silently dropped.
+   *
+   * @return the current maximum number of rows for a ResultSet object produced by this Statement
+   *     object; zero means there is no limit
+   */
+  @Override
+  public long getLargeMaxRows() {
+<span class="nc" id="L786">    return maxRows;</span>
+  }
+
+  /**
+   * Sets the limit for the maximum number of rows that any ResultSet object generated by this
+   * Statement object can contain to the given number. If the limit is exceeded, the excess rows are
+   * silently dropped.
+   *
+   * @param max the new max rows limit; zero means there is no limit
+   * @throws SQLException if the condition max &amp;gt;= 0 is not satisfied
+   */
+  @Override
+  public void setLargeMaxRows(long max) throws SQLException {
+<span class="nc bnc" id="L799" title="All 2 branches missed.">    if (max &lt; 0) {</span>
+<span class="nc" id="L800">      throw new SQLException(&quot;max rows cannot be negative : setLargeMaxRows value is &quot; + max);</span>
+    }
+<span class="nc" id="L802">    maxRows = max;</span>
+<span class="nc" id="L803">  }</span>
+
+  /**
+   * Sets escape processing on or off. If escape scanning is on (the default), the driver will do
+   * escape substitution before sending the SQL statement to the database. Note: Since prepared
+   * statements have usually been parsed prior to making this call, disabling escape processing for
+   * &lt;code&gt;PreparedStatements&lt;/code&gt; objects will have no effect.
+   *
+   * @param enable &lt;code&gt;true&lt;/code&gt; to enable escape processing; &lt;code&gt;false&lt;/code&gt; to disable it
+   */
+  public void setEscapeProcessing(final boolean enable) {
+    //not handled
+<span class="nc" id="L815">  }</span>
+
+  /**
+   * Retrieves the number of seconds the driver will wait for a &lt;code&gt;Statement&lt;/code&gt; object to
+   * execute. If the limit is exceeded, a
+   * &lt;code&gt;SQLException&lt;/code&gt; is thrown.
+   *
+   * @return the current query timeout limit in seconds; zero means there is no limit
+   * @see #setQueryTimeout
+   */
+  public int getQueryTimeout() {
+<span class="nc" id="L826">    return queryTimeout;</span>
+  }
+
+  /**
+   * Sets the number of seconds the driver will wait for a &lt;code&gt;Statement&lt;/code&gt; object to execute
+   * to the given number of seconds. If the limit is exceeded, an &lt;code&gt;SQLException&lt;/code&gt; is
+   * thrown. A JDBC driver must apply this limit to the &lt;code&gt;execute&lt;/code&gt;,
+   * &lt;code&gt;executeQuery&lt;/code&gt; and &lt;code&gt;executeUpdate&lt;/code&gt; methods.
+   *
+   * @param seconds the new query timeout limit in seconds; zero means there is no limit
+   * @throws SQLException if a database access error occurs, this method is called on a closed
+   *                      &lt;code&gt;Statement&lt;/code&gt; or the condition seconds &amp;gt;= 0 is not satisfied
+   * @see #getQueryTimeout
+   */
+  public void setQueryTimeout(final int seconds) throws SQLException {
+<span class="nc bnc" id="L841" title="All 2 branches missed.">    if (seconds &lt; 0) {</span>
+<span class="nc" id="L842">      throw new SQLException(&quot;Query timeout rows cannot be negative : asked for &quot; + seconds);</span>
+    }
+<span class="nc" id="L844">    this.queryTimeout = seconds;</span>
+<span class="nc" id="L845">  }</span>
+
+  /**
+   * Sets the inputStream that will be used for the next execute that uses &quot;LOAD DATA LOCAL INFILE&quot;.
+   * The name specified as local file/URL will be ignored.
+   *
+   * @param inputStream inputStream instance, that will be used to send data to server
+   * @throws SQLException if statement is closed
+   */
+  public void setLocalInfileInputStream(InputStream inputStream) throws SQLException {
+<span class="nc" id="L855">    checkClose();</span>
+<span class="nc" id="L856">    protocol.setLocalInfileInputStream(inputStream);</span>
+<span class="nc" id="L857">  }</span>
+
+  /**
+   * Cancels this &lt;code&gt;Statement&lt;/code&gt; object if both the DBMS and driver support aborting an SQL
+   * statement. This method can be used by one thread to cancel a statement that is being executed
+   * by another thread.
+   *
+   * &lt;p&gt;In case there is result-set from this Statement that are still streaming data from server, will
+   * cancel streaming.&lt;/p&gt;
+   *
+   * @throws SQLException                    if a database access error occurs or this method is
+   *                                         called on a closed
+   *                                         &lt;code&gt;Statement&lt;/code&gt;
+   */
+  public void cancel() throws SQLException {
+<span class="nc" id="L872">    checkClose();</span>
+<span class="nc" id="L873">    boolean locked = lock.tryLock();</span>
+    try {
+<span class="nc bnc" id="L875" title="All 2 branches missed.">      if (executing) {</span>
+<span class="nc" id="L876">        protocol.cancelCurrentQuery();</span>
+<span class="nc bnc" id="L877" title="All 4 branches missed.">      } else if (results != null &amp;&amp; results.getFetchSize() != 0 &amp;&amp; !results</span>
+<span class="nc bnc" id="L878" title="All 2 branches missed.">          .isFullyLoaded(protocol)) {</span>
+        try {
+<span class="nc" id="L880">          protocol.cancelCurrentQuery();</span>
+<span class="nc" id="L881">          skipMoreResults();</span>
+<span class="nc" id="L882">        } catch (SQLException e) {</span>
+          //eat exception
+<span class="nc" id="L884">        }</span>
+<span class="nc" id="L885">        results.removeFetchSize();</span>
+      }
+
+<span class="nc" id="L888">    } catch (SQLException e) {</span>
+<span class="nc" id="L889">      logger.error(&quot;error cancelling query&quot;, e);</span>
+<span class="nc" id="L890">      ExceptionMapper.throwException(e, connection, this);</span>
+    } finally {
+<span class="nc bnc" id="L892" title="All 2 branches missed.">      if (locked) {</span>
+<span class="nc" id="L893">        lock.unlock();</span>
+      }
+    }
+<span class="nc" id="L896">  }</span>
+
+  /**
+   * Retrieves the first warning reported by calls on this &lt;code&gt;Statement&lt;/code&gt; object.
+   * Subsequent
+   * &lt;code&gt;Statement&lt;/code&gt; object warnings will be chained to this &lt;code&gt;SQLWarning&lt;/code&gt; object.
+   * &lt;p&gt;The warning chain is automatically cleared each time a statement is (re)executed. This
+   * method may not be called on a closed &lt;code&gt;Statement&lt;/code&gt; object; doing so will cause an
+   * &lt;code&gt;SQLException&lt;/code&gt; to be thrown.&lt;/p&gt;
+   * &lt;p&gt;&lt;B&gt;Note:&lt;/B&gt; If you are processing a &lt;code&gt;ResultSet&lt;/code&gt; object, any warnings associated
+   * with reads on that &lt;code&gt;ResultSet&lt;/code&gt; object will be chained on it rather than on the
+   * &lt;code&gt;Statement&lt;/code&gt; object that produced it.&lt;/p&gt;
+   *
+   * @return the first &lt;code&gt;SQLWarning&lt;/code&gt; object or &lt;code&gt;null&lt;/code&gt; if there are no warnings
+   * @throws SQLException if a database access error occurs or this method is called on a closed
+   *                      &lt;code&gt;Statement&lt;/code&gt;
+   */
+  public SQLWarning getWarnings() throws SQLException {
+<span class="nc" id="L914">    checkClose();</span>
+<span class="nc bnc" id="L915" title="All 2 branches missed.">    if (!warningsCleared) {</span>
+<span class="nc" id="L916">      return this.connection.getWarnings();</span>
+    }
+<span class="nc" id="L918">    return null;</span>
+  }
+
+  /**
+   * Clears all the warnings reported on this &lt;code&gt;Statement&lt;/code&gt; object. After a call to this
+   * method, the method &lt;code&gt;getWarnings&lt;/code&gt; will return &lt;code&gt;null&lt;/code&gt; until a new warning
+   * is reported for this &lt;code&gt;Statement&lt;/code&gt; object.
+   *
+   */
+  public void clearWarnings() {
+<span class="nc" id="L928">    warningsCleared = true;</span>
+<span class="nc" id="L929">  }</span>
+
+  /**
+   * Sets the SQL cursor name to the given &lt;code&gt;String&lt;/code&gt;, which will be used by subsequent
+   * &lt;code&gt;Statement&lt;/code&gt; object &lt;code&gt;execute&lt;/code&gt; methods. This name can then be used in SQL
+   * positioned update or delete statements to identify the current row in the
+   * &lt;code&gt;ResultSet&lt;/code&gt; object generated by this statement.  If the database does not support
+   * positioned update/delete, this method is a noop.  To insure that a cursor has the proper
+   * isolation level to support updates, the cursor's &lt;code&gt;SELECT&lt;/code&gt; statement should have the
+   * form &lt;code&gt;SELECT FOR UPDATE&lt;/code&gt;.  If &lt;code&gt;FOR UPDATE&lt;/code&gt; is not present, positioned
+   * updates may fail. &lt;p&gt;&lt;B&gt;Note:&lt;/B&gt; By definition, the execution of positioned updates and
+   * deletes must be done by a different &lt;code&gt;Statement&lt;/code&gt; object than the one that generated
+   * the &lt;code&gt;ResultSet&lt;/code&gt; object being used for positioning. Also, cursor names must be unique
+   * within a connection.&lt;/p&gt;
+   *
+   * @param name the new cursor name, which must be unique within a connection
+   * @throws SQLException                    if a database access error occurs or this method is
+   *                                         called on a closed
+   *                                         &lt;code&gt;Statement&lt;/code&gt;
+   */
+  public void setCursorName(final String name) throws SQLException {
+<span class="nc" id="L950">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;Cursors are not supported&quot;);</span>
+  }
+
+  /**
+   * Gets the connection that created this statement.
+   *
+   * @return the connection
+   */
+  public MariaDbConnection getConnection() {
+<span class="nc" id="L959">    return this.connection;</span>
+  }
+
+  /**
+   * Retrieves any auto-generated keys created as a result of executing this &lt;code&gt;Statement&lt;/code&gt;
+   * object. If this &lt;code&gt;Statement&lt;/code&gt; object did not generate any keys, an empty
+   * &lt;code&gt;ResultSet&lt;/code&gt; object is returned. &lt;p&gt;&lt;B&gt;Note:&lt;/B&gt;If the columns which represent the
+   * auto-generated keys were not specified, the JDBC driver implementation will determine the
+   * columns which best represent the auto-generated keys.&lt;/p&gt;
+   *
+   * @return a &lt;code&gt;ResultSet&lt;/code&gt; object containing the auto-generated key(s) generated by the
+   *     execution of this &lt;code&gt;Statement&lt;/code&gt; object
+   * @throws SQLException                    if a database access error occurs or this method is
+   *                                         called on a closed
+   *                                         &lt;code&gt;Statement&lt;/code&gt;
+   */
+  public ResultSet getGeneratedKeys() throws SQLException {
+<span class="nc bnc" id="L976" title="All 2 branches missed.">    if (results != null) {</span>
+<span class="nc" id="L977">      return results.getGeneratedKeys(protocol);</span>
+    }
+<span class="nc" id="L979">    return SelectResultSet.createEmptyResultSet();</span>
+  }
+
+  /**
+   * Retrieves the result set holdability for &lt;code&gt;ResultSet&lt;/code&gt; objects generated by this
+   * &lt;code&gt;Statement&lt;/code&gt; object.
+   *
+   * @return either &lt;code&gt;ResultSet.HOLD_CURSORS_OVER_COMMIT&lt;/code&gt; or &lt;code&gt;ResultSet.CLOSE_CURSORS_AT_COMMIT&lt;/code&gt;
+   * @since 1.4
+   */
+  public int getResultSetHoldability() {
+<span class="nc" id="L990">    return ResultSet.HOLD_CURSORS_OVER_COMMIT;</span>
+  }
+
+  /**
+   * Retrieves whether this &lt;code&gt;Statement&lt;/code&gt; object has been closed. A &lt;code&gt;Statement&lt;/code&gt;
+   * is closed if the method close has been called on it, or if it is automatically closed.
+   *
+   * @return true if this &lt;code&gt;Statement&lt;/code&gt; object is closed; false if it is still open
+   * @since 1.6
+   */
+  public boolean isClosed() {
+<span class="nc" id="L1001">    return closed;</span>
+  }
+
+  /**
+   * Returns a  value indicating whether the &lt;code&gt;Statement&lt;/code&gt; is poolable or not.
+   *
+   * @return &lt;code&gt;true&lt;/code&gt; if the &lt;code&gt;Statement&lt;/code&gt; is poolable; &lt;code&gt;false&lt;/code&gt;
+   *     otherwise
+   * @see Statement#setPoolable(boolean) setPoolable(boolean)
+   * @since 1.6
+   */
+  @Override
+  public boolean isPoolable() {
+<span class="nc" id="L1014">    return false;</span>
+  }
+
+  /**
+   * &lt;p&gt;Requests that a &lt;code&gt;Statement&lt;/code&gt; be pooled or not pooled.  The value specified is a
+   * hint to the statement pool implementation indicating whether the applicaiton wants the
+   * statement to be pooled.  It is up to the statement pool manager as to whether the hint is
+   * used.&lt;/p&gt; &lt;p&gt; The poolable value of a statement is applicable to both internal statement caches
+   * implemented by the driver and external statement caches implemented by application servers and
+   * other applications. &lt;/p&gt; &lt;p&gt;By default, a
+   * &lt;code&gt;Statement&lt;/code&gt; is not poolable when created, and a &lt;code&gt;PreparedStatement&lt;/code&gt; and
+   * &lt;code&gt;CallableStatement&lt;/code&gt; are poolable when created.&lt;/p&gt;
+   *
+   * @param poolable requests that the statement be pooled if true and that the statement not be
+   *                 pooled if false
+   * @since 1.6
+   */
+  @Override
+  public void setPoolable(final boolean poolable) {
+    // not handled
+<span class="nc" id="L1034">  }</span>
+
+  /**
+   * Retrieves the current result as a ResultSet object. This method should be called only once per
+   * result.
+   *
+   * @return the current result as a ResultSet object or null if the result is an update count or
+   *     there are no more results
+   * @throws SQLException if a database access error occurs or this method is called on a closed
+   *                      Statement
+   */
+  public ResultSet getResultSet() throws SQLException {
+<span class="nc" id="L1046">    checkClose();</span>
+<span class="nc bnc" id="L1047" title="All 2 branches missed.">    return results != null ? results.getResultSet() : null;</span>
+  }
+
+  /**
+   * Retrieves the current result as an update count; if the result is a ResultSet object or there
+   * are no more results, -1 is returned. This method should be called only once per result.
+   *
+   * @return the current result as an update count; -1 if the current result is a ResultSet object
+   *     or there are no more results
+   */
+  public int getUpdateCount() {
+<span class="nc bnc" id="L1058" title="All 6 branches missed.">    if (results != null &amp;&amp; results.getCmdInformation() != null &amp;&amp; !results.isBatch()) {</span>
+<span class="nc" id="L1059">      return results.getCmdInformation().getUpdateCount();</span>
+    }
+<span class="nc" id="L1061">    return -1;</span>
+  }
+
+  /**
+   * Retrieves the current result as an update count; if the result is a ResultSet object or there
+   * are no more results, -1 is returned.
+   *
+   * @return last update count
+   */
+  @Override
+  public long getLargeUpdateCount() {
+<span class="nc bnc" id="L1072" title="All 6 branches missed.">    if (results != null &amp;&amp; results.getCmdInformation() != null &amp;&amp; !results.isBatch()) {</span>
+<span class="nc" id="L1073">      return results.getCmdInformation().getLargeUpdateCount();</span>
+    }
+<span class="nc" id="L1075">    return -1;</span>
+  }
+
+  protected void skipMoreResults() throws SQLException {
+    try {
+<span class="nc" id="L1080">      protocol.skip();</span>
+<span class="nc" id="L1081">      warningsCleared = false;</span>
+<span class="nc" id="L1082">      connection.reenableWarnings();</span>
+<span class="nc" id="L1083">    } catch (SQLException e) {</span>
+<span class="nc" id="L1084">      logger.debug(&quot;error skipMoreResults&quot;, e);</span>
+<span class="nc" id="L1085">      ExceptionMapper.throwException(e, connection, this);</span>
+<span class="nc" id="L1086">    }</span>
+<span class="nc" id="L1087">  }</span>
+
+  /**
+   * &lt;p&gt;Moves to this &lt;code&gt;Statement&lt;/code&gt; object's next result, returns &lt;code&gt;true&lt;/code&gt; if it
+   * is a
+   * &lt;code&gt;ResultSet&lt;/code&gt; object, and implicitly closes any current &lt;code&gt;ResultSet&lt;/code&gt;
+   * object(s) obtained with the method &lt;code&gt;getResultSet&lt;/code&gt;.&lt;/p&gt;
+   * There are no more results when the following is true: &lt;pre&gt; // stmt is a Statement object
+   * ((stmt.getInternalMoreResults() == false) &amp;amp;&amp;amp; (stmt.getUpdateCount() == -1)) &lt;/pre&gt;
+   *
+   * @return &lt;code&gt;true&lt;/code&gt; if the next result is a &lt;code&gt;ResultSet&lt;/code&gt; object;
+   *     &lt;code&gt;false&lt;/code&gt; if it is an update count or there are no more results
+   * @throws SQLException if a database access error occurs or this method is called on a closed
+   *                      &lt;code&gt;Statement&lt;/code&gt;
+   * @see #execute
+   */
+  public boolean getMoreResults() throws SQLException {
+<span class="nc" id="L1104">    return getMoreResults(Statement.CLOSE_CURRENT_RESULT);</span>
+  }
+
+  /**
+   * &lt;p&gt;Moves to this &lt;code&gt;Statement&lt;/code&gt; object's next result, deals with any current
+   * &lt;code&gt;ResultSet&lt;/code&gt;
+   * object(s) according to the instructions specified by the given flag, and returns
+   * &lt;code&gt;true&lt;/code&gt; if the next result is a &lt;code&gt;ResultSet&lt;/code&gt; object.&lt;/p&gt;
+   * There are no more results when the following is true: &lt;pre&gt; // stmt is a Statement object
+   * ((stmt.getInternalMoreResults(current) == false) &amp;amp;&amp;amp; (stmt.getUpdateCount() == -1))&lt;/pre&gt;
+   *
+   * @param current one of the following &lt;code&gt;Statement&lt;/code&gt; constants indicating what should
+   *                happen to current
+   *                &lt;code&gt;ResultSet&lt;/code&gt; objects obtained using the method
+   *                &lt;code&gt;getResultSet&lt;/code&gt;:
+   *                &lt;code&gt;Statement.CLOSE_CURRENT_RESULT&lt;/code&gt;, &lt;code&gt;Statement.KEEP_CURRENT_RESULT&lt;/code&gt;,
+   *                or &lt;code&gt;Statement.CLOSE_ALL_RESULTS&lt;/code&gt;
+   * @return &lt;code&gt;true&lt;/code&gt; if the next result is a &lt;code&gt;ResultSet&lt;/code&gt; object;
+   *     &lt;code&gt;false&lt;/code&gt; if it is an update count or there are no more results
+   * @throws SQLException                    if a database access error occurs, this method is
+   *                                         called on a closed
+   *                                         &lt;code&gt;Statement&lt;/code&gt; or the argument supplied is not
+   *                                         one of the following:
+   *                                         &lt;code&gt;Statement.CLOSE_CURRENT_RESULT&lt;/code&gt;,
+   *                                         &lt;code&gt;Statement.KEEP_CURRENT_RESULT&lt;/code&gt; or
+   *                                         &lt;code&gt;Statement.CLOSE_ALL_RESULTS&lt;/code&gt;
+   * @see #execute
+   */
+  public boolean getMoreResults(final int current) throws SQLException {
+    //if fetch size is set to read fully, other resultSet are put in cache
+<span class="nc" id="L1134">    checkClose();</span>
+<span class="nc bnc" id="L1135" title="All 4 branches missed.">    return results != null &amp;&amp; results.getMoreResults(current, protocol);</span>
+  }
+
+
+  /**
+   * Retrieves the direction for fetching rows from database tables that is the default for result
+   * sets generated from this &lt;code&gt;Statement&lt;/code&gt; object. If this &lt;code&gt;Statement&lt;/code&gt; object
+   * has not set a fetch direction by calling the method &lt;code&gt;setFetchDirection&lt;/code&gt;, the return
+   * value is implementation-specific.
+   *
+   * @return the default fetch direction for result sets generated from this &lt;code&gt;Statement&lt;/code&gt;
+   *     object
+   * @see #setFetchDirection
+   * @since 1.2
+   */
+  public int getFetchDirection() {
+<span class="nc" id="L1151">    return ResultSet.FETCH_FORWARD;</span>
+  }
+
+  /**
+   * &lt;p&gt;Gives the driver a hint as to the direction in which rows will be processed in
+   * &lt;code&gt;ResultSet&lt;/code&gt; objects created using this
+   * &lt;code&gt;Statement&lt;/code&gt; object.  The default value is &lt;code&gt;ResultSet.FETCH_FORWARD&lt;/code&gt;.&lt;/p&gt;
+   * &lt;p&gt; Note that this method sets the default fetch
+   * direction for result sets generated by this &lt;code&gt;Statement&lt;/code&gt; object. Each result set has
+   * its own methods for getting and setting its own fetch direction. &lt;/p&gt;
+   *
+   * @param direction the initial direction for processing rows
+   * @see #getFetchDirection
+   * @since 1.2
+   */
+  public void setFetchDirection(final int direction) {
+    //not implemented
+<span class="nc" id="L1168">  }</span>
+
+  /**
+   * Retrieves the number of result set rows that is the default fetch size for
+   * &lt;code&gt;ResultSet&lt;/code&gt; objects generated from this
+   * &lt;code&gt;Statement&lt;/code&gt; object. If this &lt;code&gt;Statement&lt;/code&gt; object has not set a fetch size
+   * by calling the method &lt;code&gt;setFetchSize&lt;/code&gt;, the return value is implementation-specific.
+   *
+   * @return the default fetch size for result sets generated from this &lt;code&gt;Statement&lt;/code&gt;
+   *     object
+   * @see #setFetchSize
+   */
+  public int getFetchSize() {
+<span class="nc" id="L1181">    return this.fetchSize;</span>
+  }
+
+  /**
+   * Gives the JDBC driver a hint as to the number of rows that should be fetched from the database
+   * when more rows are needed for
+   * &lt;code&gt;ResultSet&lt;/code&gt; objects generated by this &lt;code&gt;Statement&lt;/code&gt;. If the value
+   * specified is zero, then the hint is ignored. The default value is zero.
+   *
+   * @param rows the number of rows to fetch
+   * @throws SQLException if a database access error occurs, this method is called on a closed
+   *                      &lt;code&gt;Statement&lt;/code&gt; or the condition
+   *                      &lt;code&gt;rows &amp;gt;= 0&lt;/code&gt; is not satisfied.
+   * @see #getFetchSize
+   */
+  public void setFetchSize(final int rows) throws SQLException {
+<span class="nc bnc" id="L1197" title="All 4 branches missed.">    if (rows &lt; 0 &amp;&amp; rows != Integer.MIN_VALUE) {</span>
+<span class="nc" id="L1198">      throw new SQLException(&quot;invalid fetch size&quot;);</span>
+<span class="nc bnc" id="L1199" title="All 2 branches missed.">    } else if (rows == Integer.MIN_VALUE) {</span>
+      //for compatibility Integer.MIN_VALUE is transform to 0 =&gt; streaming
+<span class="nc" id="L1201">      this.fetchSize = 1;</span>
+<span class="nc" id="L1202">      return;</span>
+    }
+<span class="nc" id="L1204">    this.fetchSize = rows;</span>
+<span class="nc" id="L1205">  }</span>
+
+  /**
+   * Retrieves the result set concurrency for &lt;code&gt;ResultSet&lt;/code&gt; objects generated by this
+   * &lt;code&gt;Statement&lt;/code&gt; object.
+   *
+   * @return either &lt;code&gt;ResultSet.CONCUR_READ_ONLY&lt;/code&gt; or &lt;code&gt;ResultSet.CONCUR_UPDATABLE&lt;/code&gt;
+   * @since 1.2
+   */
+  public int getResultSetConcurrency() {
+<span class="nc" id="L1215">    return resultSetConcurrency;</span>
+  }
+
+  /**
+   * Retrieves the result set type for &lt;code&gt;ResultSet&lt;/code&gt; objects generated by this
+   * &lt;code&gt;Statement&lt;/code&gt; object.
+   *
+   * @return one of &lt;code&gt;ResultSet.TYPE_FORWARD_ONLY&lt;/code&gt;, &lt;code&gt;ResultSet.TYPE_SCROLL_INSENSITIVE&lt;/code&gt;,
+   *     or &lt;code&gt;ResultSet.TYPE_SCROLL_SENSITIVE&lt;/code&gt;
+   */
+  public int getResultSetType() {
+<span class="nc" id="L1226">    return resultSetScrollType;</span>
+  }
+
+  /**
+   * Adds the given SQL command to the current list of commands for this &lt;code&gt;Statement&lt;/code&gt;
+   * object. The send in this list can be executed as a batch by calling the method
+   * &lt;code&gt;executeBatch&lt;/code&gt;.
+   *
+   * @param sql typically this is a SQL &lt;code&gt;INSERT&lt;/code&gt; or &lt;code&gt;UPDATE&lt;/code&gt; statement
+   * @throws SQLException if a database access error occurs, this method is called on a closed
+   *                      &lt;code&gt;Statement&lt;/code&gt; or the driver does not support batch updates
+   * @see #executeBatch
+   * @see DatabaseMetaData#supportsBatchUpdates
+   */
+  public void addBatch(final String sql) throws SQLException {
+<span class="nc bnc" id="L1241" title="All 2 branches missed.">    if (batchQueries == null) {</span>
+<span class="nc" id="L1242">      batchQueries = new ArrayList&lt;&gt;();</span>
+    }
+<span class="nc bnc" id="L1244" title="All 2 branches missed.">    if (sql == null) {</span>
+<span class="nc" id="L1245">      throw ExceptionMapper.getSqlException(&quot;null cannot be set to addBatch( String sql)&quot;);</span>
+    }
+<span class="nc" id="L1247">    batchQueries.add(sql);</span>
+<span class="nc" id="L1248">  }</span>
+
+  /**
+   * Empties this &lt;code&gt;Statement&lt;/code&gt; object's current list of SQL send.
+   *
+   * @see #addBatch
+   * @see DatabaseMetaData#supportsBatchUpdates
+   * @since 1.2
+   */
+  public void clearBatch() {
+<span class="nc bnc" id="L1258" title="All 2 branches missed.">    if (batchQueries != null) {</span>
+<span class="nc" id="L1259">      batchQueries.clear();</span>
+    }
+<span class="nc" id="L1261">  }</span>
+
+  /**
+   * Execute statements. depending on option, queries mays be rewritten :
+   *
+   * &lt;p&gt;those queries will be rewritten if possible to INSERT INTO ... VALUES (...) ; INSERT INTO ...
+   * VALUES (...);&lt;/p&gt;
+   *
+   * &lt;p&gt;if option rewriteBatchedStatements is set to true, rewritten to INSERT INTO ... VALUES (...),
+   * (...);&lt;/p&gt;
+   *
+   * @return an array of update counts containing one element for each command in the batch.  The
+   *     elements of the array are ordered according to the order in which send were added to the
+   *     batch.
+   * @throws SQLException if a database access error occurs, this method is called on a closed
+   *                      &lt;code&gt;Statement&lt;/code&gt; or the driver does not support batch statements.
+   *                      Throws {@link BatchUpdateException} (a subclass of
+   *                      &lt;code&gt;SQLException&lt;/code&gt;) if one of the send sent to the database fails
+   *                      to execute properly or attempts to return a result set.
+   * @see #addBatch
+   * @see DatabaseMetaData#supportsBatchUpdates
+   * @since 1.3
+   */
+  public int[] executeBatch() throws SQLException {
+<span class="nc" id="L1285">    checkClose();</span>
+    int size;
+<span class="nc bnc" id="L1287" title="All 4 branches missed.">    if (batchQueries == null || (size = batchQueries.size()) == 0) {</span>
+<span class="nc" id="L1288">      return new int[0];</span>
+    }
+
+<span class="nc" id="L1291">    lock.lock();</span>
+    try {
+<span class="nc" id="L1293">      internalBatchExecution(size);</span>
+<span class="nc" id="L1294">      return results.getCmdInformation().getUpdateCounts();</span>
+<span class="nc" id="L1295">    } catch (SQLException initialSqlEx) {</span>
+<span class="nc" id="L1296">      throw executeBatchExceptionEpilogue(initialSqlEx, size);</span>
+    } finally {
+<span class="nc" id="L1298">      executeBatchEpilogue();</span>
+<span class="nc" id="L1299">      lock.unlock();</span>
+    }
+  }
+
+  /**
+   * Execute batch, like executeBatch(), with returning results with long[]. For when row count may
+   * exceed Integer.MAX_VALUE.
+   *
+   * @return an array of update counts (one element for each command in the batch)
+   * @throws SQLException if a database error occur.
+   */
+  @Override
+  public long[] executeLargeBatch() throws SQLException {
+<span class="nc" id="L1312">    checkClose();</span>
+    int size;
+<span class="nc bnc" id="L1314" title="All 4 branches missed.">    if (batchQueries == null || (size = batchQueries.size()) == 0) {</span>
+<span class="nc" id="L1315">      return new long[0];</span>
+    }
+
+<span class="nc" id="L1318">    lock.lock();</span>
+    try {
+<span class="nc" id="L1320">      internalBatchExecution(size);</span>
+<span class="nc" id="L1321">      return results.getCmdInformation().getLargeUpdateCounts();</span>
+
+<span class="nc" id="L1323">    } catch (SQLException initialSqlEx) {</span>
+<span class="nc" id="L1324">      throw executeBatchExceptionEpilogue(initialSqlEx, size);</span>
+    } finally {
+<span class="nc" id="L1326">      executeBatchEpilogue();</span>
+<span class="nc" id="L1327">      lock.unlock();</span>
+    }
+  }
+
+  /**
+   * Internal batch execution.
+   *
+   * @param size expected result-set size
+   * @throws SQLException throw exception if batch error occur
+   */
+  private void internalBatchExecution(int size) throws SQLException {
+
+<span class="nc" id="L1339">    executeQueryPrologue(true);</span>
+<span class="nc" id="L1340">    results = new Results(this,</span>
+        0,
+        true,
+        size,
+        false,
+        resultSetScrollType,
+        resultSetConcurrency,
+        Statement.RETURN_GENERATED_KEYS,
+<span class="nc" id="L1348">        protocol.getAutoIncrementIncrement());</span>
+<span class="nc" id="L1349">    protocol.executeBatchStmt(protocol.isMasterConnection(), results, batchQueries);</span>
+<span class="nc" id="L1350">    results.commandEnd();</span>
+<span class="nc" id="L1351">  }</span>
+
+  /**
+   * &lt;p&gt;Returns an object that implements the given interface to allow access to non-standard
+   * methods, or standard methods not exposed by the proxy.&lt;/p&gt;
+   * &lt;p&gt;If the receiver implements the interface then the result is the receiver or a proxy for the
+   * receiver. If the receiver is a wrapper and the wrapped object implements the interface then the
+   * result is the wrapped object or a proxy for the wrapped object. Otherwise return the the result
+   * of calling &lt;code&gt;unwrap&lt;/code&gt; recursively on the wrapped object or a proxy for that result. If
+   * the receiver is not a wrapper and does not implement the interface, then an
+   * &lt;code&gt;SQLException&lt;/code&gt; is thrown. &lt;/p&gt;
+   *
+   * @param iface A Class defining an interface that the result must implement.
+   * @return an object that implements the interface. May be a proxy for the actual implementing
+   *     object.
+   * @throws SQLException If no object found that implements the interface
+   * @since 1.6
+   */
+  @SuppressWarnings(&quot;unchecked&quot;)
+  public &lt;T&gt; T unwrap(final Class&lt;T&gt; iface) throws SQLException {
+    try {
+<span class="nc bnc" id="L1372" title="All 2 branches missed.">      if (isWrapperFor(iface)) {</span>
+<span class="nc" id="L1373">        return (T) this;</span>
+      } else {
+<span class="nc" id="L1375">        throw new SQLException(</span>
+            &quot;The receiver is not a wrapper and does not implement the interface&quot;);
+      }
+<span class="nc" id="L1378">    } catch (Exception e) {</span>
+<span class="nc" id="L1379">      throw new SQLException(&quot;The receiver is not a wrapper and does not implement the interface&quot;);</span>
+    }
+  }
+
+  /**
+   * Returns true if this either implements the interface argument or is directly or indirectly a
+   * wrapper for an object that does. Returns false otherwise. If this implements the interface then
+   * return true, else if this is a wrapper then return the result of recursively calling
+   * &lt;code&gt;isWrapperFor&lt;/code&gt; on the wrapped object. If this does not implement the interface and
+   * is not a wrapper, return false. This method should be implemented as a low-cost operation
+   * compared to &lt;code&gt;unwrap&lt;/code&gt; so that callers can use this method to avoid expensive
+   * &lt;code&gt;unwrap&lt;/code&gt; calls that may fail. If this method returns true then calling
+   * &lt;code&gt;unwrap&lt;/code&gt; with the same argument should succeed.
+   *
+   * @param interfaceOrWrapper a Class defining an interface.
+   * @return true if this implements the interface or directly or indirectly wraps an object that
+   *     does.
+   * @throws SQLException if an error occurs while determining whether this is a wrapper for an
+   *                      object with the given interface.
+   * @since 1.6
+   */
+  public boolean isWrapperFor(final Class&lt;?&gt; interfaceOrWrapper) throws SQLException {
+<span class="nc" id="L1401">    return interfaceOrWrapper.isInstance(this);</span>
+  }
+
+  public void closeOnCompletion() {
+<span class="nc" id="L1405">    mustCloseOnCompletion = true;</span>
+<span class="nc" id="L1406">  }</span>
+
+  public boolean isCloseOnCompletion() {
+<span class="nc" id="L1409">    return mustCloseOnCompletion;</span>
+  }
+
+  /**
+   * Check that close on completion is asked, and close if so.
+   *
+   * @param resultSet resultSet
+   * @throws SQLException if close has error
+   */
+  public void checkCloseOnCompletion(ResultSet resultSet) throws SQLException {
+<span class="nc bnc" id="L1419" title="All 6 branches missed.">    if (mustCloseOnCompletion</span>
+        &amp;&amp; !closed
+        &amp;&amp; results != null
+<span class="nc bnc" id="L1422" title="All 2 branches missed.">        &amp;&amp; resultSet.equals(results.getResultSet())) {</span>
+<span class="nc" id="L1423">      close();</span>
+    }
+<span class="nc" id="L1425">  }</span>
+
+  /**
+   * Check if statement is closed, and throw exception if so.
+   *
+   * @throws SQLException if statement close
+   */
+  protected void checkClose() throws SQLException {
+<span class="nc bnc" id="L1433" title="All 2 branches missed.">    if (closed) {</span>
+<span class="nc" id="L1434">      throw new SQLException(&quot;Cannot do an operation on a closed statement&quot;);</span>
+    }
+<span class="nc" id="L1436">  }</span>
+
+  /**
+   * Permit to retrieve current connection thread id, or -1 if unknown.
+   *
+   * @return current connection thread id.
+   */
+  public long getServerThreadId() {
+<span class="nc bnc" id="L1444" title="All 2 branches missed.">    return (protocol != null) ? protocol.getServerThreadId() : -1;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

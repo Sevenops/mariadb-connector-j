@@ -1,0 +1,436 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SharedMemorySocket.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.io.socket</a> &gt; <span class="el_source">SharedMemorySocket.java</span></div><h1>SharedMemorySocket.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.io.socket;
+
+import com.sun.jna.LastErrorException;
+import com.sun.jna.Library;
+import com.sun.jna.Native;
+import com.sun.jna.Platform;
+import com.sun.jna.Pointer;
+import com.sun.jna.Structure;
+import com.sun.jna.platform.win32.BaseTSD.SIZE_T;
+import com.sun.jna.platform.win32.WinNT.HANDLE;
+import com.sun.jna.ptr.IntByReference;
+import com.sun.jna.ptr.PointerByReference;
+import com.sun.jna.win32.StdCallLibrary;
+import com.sun.jna.win32.W32APIFunctionMapper;
+import com.sun.jna.win32.W32APITypeMapper;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.Socket;
+import java.net.SocketAddress;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+
+public class SharedMemorySocket extends Socket {
+
+  //SDDL string for mutex security flags (Everyone group has SYNCHRONIZE right)
+  private static final String EVERYONE_SYNCHRONIZE_SDDL = &quot;D:(A;;0x100000;;;WD)&quot;;
+<span class="nc" id="L81">  private static final Map&lt;String, Object&gt; WIN32API_OPTIONS = new HashMap&lt;&gt;();</span>
+  // Size of memory mapped region
+  private static final int BUFFERLEN = 16004;
+
+  static {
+<span class="nc" id="L86">    WIN32API_OPTIONS.put(Library.OPTION_FUNCTION_MAPPER, W32APIFunctionMapper.UNICODE);</span>
+<span class="nc" id="L87">    WIN32API_OPTIONS.put(Library.OPTION_TYPE_MAPPER, W32APITypeMapper.UNICODE);</span>
+<span class="nc" id="L88">  }</span>
+
+  private InputStream is;
+  private OutputStream os;
+  private String memoryName;
+  private HANDLE serverRead;
+  private HANDLE serverWrote;
+  private HANDLE clientRead;
+  private HANDLE clientWrote;
+  private HANDLE connectionClosed;
+  private Pointer view;
+  private int bytesLeft;
+  private int position;
+<span class="nc" id="L101">  private int timeout = Kernel32.INFINITE;</span>
+
+  /**
+   * Create ShareMemorySocket.
+   *
+   * @param name name
+   * @throws IOException exception
+   */
+<span class="nc" id="L109">  public SharedMemorySocket(String name) throws IOException {</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">    if (!Platform.isWindows()) {</span>
+<span class="nc" id="L111">      throw new IOException(&quot;shared memory connections are only supported on Windows&quot;);</span>
+    }
+<span class="nc" id="L113">    memoryName = name;</span>
+<span class="nc" id="L114">  }</span>
+
+  private static HANDLE openEvent(String name) {
+<span class="nc" id="L117">    return Kernel32.INSTANCE</span>
+<span class="nc" id="L118">        .OpenEvent(Kernel32.EVENT_MODIFY_STATE | Kernel32.SYNCHRONIZE, false, name);</span>
+  }
+
+  /**
+   * Map memory
+   *
+   * @param mapName map name
+   * @param mode    mode
+   * @param size    size
+   * @return Pointer
+   */
+  private static Pointer mapMemory(String mapName, int mode, int size) {
+<span class="nc" id="L130">    HANDLE mapping = Kernel32.INSTANCE.OpenFileMapping(mode, false, mapName);</span>
+<span class="nc" id="L131">    Pointer v = Kernel32.INSTANCE.MapViewOfFile(mapping, mode, 0, 0, new SIZE_T(size));</span>
+<span class="nc" id="L132">    Kernel32.INSTANCE.CloseHandle(mapping);</span>
+<span class="nc" id="L133">    return v;</span>
+  }
+
+  @Override
+  public void connect(SocketAddress endpoint) throws IOException {
+<span class="nc" id="L138">    connect(endpoint, 0);</span>
+<span class="nc" id="L139">  }</span>
+
+  /*
+  Create a mutex to synchronize login. Without mutex, different connections that are created at about the same
+  time, could get the same connection number. Note, that this mutex, or any synchronization does not exist in
+  in either C or .NET connectors (i.e they are racy)
+  */
+  private HANDLE lockMutex() throws IOException {
+<span class="nc" id="L147">    PointerByReference securityDescriptor = new PointerByReference();</span>
+<span class="nc" id="L148">    Advapi32.INSTANCE</span>
+<span class="nc" id="L149">        .ConvertStringSecurityDescriptorToSecurityDescriptor(EVERYONE_SYNCHRONIZE_SDDL, 1,</span>
+            securityDescriptor, null);
+<span class="nc" id="L151">    Advapi32.SECURITY_ATTRIBUTES sa = new Advapi32.SECURITY_ATTRIBUTES();</span>
+<span class="nc" id="L152">    sa.nLength = sa.size();</span>
+<span class="nc" id="L153">    sa.lpSecurityDescriptor = securityDescriptor.getValue();</span>
+<span class="nc" id="L154">    sa.bInheritHandle = false;</span>
+<span class="nc" id="L155">    HANDLE mutex = Kernel32.INSTANCE.CreateMutex(sa, false, memoryName + &quot;_CONNECT_MUTEX&quot;);</span>
+<span class="nc" id="L156">    Kernel32.INSTANCE.LocalFree(securityDescriptor.getValue());</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">    if (Kernel32.INSTANCE.WaitForSingleObject(mutex, timeout) == -1) {</span>
+<span class="nc" id="L158">      Kernel32.INSTANCE.CloseHandle(mutex);</span>
+<span class="nc" id="L159">      throw new IOException(</span>
+<span class="nc" id="L160">          &quot;wait failed (timeout, last error =  &quot; + Kernel32.INSTANCE.GetLastError());</span>
+    }
+<span class="nc" id="L162">    return mutex;</span>
+  }
+
+  private int getConnectNumber() throws IOException {
+    HANDLE connectRequest;
+    try {
+<span class="nc" id="L168">      connectRequest = openEvent(memoryName + &quot;_CONNECT_REQUEST&quot;);</span>
+<span class="nc" id="L169">    } catch (LastErrorException lee) {</span>
+      try {
+<span class="nc" id="L171">        connectRequest = openEvent(&quot;Global\\&quot; + memoryName + &quot;_CONNECT_REQUEST&quot;);</span>
+<span class="nc" id="L172">        memoryName = &quot;Global\\&quot; + memoryName;</span>
+<span class="nc" id="L173">      } catch (LastErrorException lee2) {</span>
+<span class="nc" id="L174">        throw new IOException(&quot;getConnectNumber() fails : &quot; + lee2.getMessage() + &quot; &quot; + memoryName);</span>
+<span class="nc" id="L175">      }</span>
+<span class="nc" id="L176">    }</span>
+
+<span class="nc" id="L178">    HANDLE connectAnswer = openEvent(memoryName + &quot;_CONNECT_ANSWER&quot;);</span>
+
+<span class="nc" id="L180">    HANDLE mutex = lockMutex();</span>
+<span class="nc" id="L181">    Pointer connectData = null;</span>
+    try {
+<span class="nc" id="L183">      Kernel32.INSTANCE.SetEvent(connectRequest);</span>
+<span class="nc" id="L184">      connectData = mapMemory(memoryName + &quot;_CONNECT_DATA&quot;, Kernel32.FILE_MAP_READ, 4);</span>
+<span class="nc" id="L185">      int ret = Kernel32.INSTANCE.WaitForSingleObject(connectAnswer, timeout);</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">      if (ret != 0) {</span>
+<span class="nc" id="L187">        throw new IOException(</span>
+            &quot;WaitForSingleObject returned &quot; + ret + &quot;, last error &quot; + Kernel32.INSTANCE
+<span class="nc" id="L189">                .GetLastError());</span>
+      }
+<span class="nc" id="L191">      return connectData.getInt(0);</span>
+    } finally {
+<span class="nc" id="L193">      Kernel32.INSTANCE.ReleaseMutex(mutex);</span>
+<span class="nc" id="L194">      Kernel32.INSTANCE.CloseHandle(mutex);</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">      if (connectData != null) {</span>
+<span class="nc" id="L196">        Kernel32.INSTANCE.UnmapViewOfFile(connectData);</span>
+      }
+<span class="nc" id="L198">      Kernel32.INSTANCE.CloseHandle(connectRequest);</span>
+<span class="nc" id="L199">      Kernel32.INSTANCE.CloseHandle(connectAnswer);</span>
+    }
+  }
+
+  public void connect(SocketAddress endpoint, int timeout) throws IOException {
+    try {
+<span class="nc" id="L205">      is = new SharedMemoryInputStream();</span>
+<span class="nc" id="L206">      os = new SharedMemoryOutputStream();</span>
+<span class="nc" id="L207">      String prefix = memoryName + &quot;_&quot; + getConnectNumber();</span>
+<span class="nc" id="L208">      clientRead = openEvent(prefix + &quot;_CLIENT_READ&quot;);</span>
+<span class="nc" id="L209">      serverRead = openEvent(prefix + &quot;_SERVER_READ&quot;);</span>
+<span class="nc" id="L210">      serverWrote = openEvent(prefix + &quot;_SERVER_WROTE&quot;);</span>
+<span class="nc" id="L211">      clientWrote = openEvent(prefix + &quot;_CLIENT_WROTE&quot;);</span>
+<span class="nc" id="L212">      connectionClosed = openEvent(prefix + &quot;_CONNECTION_CLOSED&quot;);</span>
+<span class="nc" id="L213">      view = mapMemory(prefix + &quot;_DATA&quot;, Kernel32.FILE_MAP_WRITE, BUFFERLEN);</span>
+<span class="nc" id="L214">      Kernel32.INSTANCE.SetEvent(serverRead);</span>
+<span class="nc" id="L215">    } catch (LastErrorException lee) {</span>
+<span class="nc" id="L216">      throw new IOException(lee.getMessage(), lee.getCause());</span>
+<span class="nc" id="L217">    }</span>
+<span class="nc" id="L218">  }</span>
+
+  public InputStream getInputStream() {
+<span class="nc" id="L221">    return is;</span>
+  }
+
+  public OutputStream getOutputStream() {
+<span class="nc" id="L225">    return os;</span>
+  }
+
+  public void setTcpNoDelay(boolean b) {
+    //do nothing
+<span class="nc" id="L230">  }</span>
+
+  public void setKeepAlive(boolean b) {
+    //do nothing
+<span class="nc" id="L234">  }</span>
+
+  public void setReceiveBufferSize(int size) {
+    //do nothing
+<span class="nc" id="L238">  }</span>
+
+  public void setSendBufferSize(int size) {
+    //do nothing
+<span class="nc" id="L242">  }</span>
+
+  public void setSoLinger(boolean b, int i) {
+    //do nothing
+<span class="nc" id="L246">  }</span>
+
+  public void setSoTimeout(int t) {
+<span class="nc bnc" id="L249" title="All 2 branches missed.">    if (t == 0) {</span>
+<span class="nc" id="L250">      timeout = Kernel32.INFINITE;</span>
+    } else {
+<span class="nc" id="L252">      timeout = t;</span>
+    }
+<span class="nc" id="L254">  }</span>
+
+  public void shutdownInput() {
+    //do nothing
+<span class="nc" id="L258">  }</span>
+
+  public void shutdownOutput() {
+    //do nothing
+<span class="nc" id="L262">  }</span>
+
+  @Override
+  public void close() {
+
+<span class="nc bnc" id="L267" title="All 2 branches missed.">    if (connectionClosed != null</span>
+<span class="nc bnc" id="L268" title="All 2 branches missed.">        &amp;&amp; Kernel32.INSTANCE.WaitForSingleObject(connectionClosed, 0) != 0) {</span>
+      /* Set close event if not yet set */
+<span class="nc" id="L270">      Kernel32.INSTANCE.SetEvent(connectionClosed);</span>
+    }
+<span class="nc" id="L272">    HANDLE[] handles = {serverRead, serverWrote, clientRead, clientWrote, connectionClosed};</span>
+<span class="nc bnc" id="L273" title="All 2 branches missed.">    for (HANDLE h : handles) {</span>
+<span class="nc bnc" id="L274" title="All 2 branches missed.">      if (h != null) {</span>
+<span class="nc" id="L275">        Kernel32.INSTANCE.CloseHandle(h);</span>
+      }
+    }
+<span class="nc bnc" id="L278" title="All 2 branches missed.">    if (view != null) {</span>
+<span class="nc" id="L279">      Kernel32.INSTANCE.UnmapViewOfFile(view);</span>
+    }
+<span class="nc" id="L281">    serverRead = null;</span>
+<span class="nc" id="L282">    serverWrote = null;</span>
+<span class="nc" id="L283">    clientRead = null;</span>
+<span class="nc" id="L284">    clientWrote = null;</span>
+<span class="nc" id="L285">    connectionClosed = null;</span>
+<span class="nc" id="L286">    view = null;</span>
+<span class="nc" id="L287">  }</span>
+
+  public interface Kernel32 extends StdCallLibrary {
+
+<span class="nc" id="L291">    Kernel32 INSTANCE = (Kernel32) Native.loadLibrary(&quot;Kernel32&quot;, Kernel32.class, WIN32API_OPTIONS);</span>
+    int FILE_MAP_WRITE = 0x0002;
+    int FILE_MAP_READ = 0x0004;
+    int EVENT_MODIFY_STATE = 0x0002;
+    int SYNCHRONIZE = 0x00100000;
+    int INFINITE = -1;
+
+    HANDLE OpenEvent(int dwDesiredAccess, boolean bInheritHandle, String name)
+        throws LastErrorException;
+
+    HANDLE OpenFileMapping(int dwDesiredAccess, boolean bInheritHandle, String name)
+        throws LastErrorException;
+
+    Pointer MapViewOfFile(HANDLE hFileMappingObject, int dwDesiredAccess, int dwFileOffsetHigh,
+        int dwFileOffsetLow,
+        SIZE_T dwNumberOfBytesToMap) throws LastErrorException;
+
+    boolean UnmapViewOfFile(Pointer view) throws LastErrorException;
+
+    boolean SetEvent(HANDLE handle) throws LastErrorException;
+
+    boolean CloseHandle(HANDLE handle) throws LastErrorException;
+
+    int WaitForSingleObject(HANDLE handle, int timeout) throws LastErrorException;
+
+    int WaitForMultipleObjects(int count, HANDLE[] handles, boolean waitAll, int millis)
+        throws LastErrorException;
+
+    int GetLastError() throws LastErrorException;
+
+    HANDLE CreateMutex(Advapi32.SECURITY_ATTRIBUTES sa, boolean initialOwner, String name);
+
+    boolean ReleaseMutex(HANDLE hMutex);
+
+    Pointer LocalFree(Pointer p);
+
+  }
+
+  public interface Advapi32 extends StdCallLibrary {
+
+<span class="nc" id="L331">    Advapi32 INSTANCE = (Advapi32) Native.loadLibrary(&quot;advapi32&quot;, Advapi32.class, WIN32API_OPTIONS);</span>
+
+    boolean ConvertStringSecurityDescriptorToSecurityDescriptor(String sddl, int sddlVersion,
+        PointerByReference psd,
+        IntByReference length);
+
+<span class="nc" id="L337">    class SECURITY_ATTRIBUTES extends Structure {</span>
+
+      public int nLength;
+      public Pointer lpSecurityDescriptor;
+      public boolean bInheritHandle;
+
+      @Override
+      protected java.util.List&lt;String&gt; getFieldOrder() {
+<span class="nc" id="L345">        return Arrays.asList(&quot;nLength&quot;, &quot;lpSecurityDescriptor&quot;, &quot;bInheritHandle&quot;);</span>
+      }
+    }
+
+  }
+
+<span class="nc" id="L351">  class SharedMemoryInputStream extends InputStream {</span>
+
+    @Override
+    public int read(byte[] bytes, int off, int count) throws IOException {
+<span class="nc" id="L355">      HANDLE[] handles = {serverWrote, connectionClosed};</span>
+<span class="nc bnc" id="L356" title="All 2 branches missed.">      if (bytesLeft == 0) {</span>
+<span class="nc" id="L357">        int index = Kernel32.INSTANCE.WaitForMultipleObjects(2, handles, false, timeout);</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">        if (index == -1) {</span>
+<span class="nc" id="L359">          throw new IOException(&quot;wait failed, timeout&quot;);</span>
+<span class="nc bnc" id="L360" title="All 2 branches missed.">        } else if (index == 1) {</span>
+          // Connection closed
+<span class="nc" id="L362">          throw new IOException(&quot;Server closed connection&quot;);</span>
+<span class="nc bnc" id="L363" title="All 2 branches missed.">        } else if (index != 0) {</span>
+<span class="nc" id="L364">          throw new IOException(&quot;Unexpected return result from WaitForMultipleObjects : &quot; + index);</span>
+        }
+<span class="nc" id="L366">        bytesLeft = view.getInt(0);</span>
+<span class="nc" id="L367">        position = 4;</span>
+      }
+<span class="nc" id="L369">      int len = Math.min(count, bytesLeft);</span>
+<span class="nc" id="L370">      view.read(position, bytes, off, len);</span>
+<span class="nc" id="L371">      position += len;</span>
+<span class="nc" id="L372">      bytesLeft -= len;</span>
+<span class="nc bnc" id="L373" title="All 2 branches missed.">      if (bytesLeft == 0) {</span>
+<span class="nc" id="L374">        Kernel32.INSTANCE.SetEvent(clientRead);</span>
+      }
+<span class="nc" id="L376">      return len;</span>
+    }
+
+    @Override
+    public int read() throws IOException {
+<span class="nc" id="L381">      byte[] bit = new byte[1];</span>
+<span class="nc" id="L382">      int bytesRead = read(bit);</span>
+<span class="nc bnc" id="L383" title="All 2 branches missed.">      if (bytesRead == 0) {</span>
+<span class="nc" id="L384">        return -1;</span>
+      }
+<span class="nc" id="L386">      return bit[0] &amp; 0xff;</span>
+    }
+
+    @Override
+    public int read(byte[] bytes) throws IOException {
+<span class="nc" id="L391">      return read(bytes, 0, bytes.length);</span>
+    }
+  }
+
+<span class="nc" id="L395">  class SharedMemoryOutputStream extends OutputStream {</span>
+
+    @Override
+    public void write(byte[] bytes, int off, int count) throws IOException {
+<span class="nc" id="L399">      int bytesToWrite = count;</span>
+<span class="nc" id="L400">      int buffPos = off;</span>
+<span class="nc" id="L401">      HANDLE[] handles = {serverRead, connectionClosed};</span>
+<span class="nc bnc" id="L402" title="All 2 branches missed.">      while (bytesToWrite &gt; 0) {</span>
+<span class="nc" id="L403">        int index = Kernel32.INSTANCE.WaitForMultipleObjects(2, handles, false, timeout);</span>
+<span class="nc bnc" id="L404" title="All 2 branches missed.">        if (index == -1) {</span>
+          // wait failed,  probably timeout
+<span class="nc" id="L406">          throw new IOException(&quot;WaitForMultipleObjects() failed, timeout&quot;);</span>
+<span class="nc bnc" id="L407" title="All 2 branches missed.">        } else if (index == 1) {</span>
+          // Connection closed
+<span class="nc" id="L409">          throw new IOException(&quot;Server closed connection&quot;);</span>
+<span class="nc bnc" id="L410" title="All 2 branches missed.">        } else if (index != 0) {</span>
+<span class="nc" id="L411">          throw new IOException(&quot;Unexpected return result from WaitForMultipleObjects : &quot; + index);</span>
+        }
+
+<span class="nc" id="L414">        int chunk = Math.min(bytesToWrite, BUFFERLEN);</span>
+<span class="nc" id="L415">        view.setInt(0, chunk);</span>
+<span class="nc" id="L416">        view.write(4, bytes, buffPos, chunk);</span>
+<span class="nc" id="L417">        buffPos += chunk;</span>
+<span class="nc" id="L418">        bytesToWrite -= chunk;</span>
+<span class="nc bnc" id="L419" title="All 2 branches missed.">        if (!Kernel32.INSTANCE.SetEvent(clientWrote)) {</span>
+<span class="nc" id="L420">          throw new IOException(&quot;SetEvent failed&quot;);</span>
+        }
+<span class="nc" id="L422">      }</span>
+<span class="nc" id="L423">    }</span>
+
+    @Override
+    public void write(int value) throws IOException {
+<span class="nc" id="L427">      write(new byte[]{(byte) value});</span>
+<span class="nc" id="L428">    }</span>
+
+    @Override
+    public void write(byte[] bytes) throws IOException {
+<span class="nc" id="L432">      write(bytes, 0, bytes.length);</span>
+<span class="nc" id="L433">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

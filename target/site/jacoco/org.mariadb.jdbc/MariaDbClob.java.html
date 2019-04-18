@@ -1,0 +1,336 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MariaDbClob.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">MariaDbClob.java</span></div><h1>MariaDbClob.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc;
+
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Reader;
+import java.io.Serializable;
+import java.io.StringReader;
+import java.io.UncheckedIOException;
+import java.io.Writer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.StandardCharsets;
+import java.sql.Clob;
+import java.sql.NClob;
+import java.sql.SQLException;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+public class MariaDbClob extends MariaDbBlob implements Clob, NClob, Serializable {
+
+  private static final long serialVersionUID = -3066501059817815286L;
+
+  /**
+   * Creates a Clob with content.
+   *
+   * @param bytes the content for the Clob.
+   */
+  public MariaDbClob(byte[] bytes) {
+<span class="nc" id="L80">    super(bytes);</span>
+<span class="nc" id="L81">  }</span>
+
+  /**
+   * Creates a Clob with content.
+   *
+   * @param bytes  the content for the Clob.
+   * @param offset offset
+   * @param length length
+   */
+  public MariaDbClob(byte[] bytes, int offset, int length) {
+<span class="nc" id="L91">    super(bytes, offset, length);</span>
+<span class="nc" id="L92">  }</span>
+
+  /**
+   * Creates an empty Clob.
+   */
+  public MariaDbClob() {
+<span class="nc" id="L98">    super();</span>
+<span class="nc" id="L99">  }</span>
+
+  /**
+   * ToString implementation.
+   *
+   * @return string value of blob content.
+   */
+  public String toString() {
+<span class="nc" id="L107">    return new String(data, offset, length, StandardCharsets.UTF_8);</span>
+  }
+
+  /**
+   * Get sub string.
+   *
+   * @param pos    position
+   * @param length length of sub string
+   * @return substring
+   * @throws SQLException if pos is less than 1 or length is less than 0
+   */
+  public String getSubString(long pos, int length) throws SQLException {
+
+<span class="nc bnc" id="L120" title="All 2 branches missed.">    if (pos &lt; 1) {</span>
+<span class="nc" id="L121">      throw ExceptionMapper.getSqlException(&quot;position must be &gt;= 1&quot;);</span>
+    }
+
+<span class="nc bnc" id="L124" title="All 2 branches missed.">    if (length &lt; 0) {</span>
+<span class="nc" id="L125">      throw ExceptionMapper.getSqlException(&quot;length must be &gt; 0&quot;);</span>
+    }
+
+    try {
+<span class="nc" id="L129">      String val = toString();</span>
+<span class="nc" id="L130">      return val.substring((int) pos - 1, Math.min((int) pos - 1 + length, val.length()));</span>
+<span class="nc" id="L131">    } catch (Exception e) {</span>
+<span class="nc" id="L132">      throw new SQLException(e);</span>
+    }
+  }
+
+  public Reader getCharacterStream() {
+<span class="nc" id="L137">    return new StringReader(toString());</span>
+  }
+
+  /**
+   * Returns a Reader object that contains a partial Clob value, starting with the character
+   * specified by pos, which is length characters in length.
+   *
+   * @param pos    the offset to the first character of the partial value to be retrieved. The first
+   *               character in the Clob is at position 1.
+   * @param length the length in characters of the partial value to be retrieved.
+   * @return Reader through which the partial Clob value can be read.
+   * @throws SQLException if pos is less than 1 or if pos is greater than the number of characters
+   *                      in the Clob or if pos + length is greater than the number of characters in
+   *                      the Clob
+   */
+  public Reader getCharacterStream(long pos, long length) throws SQLException {
+<span class="nc" id="L153">    String val = toString();</span>
+<span class="nc bnc" id="L154" title="All 2 branches missed.">    if (val.length() &lt; (int) pos - 1 + length) {</span>
+<span class="nc" id="L155">      throw ExceptionMapper</span>
+<span class="nc" id="L156">          .getSqlException(&quot;pos + length is greater than the number of characters in the Clob&quot;);</span>
+    }
+<span class="nc" id="L158">    String sub = val.substring((int) pos - 1, (int) pos - 1 + (int) length);</span>
+<span class="nc" id="L159">    return new StringReader(sub);</span>
+  }
+
+  /**
+   * Set character stream.
+   *
+   * @param pos position
+   * @return writer
+   * @throws SQLException if position is invalid
+   */
+  public Writer setCharacterStream(long pos) throws SQLException {
+<span class="nc" id="L170">    int bytePosition = utf8Position((int) pos - 1);</span>
+<span class="nc" id="L171">    OutputStream stream = setBinaryStream(bytePosition + 1);</span>
+<span class="nc" id="L172">    return new OutputStreamWriter(stream, StandardCharsets.UTF_8);</span>
+  }
+
+  public InputStream getAsciiStream() throws SQLException {
+<span class="nc" id="L176">    return getBinaryStream();</span>
+  }
+
+  public long position(String searchStr, long start) {
+<span class="nc" id="L180">    return toString().indexOf(searchStr, (int) start - 1) + 1;</span>
+  }
+
+  public long position(Clob searchStr, long start) {
+<span class="nc" id="L184">    return position(searchStr.toString(), start);</span>
+  }
+
+  /**
+   * Convert character position into byte position in UTF8 byte array.
+   *
+   * @param charPosition charPosition
+   * @return byte position
+   */
+  private int utf8Position(int charPosition) {
+<span class="nc" id="L194">    int pos = offset;</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">    for (int i = 0; i &lt; charPosition; i++) {</span>
+<span class="nc" id="L196">      int byteValue = data[pos] &amp; 0xff;</span>
+<span class="nc bnc" id="L197" title="All 2 branches missed.">      if (byteValue &lt; 0x80) {</span>
+<span class="nc" id="L198">        pos += 1;</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">      } else if (byteValue &lt; 0xC2) {</span>
+<span class="nc" id="L200">        throw new UncheckedIOException(&quot;invalid UTF8&quot;, new CharacterCodingException());</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">      } else if (byteValue &lt; 0xE0) {</span>
+<span class="nc" id="L202">        pos += 2;</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">      } else if (byteValue &lt; 0xF0) {</span>
+<span class="nc" id="L204">        pos += 3;</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">      } else if (byteValue &lt; 0xF8) {</span>
+<span class="nc" id="L206">        pos += 4;</span>
+      } else {
+<span class="nc" id="L208">        throw new UncheckedIOException(&quot;invalid UTF8&quot;, new CharacterCodingException());</span>
+      }
+    }
+<span class="nc" id="L211">    return pos;</span>
+  }
+
+  /**
+   * Set String.
+   *
+   * @param pos position
+   * @param str string
+   * @return string length
+   * @throws SQLException if UTF-8 conversion failed
+   */
+  public int setString(long pos, String str) throws SQLException {
+<span class="nc" id="L223">    int bytePosition = utf8Position((int) pos - 1);</span>
+<span class="nc" id="L224">    super.setBytes(bytePosition + 1 - offset, str.getBytes(StandardCharsets.UTF_8));</span>
+<span class="nc" id="L225">    return str.length();</span>
+  }
+
+  public int setString(long pos, String str, int offset, int len) throws SQLException {
+<span class="nc" id="L229">    return setString(pos, str.substring(offset, offset + len));</span>
+  }
+
+  public OutputStream setAsciiStream(long pos) throws SQLException {
+<span class="nc" id="L233">    return setBinaryStream(utf8Position((int) pos - 1) + 1);</span>
+  }
+
+  /**
+   * Return character length of the Clob. Assume UTF8 encoding.
+   */
+  @Override
+  public long length() {
+    //The length of a character string is the number of UTF-16 units (not the number of characters)
+<span class="nc" id="L242">    long len = 0;</span>
+<span class="nc" id="L243">    int pos = offset;</span>
+
+    //set ASCII (&lt;= 127 chars)
+<span class="nc bnc" id="L246" title="All 4 branches missed.">    for (; len &lt; length &amp;&amp; data[pos] &gt;= 0; ) {</span>
+<span class="nc" id="L247">      len++;</span>
+<span class="nc" id="L248">      pos++;</span>
+    }
+
+    //multi-bytes UTF-8
+<span class="nc bnc" id="L252" title="All 2 branches missed.">    while (pos &lt; offset + length) {</span>
+<span class="nc" id="L253">      byte firstByte = data[pos++];</span>
+<span class="nc bnc" id="L254" title="All 2 branches missed.">      if (firstByte &lt; 0) {</span>
+<span class="nc bnc" id="L255" title="All 4 branches missed.">        if (firstByte &gt;&gt; 5 != -2 || (firstByte &amp; 30) == 0) {</span>
+<span class="nc bnc" id="L256" title="All 2 branches missed.">          if (firstByte &gt;&gt; 4 == -2) {</span>
+<span class="nc bnc" id="L257" title="All 2 branches missed.">            if (pos + 1 &lt; offset + length) {</span>
+<span class="nc" id="L258">              pos += 2;</span>
+<span class="nc" id="L259">              len++;</span>
+            } else {
+<span class="nc" id="L261">              throw new UncheckedIOException(&quot;invalid UTF8&quot;, new CharacterCodingException());</span>
+            }
+<span class="nc bnc" id="L263" title="All 2 branches missed.">          } else if (firstByte &gt;&gt; 3 != -2) {</span>
+<span class="nc" id="L264">            throw new UncheckedIOException(&quot;invalid UTF8&quot;, new CharacterCodingException());</span>
+<span class="nc bnc" id="L265" title="All 2 branches missed.">          } else if (pos + 2 &lt; offset + length) {</span>
+<span class="nc" id="L266">            pos += 3;</span>
+<span class="nc" id="L267">            len += 2;</span>
+          } else {
+            //bad truncated UTF8
+<span class="nc" id="L270">            pos += offset + length;</span>
+<span class="nc" id="L271">            len += 1;</span>
+          }
+        } else {
+<span class="nc" id="L274">          pos++;</span>
+<span class="nc" id="L275">          len++;</span>
+        }
+      } else {
+<span class="nc" id="L278">        len++;</span>
+      }
+<span class="nc" id="L280">    }</span>
+<span class="nc" id="L281">    return len;</span>
+  }
+
+  @Override
+  public void truncate(final long truncateLen) {
+
+    //truncate the number of UTF-16 characters
+    //this can result in a bad UTF-8 string if string finish with a
+    //character represented in 2 UTF-16
+<span class="nc" id="L290">    long len = 0;</span>
+<span class="nc" id="L291">    int pos = offset;</span>
+
+    //set ASCII (&lt;= 127 chars)
+<span class="nc bnc" id="L294" title="All 6 branches missed.">    for (; len &lt; length &amp;&amp; len &lt; truncateLen &amp;&amp; data[pos] &gt;= 0; ) {</span>
+<span class="nc" id="L295">      len++;</span>
+<span class="nc" id="L296">      pos++;</span>
+    }
+
+    //multi-bytes UTF-8
+<span class="nc bnc" id="L300" title="All 4 branches missed.">    while (pos &lt; offset + length &amp;&amp; len &lt; truncateLen) {</span>
+<span class="nc" id="L301">      byte firstByte = data[pos++];</span>
+<span class="nc bnc" id="L302" title="All 2 branches missed.">      if (firstByte &lt; 0) {</span>
+<span class="nc bnc" id="L303" title="All 4 branches missed.">        if (firstByte &gt;&gt; 5 != -2 || (firstByte &amp; 30) == 0) {</span>
+<span class="nc bnc" id="L304" title="All 2 branches missed.">          if (firstByte &gt;&gt; 4 == -2) {</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">            if (pos + 1 &lt; offset + length) {</span>
+<span class="nc" id="L306">              pos += 2;</span>
+<span class="nc" id="L307">              len++;</span>
+            } else {
+<span class="nc" id="L309">              throw new UncheckedIOException(&quot;invalid UTF8&quot;, new CharacterCodingException());</span>
+            }
+<span class="nc bnc" id="L311" title="All 2 branches missed.">          } else if (firstByte &gt;&gt; 3 != -2) {</span>
+<span class="nc" id="L312">            throw new UncheckedIOException(&quot;invalid UTF8&quot;, new CharacterCodingException());</span>
+<span class="nc bnc" id="L313" title="All 2 branches missed.">          } else if (pos + 2 &lt; offset + length) {</span>
+<span class="nc bnc" id="L314" title="All 2 branches missed.">            if (len + 2 &lt;= truncateLen) {</span>
+<span class="nc" id="L315">              pos += 3;</span>
+<span class="nc" id="L316">              len += 2;</span>
+            } else {
+              //truncation will result in bad UTF-8 String
+<span class="nc" id="L319">              pos += 1;</span>
+<span class="nc" id="L320">              len = truncateLen;</span>
+            }
+          } else {
+<span class="nc" id="L323">            throw new UncheckedIOException(&quot;invalid UTF8&quot;, new CharacterCodingException());</span>
+          }
+        } else {
+<span class="nc" id="L326">          pos++;</span>
+<span class="nc" id="L327">          len++;</span>
+        }
+      } else {
+<span class="nc" id="L330">        len++;</span>
+      }
+<span class="nc" id="L332">    }</span>
+<span class="nc" id="L333">    length = pos - offset;</span>
+<span class="nc" id="L334">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

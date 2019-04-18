@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GlobalStateInfo.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.util.pool</a> &gt; <span class="el_source">GlobalStateInfo.java</span></div><h1>GlobalStateInfo.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ */
+
+package org.mariadb.jdbc.internal.util.pool;
+
+import java.sql.Connection;
+
+public class GlobalStateInfo {
+
+  private final long maxAllowedPacket;
+  private final int waitTimeout;
+  private final boolean autocommit;
+  private final int autoIncrementIncrement;
+  private final String timeZone;
+  private final String systemTimeZone;
+  private final int defaultTransactionIsolation;
+
+  /**
+   * Default value. ! To be used for Connection that will only Kill query/connection !
+   */
+<span class="nc" id="L40">  public GlobalStateInfo() {</span>
+<span class="nc" id="L41">    this.maxAllowedPacket = 1_000_000;</span>
+<span class="nc" id="L42">    this.waitTimeout = 28_800;</span>
+<span class="nc" id="L43">    this.autocommit = true;</span>
+<span class="nc" id="L44">    this.autoIncrementIncrement = 1;</span>
+<span class="nc" id="L45">    this.timeZone = &quot;+00:00&quot;;</span>
+<span class="nc" id="L46">    this.systemTimeZone = &quot;+00:00&quot;;</span>
+<span class="nc" id="L47">    this.defaultTransactionIsolation = Connection.TRANSACTION_REPEATABLE_READ;</span>
+<span class="nc" id="L48">  }</span>
+
+  /**
+   * Storing global server state to avoid asking server each new connection. Using this Object
+   * meaning having set the option &quot;staticGlobal&quot;. Application must not change any of the following
+   * options.
+   *
+   * @param maxAllowedPacket            max_allowed_packet global variable value
+   * @param waitTimeout                 wait_timeout global variable value
+   * @param autocommit                  auto_commit global variable value
+   * @param autoIncrementIncrement      auto_increment_increment global variable value
+   * @param timeZone                    time_zone global variable value
+   * @param systemTimeZone              System global variable value
+   * @param defaultTransactionIsolation tx_isolation variable value
+   */
+  public GlobalStateInfo(long maxAllowedPacket, int waitTimeout, boolean autocommit,
+      int autoIncrementIncrement,
+<span class="nc" id="L65">      String timeZone, String systemTimeZone, int defaultTransactionIsolation) {</span>
+<span class="nc" id="L66">    this.maxAllowedPacket = maxAllowedPacket;</span>
+<span class="nc" id="L67">    this.waitTimeout = waitTimeout;</span>
+<span class="nc" id="L68">    this.autocommit = autocommit;</span>
+<span class="nc" id="L69">    this.autoIncrementIncrement = autoIncrementIncrement;</span>
+<span class="nc" id="L70">    this.timeZone = timeZone;</span>
+<span class="nc" id="L71">    this.systemTimeZone = systemTimeZone;</span>
+<span class="nc" id="L72">    this.defaultTransactionIsolation = defaultTransactionIsolation;</span>
+<span class="nc" id="L73">  }</span>
+
+  public long getMaxAllowedPacket() {
+<span class="nc" id="L76">    return maxAllowedPacket;</span>
+  }
+
+  public int getWaitTimeout() {
+<span class="nc" id="L80">    return waitTimeout;</span>
+  }
+
+  public boolean isAutocommit() {
+<span class="nc" id="L84">    return autocommit;</span>
+  }
+
+  public int getAutoIncrementIncrement() {
+<span class="nc" id="L88">    return autoIncrementIncrement;</span>
+  }
+
+  public String getTimeZone() {
+<span class="nc" id="L92">    return timeZone;</span>
+  }
+
+  public String getSystemTimeZone() {
+<span class="nc" id="L96">    return systemTimeZone;</span>
+  }
+
+  public int getDefaultTransactionIsolation() {
+<span class="nc" id="L100">    return defaultTransactionIsolation;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>StandardGssapiAuthentication.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.send.authentication.gssapi</a> &gt; <span class="el_source">StandardGssapiAuthentication.java</span></div><h1>StandardGssapiAuthentication.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.com.send.authentication.gssapi;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.io.UncheckedIOException;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
+import java.sql.SQLException;
+import java.util.concurrent.atomic.AtomicInteger;
+import javax.security.auth.Subject;
+import javax.security.auth.login.LoginContext;
+import javax.security.auth.login.LoginException;
+import org.ietf.jgss.GSSContext;
+import org.ietf.jgss.GSSException;
+import org.ietf.jgss.GSSManager;
+import org.ietf.jgss.GSSName;
+import org.ietf.jgss.Oid;
+import org.mariadb.jdbc.internal.com.read.Buffer;
+import org.mariadb.jdbc.internal.io.input.PacketInputStream;
+import org.mariadb.jdbc.internal.io.output.PacketOutputStream;
+
+<span class="nc" id="L76">public class StandardGssapiAuthentication implements GssapiAuth {</span>
+
+  /**
+   * Process default GSS plugin authentication.
+   *
+   * @param out                   out stream
+   * @param in                    in stream
+   * @param sequence              packet sequence
+   * @param servicePrincipalName  service principal name
+   * @param mechanisms            gssapi mechanism
+   * @throws IOException  if socket error
+   * @throws SQLException in any Exception occur
+   */
+  public void authenticate(final PacketOutputStream out, final PacketInputStream in, final AtomicInteger sequence,
+                           final String servicePrincipalName, String mechanisms) throws SQLException, IOException {
+
+<span class="nc bnc" id="L92" title="All 2 branches missed.">    if (&quot;&quot;.equals(servicePrincipalName)) {</span>
+<span class="nc" id="L93">      throw new SQLException(&quot;No principal name defined on server. &quot;</span>
+          + &quot;Please set server variable \&quot;gssapi-principal-name\&quot; or set option \&quot;servicePrincipalName\&quot;&quot;, &quot;28000&quot;);
+    }
+
+<span class="nc bnc" id="L97" title="All 2 branches missed.">    if (System.getProperty(&quot;java.security.auth.login.config&quot;) == null) {</span>
+      final File jaasConfFile;
+      try {
+<span class="nc" id="L100">        jaasConfFile = File.createTempFile(&quot;jaas.conf&quot;, null);</span>
+<span class="nc" id="L101">        try (PrintStream bos = new PrintStream(new FileOutputStream(jaasConfFile))) {</span>
+<span class="nc" id="L102">          bos.print(&quot;Krb5ConnectorContext {\n&quot;</span>
+              + &quot;com.sun.security.auth.module.Krb5LoginModule required &quot;
+              + &quot;useTicketCache=true &quot;
+              + &quot;debug=true &quot;
+              + &quot;renewTGT=true &quot;
+              + &quot;doNotPrompt=true; };&quot;);
+        }
+<span class="nc" id="L109">        jaasConfFile.deleteOnExit();</span>
+<span class="nc" id="L110">      } catch (final IOException ex) {</span>
+<span class="nc" id="L111">        throw new UncheckedIOException(ex);</span>
+<span class="nc" id="L112">      }</span>
+
+<span class="nc" id="L114">      System.setProperty(&quot;java.security.auth.login.config&quot;, jaasConfFile.getCanonicalPath());</span>
+    }
+    try {
+<span class="nc" id="L117">      LoginContext loginContext = new LoginContext(&quot;Krb5ConnectorContext&quot;);</span>
+      // attempt authentication
+<span class="nc" id="L119">      loginContext.login();</span>
+<span class="nc" id="L120">      final Subject mySubject = loginContext.getSubject();</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">      if (!mySubject.getPrincipals().isEmpty()) {</span>
+        try {
+<span class="nc" id="L123">          PrivilegedExceptionAction&lt;Void&gt; action = () -&gt; {</span>
+            try {
+<span class="nc" id="L125">              Oid krb5Mechanism = new Oid(&quot;1.2.840.113554.1.2.2&quot;);</span>
+
+<span class="nc" id="L127">              GSSManager manager = GSSManager.getInstance();</span>
+<span class="nc" id="L128">              GSSName peerName = manager.createName(servicePrincipalName, GSSName.NT_USER_NAME);</span>
+<span class="nc" id="L129">              GSSContext context =</span>
+<span class="nc" id="L130">                  manager.createContext(peerName,</span>
+                      krb5Mechanism,
+                      null,
+                      GSSContext.DEFAULT_LIFETIME);
+<span class="nc" id="L134">              context.requestMutualAuth(true);</span>
+
+<span class="nc" id="L136">              byte[] inToken = new byte[0];</span>
+              byte[] outToken;
+<span class="nc bnc" id="L138" title="All 2 branches missed.">              while (!context.isEstablished()) {</span>
+
+<span class="nc" id="L140">                outToken = context.initSecContext(inToken, 0, inToken.length);</span>
+
+                // Send a token to the peer if one was generated by acceptSecContext
+<span class="nc bnc" id="L143" title="All 2 branches missed.">                if (outToken != null) {</span>
+<span class="nc" id="L144">                  out.startPacket(sequence.incrementAndGet());</span>
+<span class="nc" id="L145">                  out.write(outToken);</span>
+<span class="nc" id="L146">                  out.flush();</span>
+                }
+<span class="nc bnc" id="L148" title="All 2 branches missed.">                if (!context.isEstablished()) {</span>
+<span class="nc" id="L149">                  Buffer buffer = in.getPacket(true);</span>
+<span class="nc" id="L150">                  sequence.set(in.getLastPacketSeq());</span>
+<span class="nc" id="L151">                  inToken = buffer.readRawBytes(buffer.remaining());</span>
+<span class="nc" id="L152">                }</span>
+              }
+
+<span class="nc" id="L155">            } catch (GSSException le) {</span>
+<span class="nc" id="L156">              throw new SQLException(&quot;GSS-API authentication exception&quot;, &quot;28000&quot;, 1045, le);</span>
+<span class="nc" id="L157">            }</span>
+<span class="nc" id="L158">            return null;</span>
+          };
+<span class="nc" id="L160">          Subject.doAs(mySubject, action);</span>
+<span class="nc" id="L161">        } catch (PrivilegedActionException exception) {</span>
+<span class="nc" id="L162">          throw new SQLException(&quot;GSS-API authentication exception&quot;, &quot;28000&quot;, 1045, exception);</span>
+<span class="nc" id="L163">        }</span>
+      } else {
+<span class="nc" id="L165">        throw new SQLException(&quot;GSS-API authentication exception : no credential cache not found.&quot;,</span>
+            &quot;28000&quot;, 1045);
+      }
+
+<span class="nc" id="L169">    } catch (LoginException le) {</span>
+<span class="nc" id="L170">      throw new SQLException(&quot;GSS-API authentication exception&quot;, &quot;28000&quot;, 1045, le);</span>
+<span class="nc" id="L171">    }</span>
+<span class="nc" id="L172">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

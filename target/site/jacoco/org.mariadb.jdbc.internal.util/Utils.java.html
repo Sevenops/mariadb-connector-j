@@ -1,0 +1,916 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Utils.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.util</a> &gt; <span class="el_source">Utils.java</span></div><h1>Utils.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.util;
+
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Proxy;
+import java.net.Socket;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.Locale;
+import java.util.TimeZone;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
+import javax.net.SocketFactory;
+import org.mariadb.jdbc.UrlParser;
+import org.mariadb.jdbc.internal.failover.FailoverProxy;
+import org.mariadb.jdbc.internal.failover.impl.AuroraListener;
+import org.mariadb.jdbc.internal.failover.impl.MastersFailoverListener;
+import org.mariadb.jdbc.internal.failover.impl.MastersSlavesListener;
+import org.mariadb.jdbc.internal.io.socket.SocketHandlerFunction;
+import org.mariadb.jdbc.internal.io.socket.SocketUtility;
+import org.mariadb.jdbc.internal.logging.ProtocolLoggingProxy;
+import org.mariadb.jdbc.internal.protocol.AuroraProtocol;
+import org.mariadb.jdbc.internal.protocol.MasterProtocol;
+import org.mariadb.jdbc.internal.protocol.MastersSlavesProtocol;
+import org.mariadb.jdbc.internal.protocol.Protocol;
+import org.mariadb.jdbc.internal.util.pool.GlobalStateInfo;
+
+
+@SuppressWarnings(&quot;Annotator&quot;)
+<span class="nc" id="L85">public class Utils {</span>
+
+<span class="nc" id="L87">  private static final char[] hexArray = &quot;0123456789ABCDEF&quot;.toCharArray();</span>
+<span class="nc" id="L88">  private static final Pattern IP_V4 = Pattern</span>
+<span class="nc" id="L89">      .compile(&quot;^(([1-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){1}&quot;</span>
+          + &quot;(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){2}&quot;
+          + &quot;([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$&quot;);
+<span class="nc" id="L92">  private static final Pattern IP_V6 = Pattern.compile(&quot;^[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4}){7}$&quot;);</span>
+<span class="nc" id="L93">  private static final Pattern IP_V6_COMPRESSED = Pattern</span>
+<span class="nc" id="L94">      .compile(&quot;^(([0-9A-Fa-f]{1,4}(:[0-9A-Fa-f]{1,4}){0,5})?)&quot;</span>
+          + &quot;::(([0-9A-Fa-f]{1,4}(:[0-9A-Fa-f]{1,4}){0,5})?)$&quot;);
+
+  private static final SocketHandlerFunction socketHandler;
+
+  static {
+    SocketHandlerFunction init;
+    try {
+<span class="nc" id="L102">      init = SocketUtility.getSocketHandler();</span>
+<span class="nc" id="L103">    } catch (Throwable t) {</span>
+<span class="nc" id="L104">      SocketHandlerFunction defaultSocketHandler = (urlParser, host) -&gt; Utils</span>
+<span class="nc" id="L105">          .standardSocket(urlParser, host);</span>
+<span class="nc" id="L106">      init = defaultSocketHandler;</span>
+<span class="nc" id="L107">    }</span>
+<span class="nc" id="L108">    socketHandler = init;</span>
+<span class="nc" id="L109">  }</span>
+
+  /**
+   * Use standard socket implementation.
+   *
+   * @param urlParser url parser
+   * @param host      host to connect
+   * @return socket
+   * @throws IOException in case of error establishing socket.
+   */
+  public static Socket standardSocket(UrlParser urlParser, String host) throws IOException {
+    SocketFactory socketFactory;
+<span class="nc" id="L121">    String socketFactoryName = urlParser.getOptions().socketFactory;</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">    if (socketFactoryName != null) {</span>
+      try {
+        @SuppressWarnings(&quot;unchecked&quot;)
+<span class="nc" id="L125">        Class&lt;? extends SocketFactory&gt; socketFactoryClass = (Class&lt;? extends SocketFactory&gt;) Class</span>
+<span class="nc" id="L126">            .forName(socketFactoryName);</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">        if (socketFactoryClass != null) {</span>
+<span class="nc" id="L128">          Constructor&lt;? extends SocketFactory&gt; constructor = socketFactoryClass.getConstructor();</span>
+<span class="nc" id="L129">          socketFactory = constructor.newInstance();</span>
+<span class="nc" id="L130">          return socketFactory.createSocket();</span>
+        }
+<span class="nc" id="L132">      } catch (Exception exp) {</span>
+<span class="nc" id="L133">        throw new IOException(</span>
+            &quot;Socket factory failed to initialized with option \&quot;socketFactory\&quot; set to \&quot;&quot;
+<span class="nc" id="L135">                + urlParser.getOptions().socketFactory + &quot;\&quot;&quot;, exp);</span>
+<span class="nc" id="L136">      }</span>
+    }
+<span class="nc" id="L138">    socketFactory = SocketFactory.getDefault();</span>
+<span class="nc" id="L139">    return socketFactory.createSocket();</span>
+  }
+
+  /**
+   * Escape String.
+   *
+   * @param value              value to escape
+   * @param noBackslashEscapes must backslash be escaped
+   * @return escaped string.
+   */
+  public static String escapeString(String value, boolean noBackslashEscapes) {
+<span class="nc bnc" id="L150" title="All 2 branches missed.">    if (!value.contains(&quot;'&quot;)) {</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">      if (noBackslashEscapes) {</span>
+<span class="nc" id="L152">        return value;</span>
+      }
+<span class="nc bnc" id="L154" title="All 2 branches missed.">      if (!value.contains(&quot;\\&quot;)) {</span>
+<span class="nc" id="L155">        return value;</span>
+      }
+    }
+<span class="nc" id="L158">    String escaped = value.replace(&quot;'&quot;, &quot;''&quot;);</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">    if (noBackslashEscapes) {</span>
+<span class="nc" id="L160">      return escaped;</span>
+    }
+<span class="nc" id="L162">    return escaped.replace(&quot;\\&quot;, &quot;\\\\&quot;);</span>
+  }
+
+  /**
+   * Encrypts a password.
+   *
+   * &lt;p&gt;protocol for authentication is like this: 1. Server sends a random array of bytes (the
+   * seed) 2. client makes a sha1 digest of the password 3. client hashes the output of 2 4. client
+   * digests the seed 5. client updates the digest with the output from 3 6. an xor of the output of
+   * 5 and 2 is sent to server 7. server does the same thing and verifies that the scrambled
+   * passwords match&lt;/p&gt;
+   *
+   * @param password                  the password to encrypt
+   * @param seed                      the seed to use
+   * @param passwordCharacterEncoding password character encoding
+   * @return a scrambled password
+   * @throws NoSuchAlgorithmException     if SHA1 is not available on the platform we are using
+   * @throws UnsupportedEncodingException if passwordCharacterEncoding is not a valid charset name
+   */
+  public static byte[] encryptPassword(final String password, final byte[] seed,
+      String passwordCharacterEncoding)
+      throws NoSuchAlgorithmException, UnsupportedEncodingException {
+
+<span class="nc bnc" id="L185" title="All 4 branches missed.">    if (password == null || password.isEmpty()) {</span>
+<span class="nc" id="L186">      return new byte[0];</span>
+    }
+
+<span class="nc" id="L189">    final MessageDigest messageDigest = MessageDigest.getInstance(&quot;SHA-1&quot;);</span>
+    byte[] bytePwd;
+<span class="nc bnc" id="L191" title="All 4 branches missed.">    if (passwordCharacterEncoding != null &amp;&amp; !passwordCharacterEncoding.isEmpty()) {</span>
+<span class="nc" id="L192">      bytePwd = password.getBytes(passwordCharacterEncoding);</span>
+    } else {
+<span class="nc" id="L194">      bytePwd = password.getBytes();</span>
+    }
+
+<span class="nc" id="L197">    final byte[] stage1 = messageDigest.digest(bytePwd);</span>
+<span class="nc" id="L198">    messageDigest.reset();</span>
+
+<span class="nc" id="L200">    final byte[] stage2 = messageDigest.digest(stage1);</span>
+<span class="nc" id="L201">    messageDigest.reset();</span>
+
+<span class="nc" id="L203">    messageDigest.update(seed);</span>
+<span class="nc" id="L204">    messageDigest.update(stage2);</span>
+
+<span class="nc" id="L206">    final byte[] digest = messageDigest.digest();</span>
+<span class="nc" id="L207">    final byte[] returnBytes = new byte[digest.length];</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">    for (int i = 0; i &lt; digest.length; i++) {</span>
+<span class="nc" id="L209">      returnBytes[i] = (byte) (stage1[i] ^ digest[i]);</span>
+    }
+<span class="nc" id="L211">    return returnBytes;</span>
+  }
+
+  /**
+   * Copies the original byte array content to a new byte array. The resulting byte array is always
+   * &quot;length&quot; size. If length is smaller than the original byte array, the resulting byte array is
+   * truncated. If length is bigger than the original byte array, the resulting byte array is filled
+   * with zero bytes.
+   *
+   * @param orig   the original byte array
+   * @param length how big the resulting byte array will be
+   * @return the copied byte array
+   */
+  public static byte[] copyWithLength(byte[] orig, int length) {
+    // No need to initialize with zero bytes, because the bytes are already initialized with that
+<span class="nc" id="L226">    byte[] result = new byte[length];</span>
+<span class="nc bnc" id="L227" title="All 2 branches missed.">    int howMuchToCopy = length &lt; orig.length ? length : orig.length;</span>
+<span class="nc" id="L228">    System.arraycopy(orig, 0, result, 0, howMuchToCopy);</span>
+<span class="nc" id="L229">    return result;</span>
+  }
+
+  /**
+   * Copies from original byte array to a new byte array. The resulting byte array is always
+   * &quot;to-from&quot; size.
+   *
+   * @param orig the original byte array
+   * @param from index of first byte in original byte array which will be copied
+   * @param to   index of last byte in original byte array which will be copied. This can be outside
+   *             of the original byte array
+   * @return resulting array
+   */
+  public static byte[] copyRange(byte[] orig, int from, int to) {
+<span class="nc" id="L243">    int length = to - from;</span>
+<span class="nc" id="L244">    byte[] result = new byte[length];</span>
+<span class="nc bnc" id="L245" title="All 2 branches missed.">    int howMuchToCopy = orig.length - from &lt; length ? orig.length - from : length;</span>
+<span class="nc" id="L246">    System.arraycopy(orig, from, result, 0, howMuchToCopy);</span>
+<span class="nc" id="L247">    return result;</span>
+  }
+
+  /**
+   * Helper function to replace function parameters in escaped string. 3 functions are handles : -
+   * CONVERT(value, type) , we replace SQL_XXX types with XXX, i.e SQL_INTEGER with INTEGER -
+   * TIMESTAMPDIFF(type, ...) or TIMESTAMPADD(type, ...) , we replace SQL_TSI_XXX in type with XXX,
+   * i.e SQL_TSI_HOUR with HOUR
+   *
+   * @param functionString - input string
+   * @return unescaped string
+   */
+  private static String replaceFunctionParameter(String functionString) {
+
+<span class="nc bnc" id="L261" title="All 2 branches missed.">    if (!functionString.contains(&quot;SQL_&quot;)) {</span>
+<span class="nc" id="L262">      return functionString;</span>
+    }
+
+<span class="nc" id="L265">    char[] input = functionString.toCharArray();</span>
+<span class="nc" id="L266">    StringBuilder sb = new StringBuilder();</span>
+    int index;
+<span class="nc bnc" id="L268" title="All 2 branches missed.">    for (index = 0; index &lt; input.length; index++) {</span>
+<span class="nc bnc" id="L269" title="All 2 branches missed.">      if (input[index] != ' ') {</span>
+<span class="nc" id="L270">        break;</span>
+      }
+    }
+
+    for (; ((input[index] &gt;= 'a' &amp;&amp; index &lt;= 'z') || (input[index] &gt;= 'A' &amp;&amp; input[index] &lt;= 'Z'))
+<span class="nc bnc" id="L275" title="All 10 branches missed.">        &amp;&amp; index &lt; input.length; index++) {</span>
+<span class="nc" id="L276">      sb.append(input[index]);</span>
+    }
+<span class="nc" id="L278">    String func = sb.toString().toLowerCase(Locale.ROOT);</span>
+
+<span class="nc bnc" id="L280" title="All 6 branches missed.">    if (&quot;convert&quot;.equals(func) || &quot;timestampdiff&quot;.equals(func) || &quot;timestampadd&quot;.equals(func)) {</span>
+      String paramPrefix;
+
+<span class="nc bnc" id="L283" title="All 4 branches missed.">      if (&quot;timestampdiff&quot;.equals(func) || &quot;timestampadd&quot;.equals(func)) {</span>
+        // Skip to first parameter
+<span class="nc bnc" id="L285" title="All 2 branches missed.">        for (; index &lt; input.length; index++) {</span>
+<span class="nc bnc" id="L286" title="All 4 branches missed.">          if (!Character.isWhitespace(input[index]) &amp;&amp; input[index] != '(') {</span>
+<span class="nc" id="L287">            break;</span>
+          }
+        }
+<span class="nc bnc" id="L290" title="All 2 branches missed.">        if (index == input.length) {</span>
+<span class="nc" id="L291">          return new String(input);</span>
+        }
+
+<span class="nc bnc" id="L294" title="All 2 branches missed.">        if (index &gt;= input.length - 8) {</span>
+<span class="nc" id="L295">          return new String(input);</span>
+        }
+<span class="nc" id="L297">        paramPrefix = new String(input, index, 8);</span>
+<span class="nc bnc" id="L298" title="All 2 branches missed.">        if (&quot;SQL_TSI_&quot;.equals(paramPrefix)) {</span>
+<span class="nc" id="L299">          return new String(input, 0, index) + new String(input, index + 8,</span>
+              input.length - (index + 8));
+        }
+<span class="nc" id="L302">        return new String(input);</span>
+      }
+
+      // Handle &quot;convert(value, type)&quot; case
+      // extract last parameter, after the last ','
+<span class="nc" id="L307">      int lastCommaIndex = functionString.lastIndexOf(',');</span>
+
+<span class="nc bnc" id="L309" title="All 2 branches missed.">      for (index = lastCommaIndex + 1; index &lt; input.length; index++) {</span>
+<span class="nc bnc" id="L310" title="All 2 branches missed.">        if (!Character.isWhitespace(input[index])) {</span>
+<span class="nc" id="L311">          break;</span>
+        }
+      }
+<span class="nc bnc" id="L314" title="All 2 branches missed.">      if (index &gt;= input.length - 4) {</span>
+<span class="nc" id="L315">        return new String(input);</span>
+      }
+<span class="nc" id="L317">      paramPrefix = new String(input, index, 4);</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">      if (&quot;SQL_&quot;.equals(paramPrefix)) {</span>
+<span class="nc" id="L319">        return new String(input, 0, index) + new String(input, index + 4,</span>
+            input.length - (index + 4));
+      }
+
+    }
+<span class="nc" id="L324">    return new String(input);</span>
+  }
+
+  private static String resolveEscapes(String escaped, boolean noBackslashEscapes)
+      throws SQLException {
+<span class="nc bnc" id="L329" title="All 4 branches missed.">    if (escaped.charAt(0) != '{' || escaped.charAt(escaped.length() - 1) != '}') {</span>
+<span class="nc" id="L330">      throw new SQLException(&quot;unexpected escaped string&quot;);</span>
+    }
+<span class="nc" id="L332">    int endIndex = escaped.length() - 1;</span>
+<span class="nc" id="L333">    String escapedLower = escaped.toLowerCase(Locale.ROOT);</span>
+<span class="nc bnc" id="L334" title="All 2 branches missed.">    if (escaped.startsWith(&quot;{fn &quot;)) {</span>
+<span class="nc" id="L335">      String resolvedParams = replaceFunctionParameter(escaped.substring(4, endIndex));</span>
+<span class="nc" id="L336">      return nativeSql(resolvedParams, noBackslashEscapes);</span>
+<span class="nc bnc" id="L337" title="All 2 branches missed.">    } else if (escapedLower.startsWith(&quot;{oj &quot;)) {</span>
+      // Outer join
+      // the server supports &quot;oj&quot; in any case, even &quot;oJ&quot;
+<span class="nc" id="L340">      return nativeSql(escaped.substring(4, endIndex), noBackslashEscapes);</span>
+<span class="nc bnc" id="L341" title="All 2 branches missed.">    } else if (escaped.startsWith(&quot;{d &quot;)) {</span>
+      // date literal
+<span class="nc" id="L343">      return escaped.substring(3, endIndex);</span>
+<span class="nc bnc" id="L344" title="All 2 branches missed.">    } else if (escaped.startsWith(&quot;{t &quot;)) {</span>
+      // time literal
+<span class="nc" id="L346">      return escaped.substring(3, endIndex);</span>
+<span class="nc bnc" id="L347" title="All 2 branches missed.">    } else if (escaped.startsWith(&quot;{ts &quot;)) {</span>
+      //timestamp literal
+<span class="nc" id="L349">      return escaped.substring(4, endIndex);</span>
+<span class="nc bnc" id="L350" title="All 2 branches missed.">    } else if (escaped.startsWith(&quot;{d'&quot;)) {</span>
+      // date literal, no space
+<span class="nc" id="L352">      return escaped.substring(2, endIndex);</span>
+<span class="nc bnc" id="L353" title="All 2 branches missed.">    } else if (escaped.startsWith(&quot;{t'&quot;)) {</span>
+      // time literal
+<span class="nc" id="L355">      return escaped.substring(2, endIndex);</span>
+<span class="nc bnc" id="L356" title="All 2 branches missed.">    } else if (escaped.startsWith(&quot;{ts'&quot;)) {</span>
+      //timestamp literal
+<span class="nc" id="L358">      return escaped.substring(3, endIndex);</span>
+<span class="nc bnc" id="L359" title="All 4 branches missed.">    } else if (escaped.startsWith(&quot;{call &quot;) || escaped.startsWith(&quot;{CALL &quot;)) {</span>
+      // We support uppercase &quot;{CALL&quot; only because Connector/J supports it. It is not in the JDBC spec.
+
+<span class="nc" id="L362">      return nativeSql(escaped.substring(1, endIndex), noBackslashEscapes);</span>
+<span class="nc bnc" id="L363" title="All 2 branches missed.">    } else if (escaped.startsWith(&quot;{escape &quot;)) {</span>
+<span class="nc" id="L364">      return escaped.substring(1, endIndex);</span>
+<span class="nc bnc" id="L365" title="All 2 branches missed.">    } else if (escaped.startsWith(&quot;{?&quot;)) {</span>
+      // likely ?=call(...)
+<span class="nc" id="L367">      return nativeSql(escaped.substring(1, endIndex), noBackslashEscapes);</span>
+<span class="nc bnc" id="L368" title="All 4 branches missed.">    } else if (escaped.startsWith(&quot;{ &quot;) || escaped.startsWith(&quot;{\n&quot;)) {</span>
+      // Spaces and newlines before keyword, this is not JDBC compliant, however some it works in some drivers,
+      // so we support it, too
+<span class="nc bnc" id="L371" title="All 2 branches missed.">      for (int i = 2; i &lt; escaped.length(); i++) {</span>
+<span class="nc bnc" id="L372" title="All 2 branches missed.">        if (!Character.isWhitespace(escaped.charAt(i))) {</span>
+<span class="nc" id="L373">          return resolveEscapes(&quot;{&quot; + escaped.substring(i), noBackslashEscapes);</span>
+        }
+      }
+<span class="nc bnc" id="L376" title="All 2 branches missed.">    } else if (escaped.startsWith(&quot;{\r\n&quot;)) {</span>
+      // Spaces and newlines before keyword, this is not JDBC compliant, however some it works in some drivers,
+      // so we support it, too
+<span class="nc bnc" id="L379" title="All 2 branches missed.">      for (int i = 3; i &lt; escaped.length(); i++) {</span>
+<span class="nc bnc" id="L380" title="All 2 branches missed.">        if (!Character.isWhitespace(escaped.charAt(i))) {</span>
+<span class="nc" id="L381">          return resolveEscapes(&quot;{&quot; + escaped.substring(i), noBackslashEscapes);</span>
+        }
+      }
+    }
+<span class="nc" id="L385">    throw new SQLException(&quot;unknown escape sequence &quot; + escaped);</span>
+  }
+
+  /**
+   * Escape sql String.
+   *
+   * @param sql                initial sql
+   * @param noBackslashEscapes must backslash be escape
+   * @return escaped sql string
+   * @throws SQLException if escape sequence is incorrect.
+   */
+  @SuppressWarnings(&quot;ConstantConditions&quot;)
+  public static String nativeSql(String sql, boolean noBackslashEscapes) throws SQLException {
+<span class="nc bnc" id="L398" title="All 2 branches missed.">    if (!sql.contains(&quot;{&quot;)) {</span>
+<span class="nc" id="L399">      return sql;</span>
+    }
+
+<span class="nc" id="L402">    StringBuilder escapeSequenceBuf = new StringBuilder();</span>
+<span class="nc" id="L403">    StringBuilder sqlBuffer = new StringBuilder();</span>
+
+<span class="nc" id="L405">    char[] charArray = sql.toCharArray();</span>
+<span class="nc" id="L406">    char lastChar = 0;</span>
+<span class="nc" id="L407">    boolean inQuote = false;</span>
+<span class="nc" id="L408">    char quoteChar = 0;</span>
+<span class="nc" id="L409">    boolean inComment = false;</span>
+<span class="nc" id="L410">    boolean isSlashSlashComment = false;</span>
+<span class="nc" id="L411">    int inEscapeSeq = 0;</span>
+
+<span class="nc bnc" id="L413" title="All 2 branches missed.">    for (int i = 0; i &lt; charArray.length; i++) {</span>
+<span class="nc" id="L414">      char car = charArray[i];</span>
+<span class="nc bnc" id="L415" title="All 4 branches missed.">      if (lastChar == '\\' &amp;&amp; !noBackslashEscapes) {</span>
+<span class="nc" id="L416">        sqlBuffer.append(car);</span>
+<span class="nc" id="L417">        continue;</span>
+      }
+
+<span class="nc bnc" id="L420" title="All 8 branches missed.">      switch (car) {</span>
+        case '\'':
+        case '&quot;':
+        case '`':
+<span class="nc bnc" id="L424" title="All 2 branches missed.">          if (!inComment) {</span>
+<span class="nc bnc" id="L425" title="All 2 branches missed.">            if (inQuote) {</span>
+<span class="nc bnc" id="L426" title="All 2 branches missed.">              if (quoteChar == car) {</span>
+<span class="nc" id="L427">                inQuote = false;</span>
+              }
+            } else {
+<span class="nc" id="L430">              inQuote = true;</span>
+<span class="nc" id="L431">              quoteChar = car;</span>
+            }
+          }
+          break;
+
+        case '*':
+<span class="nc bnc" id="L437" title="All 6 branches missed.">          if (!inQuote &amp;&amp; !inComment &amp;&amp; lastChar == '/') {</span>
+<span class="nc" id="L438">            inComment = true;</span>
+<span class="nc" id="L439">            isSlashSlashComment = false;</span>
+          }
+          break;
+        case '/':
+        case '-':
+<span class="nc bnc" id="L444" title="All 2 branches missed.">          if (!inQuote) {</span>
+<span class="nc bnc" id="L445" title="All 2 branches missed.">            if (inComment) {</span>
+<span class="nc bnc" id="L446" title="All 4 branches missed.">              if (lastChar == '*' &amp;&amp; !isSlashSlashComment) {</span>
+<span class="nc" id="L447">                inComment = false;</span>
+<span class="nc bnc" id="L448" title="All 4 branches missed.">              } else if (lastChar == car &amp;&amp; isSlashSlashComment) {</span>
+<span class="nc" id="L449">                inComment = false;</span>
+              }
+            } else {
+<span class="nc bnc" id="L452" title="All 2 branches missed.">              if (lastChar == car) {</span>
+<span class="nc" id="L453">                inComment = true;</span>
+<span class="nc" id="L454">                isSlashSlashComment = true;</span>
+<span class="nc bnc" id="L455" title="All 2 branches missed.">              } else if (lastChar == '*') {</span>
+<span class="nc" id="L456">                inComment = true;</span>
+<span class="nc" id="L457">                isSlashSlashComment = false;</span>
+              }
+            }
+          }
+          break;
+        case 'S':
+          // skip SQL_xxx and SQL_TSI_xxx in functions
+          // This would convert e.g SQL_INTEGER =&gt; INTEGER, SQL_TSI_HOUR=&gt;HOUR
+
+<span class="nc bnc" id="L466" title="All 16 branches missed.">          if (!inQuote &amp;&amp; !inComment &amp;&amp; inEscapeSeq &gt; 0</span>
+              &amp;&amp; i + 4 &lt; charArray.length &amp;&amp; charArray[i + 1] == 'Q'
+              &amp;&amp; charArray[i + 2] == 'L' &amp;&amp; charArray[i + 3] == 'L'
+              &amp;&amp; charArray[i + 4] == '_') {
+
+<span class="nc bnc" id="L471" title="All 10 branches missed.">            if (i + 8 &lt; charArray.length</span>
+                &amp;&amp; charArray[i + 5] == 'T'
+                &amp;&amp; charArray[i + 6] == 'S'
+                &amp;&amp; charArray[i + 7] == 'I'
+                &amp;&amp; charArray[i + 8] == '_') {
+<span class="nc" id="L476">              i += 8;</span>
+<span class="nc" id="L477">              continue;</span>
+            }
+<span class="nc" id="L479">            i += 4;</span>
+<span class="nc" id="L480">            continue;</span>
+          }
+          break;
+        case '\n':
+<span class="nc bnc" id="L484" title="All 4 branches missed.">          if (inComment &amp;&amp; isSlashSlashComment) {</span>
+            // slash-slash and dash-dash comments ends with the end of line
+<span class="nc" id="L486">            inComment = false;</span>
+          }
+          break;
+        case '{':
+<span class="nc bnc" id="L490" title="All 4 branches missed.">          if (!inQuote &amp;&amp; !inComment) {</span>
+<span class="nc" id="L491">            inEscapeSeq++;</span>
+          }
+          break;
+
+        case '}':
+<span class="nc bnc" id="L496" title="All 4 branches missed.">          if (!inQuote &amp;&amp; !inComment) {</span>
+<span class="nc" id="L497">            inEscapeSeq--;</span>
+<span class="nc bnc" id="L498" title="All 2 branches missed.">            if (inEscapeSeq == 0) {</span>
+<span class="nc" id="L499">              escapeSequenceBuf.append(car);</span>
+<span class="nc" id="L500">              sqlBuffer.append(resolveEscapes(escapeSequenceBuf.toString(), noBackslashEscapes));</span>
+<span class="nc" id="L501">              escapeSequenceBuf.setLength(0);</span>
+<span class="nc" id="L502">              continue;</span>
+            }
+          }
+          break;
+
+        default:
+          break;
+
+      }
+<span class="nc" id="L511">      lastChar = car;</span>
+<span class="nc bnc" id="L512" title="All 2 branches missed.">      if (inEscapeSeq &gt; 0) {</span>
+<span class="nc" id="L513">        escapeSequenceBuf.append(car);</span>
+      } else {
+<span class="nc" id="L515">        sqlBuffer.append(car);</span>
+      }
+    }
+<span class="nc bnc" id="L518" title="All 2 branches missed.">    if (inEscapeSeq &gt; 0) {</span>
+<span class="nc" id="L519">      throw new SQLException(</span>
+          &quot;Invalid escape sequence , missing closing '}' character in '&quot; + sqlBuffer);
+    }
+<span class="nc" id="L522">    return sqlBuffer.toString();</span>
+  }
+
+  /**
+   * Retrieve protocol corresponding to the failover options. if no failover option, protocol will
+   * not be proxied. if a failover option is precised, protocol will be proxied so that any
+   * connection error will be handle directly.
+   *
+   * @param urlParser  urlParser corresponding to connection url string.
+   * @param globalInfo global variable information
+   * @return protocol
+   * @throws SQLException if any error occur during connection
+   */
+  public static Protocol retrieveProxy(final UrlParser urlParser, final GlobalStateInfo globalInfo)
+      throws SQLException {
+<span class="nc" id="L537">    final ReentrantLock lock = new ReentrantLock();</span>
+    Protocol protocol;
+<span class="nc bnc" id="L539" title="All 4 branches missed.">    switch (urlParser.getHaMode()) {</span>
+      case AURORA:
+<span class="nc" id="L541">        return getProxyLoggingIfNeeded(urlParser, (Protocol) Proxy.newProxyInstance(</span>
+<span class="nc" id="L542">            AuroraProtocol.class.getClassLoader(),</span>
+            new Class[]{Protocol.class},
+            new FailoverProxy(new AuroraListener(urlParser, globalInfo), lock)));
+      case REPLICATION:
+<span class="nc" id="L546">        return getProxyLoggingIfNeeded(urlParser,</span>
+<span class="nc" id="L547">            (Protocol) Proxy.newProxyInstance(</span>
+<span class="nc" id="L548">                MastersSlavesProtocol.class.getClassLoader(),</span>
+                new Class[]{Protocol.class},
+                new FailoverProxy(new MastersSlavesListener(urlParser, globalInfo), lock)));
+      case FAILOVER:
+      case SEQUENTIAL:
+<span class="nc" id="L553">        return getProxyLoggingIfNeeded(urlParser, (Protocol) Proxy.newProxyInstance(</span>
+<span class="nc" id="L554">            MasterProtocol.class.getClassLoader(),</span>
+            new Class[]{Protocol.class},
+            new FailoverProxy(new MastersFailoverListener(urlParser, globalInfo), lock)));
+      default:
+<span class="nc" id="L558">        protocol = getProxyLoggingIfNeeded(urlParser,</span>
+            new MasterProtocol(urlParser, globalInfo, lock));
+<span class="nc" id="L560">        protocol.connectWithoutProxy();</span>
+<span class="nc" id="L561">        return protocol;</span>
+    }
+  }
+
+  private static Protocol getProxyLoggingIfNeeded(UrlParser urlParser, Protocol protocol) {
+<span class="nc bnc" id="L566" title="All 2 branches missed.">    if (urlParser.getOptions().profileSql</span>
+<span class="nc bnc" id="L567" title="All 2 branches missed.">        || urlParser.getOptions().slowQueryThresholdNanos != null) {</span>
+<span class="nc" id="L568">      return (Protocol) Proxy.newProxyInstance(</span>
+<span class="nc" id="L569">          MasterProtocol.class.getClassLoader(),</span>
+          new Class[]{Protocol.class},
+<span class="nc" id="L571">          new ProtocolLoggingProxy(protocol, urlParser.getOptions()));</span>
+    }
+<span class="nc" id="L573">    return protocol;</span>
+  }
+
+  /**
+   * Get timezone from Id. This differ from java implementation : by default, if timezone Id is
+   * unknown, java return GMT timezone. GMT will be return only if explicitly asked.
+   *
+   * @param id timezone id
+   * @return timezone.
+   * @throws SQLException if no timezone is found for this Id
+   */
+  public static TimeZone getTimeZone(String id) throws SQLException {
+<span class="nc" id="L585">    TimeZone tz = TimeZone.getTimeZone(id);</span>
+
+    // Validate the timezone ID. JDK maps invalid timezones to GMT
+<span class="nc bnc" id="L588" title="All 4 branches missed.">    if (&quot;GMT&quot;.equals(tz.getID()) &amp;&amp; !&quot;GMT&quot;.equals(id)) {</span>
+<span class="nc" id="L589">      throw new SQLException(&quot;invalid timezone id '&quot; + id + &quot;'&quot;);</span>
+    }
+<span class="nc" id="L591">    return tz;</span>
+  }
+
+  /**
+   * Create socket accordingly to options.
+   *
+   * @param urlParser urlParser
+   * @param host      hostName ( mandatory only for named pipe)
+   * @return a nex socket
+   * @throws IOException if connection error occur
+   */
+  public static Socket createSocket(UrlParser urlParser, String host) throws IOException {
+<span class="nc" id="L603">    return socketHandler.apply(urlParser, host);</span>
+  }
+
+  /**
+   * Hexdump.
+   *
+   * @param bytes byte arrays
+   * @return String
+   */
+  public static String hexdump(byte[]... bytes) {
+<span class="nc" id="L613">    return hexdump(Integer.MAX_VALUE, 0, Integer.MAX_VALUE, bytes);</span>
+  }
+
+  /**
+   * Hexdump.
+   *
+   * &lt;p&gt;String output example :&lt;/p&gt;
+   * &lt;pre&gt;
+   * {@code
+   *    7D 00 00 01 C5 00 00                                 }......            &amp;lt;- first byte array
+   *    01 00 00 01 02 33 00 00  02 03 64 65 66 05 74 65     .....3....def.te   &amp;lt;- second byte array
+   *    73 74 6A 0A 74 65 73 74  5F 62 61 74 63 68 0A 74     stj.test_batch.t
+   *    65 73 74 5F 62 61 74 63  68 02 69 64 02 69 64 0C     est_batch.id.id.
+   *    3F 00 0B 00 00 00 03 03  42 00 00 00 37 00 00 03     ?.......B...7...
+   *    03 64 65 66 05 74 65 73  74 6A 0A 74 65 73 74 5F     .def.testj.test_
+   *    62 61 74 63 68 0A 74 65  73 74 5F 62 61 74 63 68     batch.test_batch
+   *    04 74 65 73 74 04 74 65  73 74 0C 21 00 1E 00 00     .test.test.!....
+   *    00 FD 00 00 00 00 00 05  00 00 04 FE 00 00 22 00     ..............&quot;.
+   *    06 00 00 05 01 31 03 61  61 61 06 00 00 06 01 32     .....1.aaa.....2
+   *    03 62 62 62 06 00 00 07  01 33 03 63 63 63 06 00     .bbb.....3.ccc..
+   *    00 08 01 34 03 61 61 61  06 00 00 09 01 35 03 62     ...4.aaa.....5.b
+   *    62 62 06 00 00 0A 01 36  03 63 63 63 05 00 00 0B     bb.....6.ccc....
+   *    FE 00 00 22 00                                       ...&quot;.
+   * }
+   * &lt;/pre&gt;
+   *
+   * @param maxQuerySizeToLog max log size
+   * @param offset            offset of last byte array
+   * @param length            length of last byte array
+   * @param byteArr           byte arrays. if many, only the last may have offset and size
+   *                          limitation others will be displayed completely.
+   * @return String
+   */
+  public static String hexdump(int maxQuerySizeToLog, int offset, int length, byte[]... byteArr) {
+<span class="nc bnc" id="L647" title="All 3 branches missed.">    switch (byteArr.length) {</span>
+      case 0:
+<span class="nc" id="L649">        return &quot;&quot;;</span>
+
+      case 1:
+<span class="nc" id="L652">        byte[] bytes = byteArr[0];</span>
+<span class="nc bnc" id="L653" title="All 2 branches missed.">        if (bytes.length &lt;= offset) {</span>
+<span class="nc" id="L654">          return &quot;&quot;;</span>
+        }
+<span class="nc" id="L656">        int dataLength = Math.min(maxQuerySizeToLog, Math.min(bytes.length - offset, length));</span>
+
+<span class="nc" id="L658">        StringBuilder outputBuilder = new StringBuilder(dataLength * 5);</span>
+<span class="nc" id="L659">        outputBuilder.append(&quot;\n&quot;);</span>
+<span class="nc" id="L660">        writeHex(bytes, offset, dataLength, outputBuilder);</span>
+<span class="nc" id="L661">        return outputBuilder.toString();</span>
+
+      default:
+<span class="nc" id="L664">        StringBuilder sb = new StringBuilder();</span>
+<span class="nc" id="L665">        sb.append(&quot;\n&quot;);</span>
+        byte[] arr;
+<span class="nc bnc" id="L667" title="All 2 branches missed.">        for (int i = 0; i &lt; byteArr.length - 1; i++) {</span>
+<span class="nc" id="L668">          arr = byteArr[i];</span>
+<span class="nc" id="L669">          writeHex(arr, 0, arr.length, sb);</span>
+        }
+<span class="nc" id="L671">        arr = byteArr[byteArr.length - 1];</span>
+<span class="nc" id="L672">        int dataLength2 = Math.min(maxQuerySizeToLog, Math.min(arr.length - offset, length));</span>
+<span class="nc" id="L673">        writeHex(arr, offset, dataLength2, sb);</span>
+<span class="nc" id="L674">        return sb.toString();</span>
+
+    }
+  }
+
+  /**
+   * Write bytes/hexadecimal value of a byte array to a StringBuilder.
+   *
+   * &lt;p&gt;String output example :
+   * &lt;pre&gt;
+   * {@code
+   * 38 00 00 00 03 63 72 65  61 74 65 20 74 61 62 6C     8....create tabl
+   * 65 20 42 6C 6F 62 54 65  73 74 63 6C 6F 62 74 65     e BlobTestclobte
+   * 73 74 32 20 28 73 74 72  6D 20 74 65 78 74 29 20     st2 (strm text)
+   * 43 48 41 52 53 45 54 20  75 74 66 38                 CHARSET utf8
+   * }
+   * &lt;/pre&gt;&lt;/p&gt;
+   *
+   * @param bytes         byte array
+   * @param offset        offset
+   * @param dataLength    byte length to write
+   * @param outputBuilder string builder
+   */
+  private static void writeHex(byte[] bytes, int offset, int dataLength,
+      StringBuilder outputBuilder) {
+
+<span class="nc bnc" id="L700" title="All 4 branches missed.">    if (bytes == null || bytes.length == 0) {</span>
+<span class="nc" id="L701">      return;</span>
+    }
+
+<span class="nc" id="L704">    char[] hexaValue = new char[16];</span>
+<span class="nc" id="L705">    hexaValue[8] = ' ';</span>
+
+<span class="nc" id="L707">    int pos = offset;</span>
+<span class="nc" id="L708">    int posHexa = 0;</span>
+
+<span class="nc bnc" id="L710" title="All 2 branches missed.">    while (pos &lt; dataLength + offset) {</span>
+<span class="nc" id="L711">      int byteValue = bytes[pos] &amp; 0xFF;</span>
+<span class="nc" id="L712">      outputBuilder.append(hexArray[byteValue &gt;&gt;&gt; 4])</span>
+<span class="nc" id="L713">          .append(hexArray[byteValue &amp; 0x0F])</span>
+<span class="nc" id="L714">          .append(&quot; &quot;);</span>
+
+<span class="nc bnc" id="L716" title="All 4 branches missed.">      hexaValue[posHexa++] = (byteValue &gt; 31 &amp;&amp; byteValue &lt; 127) ? (char) byteValue : '.';</span>
+
+<span class="nc bnc" id="L718" title="All 2 branches missed.">      if (posHexa == 8) {</span>
+<span class="nc" id="L719">        outputBuilder.append(&quot; &quot;);</span>
+      }
+<span class="nc bnc" id="L721" title="All 2 branches missed.">      if (posHexa == 16) {</span>
+<span class="nc" id="L722">        outputBuilder.append(&quot;    &quot;)</span>
+<span class="nc" id="L723">            .append(hexaValue)</span>
+<span class="nc" id="L724">            .append(&quot;\n&quot;);</span>
+<span class="nc" id="L725">        posHexa = 0;</span>
+      }
+<span class="nc" id="L727">      pos++;</span>
+<span class="nc" id="L728">    }</span>
+
+<span class="nc" id="L730">    int remaining = posHexa;</span>
+<span class="nc bnc" id="L731" title="All 2 branches missed.">    if (remaining &gt; 0) {</span>
+<span class="nc bnc" id="L732" title="All 2 branches missed.">      if (remaining &lt; 8) {</span>
+<span class="nc bnc" id="L733" title="All 2 branches missed.">        for (; remaining &lt; 8; remaining++) {</span>
+<span class="nc" id="L734">          outputBuilder.append(&quot;   &quot;);</span>
+        }
+<span class="nc" id="L736">        outputBuilder.append(&quot; &quot;);</span>
+      }
+
+<span class="nc bnc" id="L739" title="All 2 branches missed.">      for (; remaining &lt; 16; remaining++) {</span>
+<span class="nc" id="L740">        outputBuilder.append(&quot;   &quot;);</span>
+      }
+
+<span class="nc" id="L743">      outputBuilder.append(&quot;    &quot;)</span>
+<span class="nc" id="L744">          .append(hexaValue, 0, posHexa)</span>
+<span class="nc" id="L745">          .append(&quot;\n&quot;);</span>
+    }
+<span class="nc" id="L747">  }</span>
+
+  private static String getHex(final byte[] raw) {
+<span class="nc" id="L750">    final StringBuilder hex = new StringBuilder(2 * raw.length);</span>
+<span class="nc bnc" id="L751" title="All 2 branches missed.">    for (final byte b : raw) {</span>
+<span class="nc" id="L752">      hex.append(hexArray[(b &amp; 0xF0) &gt;&gt; 4])</span>
+<span class="nc" id="L753">          .append(hexArray[(b &amp; 0x0F)]);</span>
+    }
+<span class="nc" id="L755">    return hex.toString();</span>
+  }
+
+  public static String byteArrayToHexString(final byte[] bytes) {
+<span class="nc bnc" id="L759" title="All 2 branches missed.">    return (bytes != null) ? getHex(bytes) : &quot;&quot;;</span>
+  }
+
+  /**
+   * Parse the option &quot;sessionVariable&quot; to ensure having no injection. semi-column not in string
+   * will be replaced by comma.
+   *
+   * @param sessionVariable option value
+   * @return parsed String
+   */
+  public static String parseSessionVariables(String sessionVariable) {
+<span class="nc" id="L770">    StringBuilder out = new StringBuilder();</span>
+<span class="nc" id="L771">    StringBuilder sb = new StringBuilder();</span>
+<span class="nc" id="L772">    Parse state = Parse.Normal;</span>
+<span class="nc" id="L773">    boolean iskey = true;</span>
+<span class="nc" id="L774">    boolean singleQuotes = true;</span>
+<span class="nc" id="L775">    boolean first = true;</span>
+<span class="nc" id="L776">    String key = null;</span>
+
+<span class="nc" id="L778">    char[] chars = sessionVariable.toCharArray();</span>
+
+<span class="nc bnc" id="L780" title="All 2 branches missed.">    for (char car : chars) {</span>
+
+<span class="nc bnc" id="L782" title="All 2 branches missed.">      if (state == Parse.Escape) {</span>
+<span class="nc" id="L783">        sb.append(car);</span>
+<span class="nc bnc" id="L784" title="All 2 branches missed.">        state = singleQuotes ? Parse.Quote : Parse.String;</span>
+<span class="nc" id="L785">        continue;</span>
+      }
+
+<span class="nc bnc" id="L788" title="All 6 branches missed.">      switch (car) {</span>
+        case '&quot;':
+<span class="nc bnc" id="L790" title="All 2 branches missed.">          if (state == Parse.Normal) {</span>
+<span class="nc" id="L791">            state = Parse.String;</span>
+<span class="nc" id="L792">            singleQuotes = false;</span>
+<span class="nc bnc" id="L793" title="All 4 branches missed.">          } else if (state == Parse.String &amp;&amp; !singleQuotes) {</span>
+<span class="nc" id="L794">            state = Parse.Normal;</span>
+          }
+          break;
+
+        case '\'':
+<span class="nc bnc" id="L799" title="All 2 branches missed.">          if (state == Parse.Normal) {</span>
+<span class="nc" id="L800">            state = Parse.String;</span>
+<span class="nc" id="L801">            singleQuotes = true;</span>
+<span class="nc bnc" id="L802" title="All 4 branches missed.">          } else if (state == Parse.String &amp;&amp; singleQuotes) {</span>
+<span class="nc" id="L803">            state = Parse.Normal;</span>
+          }
+          break;
+
+        case '\\':
+<span class="nc bnc" id="L808" title="All 2 branches missed.">          if (state == Parse.String) {</span>
+<span class="nc" id="L809">            state = Parse.Escape;</span>
+          }
+          break;
+
+        case ';':
+        case ',':
+<span class="nc bnc" id="L815" title="All 2 branches missed.">          if (state == Parse.Normal) {</span>
+<span class="nc bnc" id="L816" title="All 2 branches missed.">            if (!iskey) {</span>
+<span class="nc bnc" id="L817" title="All 2 branches missed.">              if (!first) {</span>
+<span class="nc" id="L818">                out.append(&quot;,&quot;);</span>
+              }
+<span class="nc" id="L820">              out.append(key);</span>
+<span class="nc" id="L821">              out.append(sb.toString());</span>
+<span class="nc" id="L822">              first = false;</span>
+            } else {
+<span class="nc" id="L824">              key = sb.toString().trim();</span>
+<span class="nc bnc" id="L825" title="All 2 branches missed.">              if (!key.isEmpty()) {</span>
+<span class="nc bnc" id="L826" title="All 2 branches missed.">                if (!first) {</span>
+<span class="nc" id="L827">                  out.append(&quot;,&quot;);</span>
+                }
+<span class="nc" id="L829">                out.append(key);</span>
+<span class="nc" id="L830">                first = false;</span>
+              }
+            }
+<span class="nc" id="L833">            iskey = true;</span>
+<span class="nc" id="L834">            key = null;</span>
+<span class="nc" id="L835">            sb = new StringBuilder();</span>
+<span class="nc" id="L836">            continue;</span>
+          }
+          break;
+
+        case '=':
+<span class="nc bnc" id="L841" title="All 4 branches missed.">          if (state == Parse.Normal &amp;&amp; iskey) {</span>
+<span class="nc" id="L842">            key = sb.toString().trim();</span>
+<span class="nc" id="L843">            iskey = false;</span>
+<span class="nc" id="L844">            sb = new StringBuilder();</span>
+          }
+          break;
+
+        default:
+          //nothing
+      }
+
+<span class="nc" id="L852">      sb.append(car);</span>
+    }
+
+<span class="nc bnc" id="L855" title="All 2 branches missed.">    if (!iskey) {</span>
+<span class="nc bnc" id="L856" title="All 2 branches missed.">      if (!first) {</span>
+<span class="nc" id="L857">        out.append(&quot;,&quot;);</span>
+      }
+<span class="nc" id="L859">      out.append(key);</span>
+<span class="nc" id="L860">      out.append(sb.toString());</span>
+    } else {
+<span class="nc" id="L862">      String tmpkey = sb.toString().trim();</span>
+<span class="nc bnc" id="L863" title="All 4 branches missed.">      if (!tmpkey.isEmpty() &amp;&amp; !first) {</span>
+<span class="nc" id="L864">        out.append(&quot;,&quot;);</span>
+      }
+<span class="nc" id="L866">      out.append(tmpkey);</span>
+    }
+<span class="nc" id="L868">    return out.toString();</span>
+  }
+
+  public static boolean isIPv4(final String ip) {
+<span class="nc" id="L872">    return IP_V4.matcher(ip).matches();</span>
+  }
+
+  public static boolean isIPv6(final String ip) {
+<span class="nc bnc" id="L876" title="All 4 branches missed.">    return IP_V6.matcher(ip).matches() || IP_V6_COMPRESSED.matcher(ip).matches();</span>
+  }
+
+  /**
+   * Traduce a String value of transaction isolation to corresponding java value.
+   *
+   * @param txIsolation String value
+   * @return java corresponding value (Connection.TRANSACTION_READ_UNCOMMITTED,
+   *     Connection.TRANSACTION_READ_COMMITTED, Connection.TRANSACTION_REPEATABLE_READ or
+   *     Connection.TRANSACTION_SERIALIZABLE)
+   * @throws SQLException if String value doesn't correspond to @@tx_isolation/@@transaction_isolation
+   *                      possible value
+   */
+  public static int transactionFromString(String txIsolation) throws SQLException {
+<span class="nc bnc" id="L890" title="All 5 branches missed.">    switch (txIsolation) { //tx_isolation</span>
+      case &quot;READ-UNCOMMITTED&quot;:
+<span class="nc" id="L892">        return Connection.TRANSACTION_READ_UNCOMMITTED;</span>
+
+      case &quot;READ-COMMITTED&quot;:
+<span class="nc" id="L895">        return Connection.TRANSACTION_READ_COMMITTED;</span>
+
+      case &quot;REPEATABLE-READ&quot;:
+<span class="nc" id="L898">        return Connection.TRANSACTION_REPEATABLE_READ;</span>
+
+      case &quot;SERIALIZABLE&quot;:
+<span class="nc" id="L901">        return Connection.TRANSACTION_SERIALIZABLE;</span>
+
+      default:
+<span class="nc" id="L904">        throw new SQLException(&quot;unknown transaction isolation level&quot;);</span>
+    }
+  }
+
+
+<span class="nc" id="L909">  private enum Parse {</span>
+<span class="nc" id="L910">    Normal,</span>
+<span class="nc" id="L911">    String, /* inside string */</span>
+<span class="nc" id="L912">    Quote,</span>
+<span class="nc" id="L913">    Escape /* found backslash */</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

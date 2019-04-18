@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MariaDbPooledConnection.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">MariaDbPooledConnection.java</span></div><h1>MariaDbPooledConnection.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc;
+
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicLong;
+import javax.sql.ConnectionEvent;
+import javax.sql.ConnectionEventListener;
+import javax.sql.PooledConnection;
+import javax.sql.StatementEvent;
+import javax.sql.StatementEventListener;
+
+public class MariaDbPooledConnection implements PooledConnection {
+
+  private final MariaDbConnection connection;
+  private final List&lt;ConnectionEventListener&gt; connectionEventListeners;
+  private final List&lt;StatementEventListener&gt; statementEventListeners;
+  private final AtomicLong lastUsed;
+
+  /**
+   * Constructor.
+   *
+   * @param connection connection to retrieve connection options
+   */
+<span class="nc" id="L80">  public MariaDbPooledConnection(MariaDbConnection connection) {</span>
+<span class="nc" id="L81">    this.connection = connection;</span>
+<span class="nc" id="L82">    connection.pooledConnection = this;</span>
+<span class="nc" id="L83">    statementEventListeners = new CopyOnWriteArrayList&lt;&gt;();</span>
+<span class="nc" id="L84">    connectionEventListeners = new CopyOnWriteArrayList&lt;&gt;();</span>
+<span class="nc" id="L85">    lastUsed = new AtomicLong(System.nanoTime());</span>
+<span class="nc" id="L86">  }</span>
+
+  /**
+   * Creates and returns a &lt;code&gt;Connection&lt;/code&gt; object that is a handle for the physical
+   * connection that this &lt;code&gt;PooledConnection&lt;/code&gt; object represents. The connection pool
+   * manager calls this method when an application has called the method
+   * &lt;code&gt;DataSource.getConnection&lt;/code&gt; and there are no &lt;code&gt;PooledConnection&lt;/code&gt; objects
+   * available. See the {@link PooledConnection interface description} for more information.
+   *
+   * @return a &lt;code&gt;Connection&lt;/code&gt; object that is a handle to this &lt;code&gt;PooledConnection&lt;/code&gt;
+   *     object
+   */
+  public MariaDbConnection getConnection() {
+<span class="nc" id="L99">    return connection;</span>
+  }
+
+  /**
+   * Closes the physical connection that this &lt;code&gt;PooledConnection&lt;/code&gt; object represents.  An
+   * application never calls this method directly; it is called by the connection pool module, or
+   * manager.
+   * &lt;br&gt;
+   * See the {@link PooledConnection interface description} for more information.
+   *
+   * @throws SQLException if a database access error occurs
+   */
+  public void close() throws SQLException {
+<span class="nc" id="L112">    connection.pooledConnection = null;</span>
+<span class="nc" id="L113">    connection.close();</span>
+<span class="nc" id="L114">  }</span>
+
+  /**
+   * Abort connection.
+   *
+   * @param executor executor
+   * @throws SQLException if a database access error occurs
+   */
+  public void abort(Executor executor) throws SQLException {
+<span class="nc" id="L123">    connection.pooledConnection = null;</span>
+<span class="nc" id="L124">    connection.abort(executor);</span>
+<span class="nc" id="L125">  }</span>
+
+  /**
+   * Registers the given event failover so that it will be notified when an event occurs on this
+   * &lt;code&gt;PooledConnection&lt;/code&gt; object.
+   *
+   * @param listener a component, usually the connection pool manager, that has implemented the
+   *                 &lt;code&gt;ConnectionEventListener&lt;/code&gt; interface and wants to be
+   *                 notified when the connection is closed or has an error
+   * @see #removeConnectionEventListener
+   */
+  public void addConnectionEventListener(ConnectionEventListener listener) {
+<span class="nc" id="L137">    connectionEventListeners.add(listener);</span>
+<span class="nc" id="L138">  }</span>
+
+  /**
+   * Removes the given event failover from the list of components that will be notified when an
+   * event occurs on this
+   * &lt;code&gt;PooledConnection&lt;/code&gt; object.
+   *
+   * @param listener a component, usually the connection pool manager, that has implemented the
+   *                 &lt;code&gt;ConnectionEventListener&lt;/code&gt; interface and
+   *                 been registered with this &lt;code&gt;PooledConnection&lt;/code&gt; object as a failover
+   * @see #addConnectionEventListener
+   */
+  public void removeConnectionEventListener(ConnectionEventListener listener) {
+<span class="nc" id="L151">    connectionEventListeners.remove(listener);</span>
+<span class="nc" id="L152">  }</span>
+
+  /**
+   * Registers a &lt;code&gt;StatementEventListener&lt;/code&gt; with this &lt;code&gt;PooledConnection&lt;/code&gt; object.
+   * Components that wish to be notified when  &lt;code&gt;PreparedStatement&lt;/code&gt;s created by the
+   * connection are closed or are detected to be invalid may use this method to register a
+   * &lt;code&gt;StatementEventListener&lt;/code&gt; with this &lt;code&gt;PooledConnection&lt;/code&gt; object.
+   * &lt;br&gt;
+   *
+   * @param listener an component which implements the &lt;code&gt;StatementEventListener&lt;/code&gt; interface
+   *                 that is to be registered with this &lt;code&gt;PooledConnection&lt;/code&gt; object
+   *                 &lt;br&gt;
+   */
+  public void addStatementEventListener(StatementEventListener listener) {
+<span class="nc" id="L166">    statementEventListeners.add(listener);</span>
+<span class="nc" id="L167">  }</span>
+
+  /**
+   * Removes the specified &lt;code&gt;StatementEventListener&lt;/code&gt; from the list of components that will
+   * be notified when the driver detects that a
+   * &lt;code&gt;PreparedStatement&lt;/code&gt; has been closed or is invalid.
+   * &lt;br&gt;
+   *
+   * @param listener the component which implements the
+   *                 &lt;code&gt;StatementEventListener&lt;/code&gt; interface that was previously
+   *                 registered with this &lt;code&gt;PooledConnection&lt;/code&gt; object
+   *                 &lt;br&gt;
+   */
+  public void removeStatementEventListener(StatementEventListener listener) {
+<span class="nc" id="L181">    statementEventListeners.remove(listener);</span>
+<span class="nc" id="L182">  }</span>
+
+  /**
+   * Fire statement close event to listeners.
+   *
+   * @param st statement
+   */
+  public void fireStatementClosed(Statement st) {
+<span class="nc bnc" id="L190" title="All 2 branches missed.">    if (st instanceof PreparedStatement) {</span>
+<span class="nc" id="L191">      StatementEvent event = new StatementEvent(this, (PreparedStatement) st);</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">      for (StatementEventListener listener : statementEventListeners) {</span>
+<span class="nc" id="L193">        listener.statementClosed(event);</span>
+<span class="nc" id="L194">      }</span>
+    }
+<span class="nc" id="L196">  }</span>
+
+  /**
+   * Fire statement error to listeners.
+   *
+   * @param st statement
+   * @param ex exception
+   */
+  public void fireStatementErrorOccured(Statement st, SQLException ex) {
+<span class="nc bnc" id="L205" title="All 2 branches missed.">    if (st instanceof PreparedStatement) {</span>
+<span class="nc" id="L206">      StatementEvent event = new StatementEvent(this, (PreparedStatement) st, ex);</span>
+<span class="nc bnc" id="L207" title="All 2 branches missed.">      for (StatementEventListener listener : statementEventListeners) {</span>
+<span class="nc" id="L208">        listener.statementErrorOccurred(event);</span>
+<span class="nc" id="L209">      }</span>
+    }
+<span class="nc" id="L211">  }</span>
+
+  /**
+   * Fire Connection close to listening listeners.
+   */
+  public void fireConnectionClosed() {
+<span class="nc" id="L217">    ConnectionEvent event = new ConnectionEvent(this);</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">    for (ConnectionEventListener listener : connectionEventListeners) {</span>
+<span class="nc" id="L219">      listener.connectionClosed(event);</span>
+<span class="nc" id="L220">    }</span>
+<span class="nc" id="L221">  }</span>
+
+  /**
+   * Fire connection error to listening listeners.
+   *
+   * @param ex exception
+   */
+  public void fireConnectionErrorOccured(SQLException ex) {
+<span class="nc" id="L229">    ConnectionEvent event = new ConnectionEvent(this, ex);</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">    for (ConnectionEventListener listener : connectionEventListeners) {</span>
+<span class="nc" id="L231">      listener.connectionErrorOccurred(event);</span>
+<span class="nc" id="L232">    }</span>
+<span class="nc" id="L233">  }</span>
+
+  /**
+   * Indicate if there are any registered listener.
+   *
+   * @return true if no listener.
+   */
+  public boolean noStmtEventListeners() {
+<span class="nc" id="L241">    return statementEventListeners.isEmpty();</span>
+  }
+
+  /**
+   * Indicate last time this pool connection has been used.
+   *
+   * @return current last used time (nano).
+   */
+  public AtomicLong getLastUsed() {
+<span class="nc" id="L250">    return lastUsed;</span>
+  }
+
+  /**
+   * Set last poolConnection use to now.
+   */
+  public void lastUsedToNow() {
+<span class="nc" id="L257">    lastUsed.set(System.nanoTime());</span>
+<span class="nc" id="L258">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

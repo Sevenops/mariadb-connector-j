@@ -1,0 +1,512 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>UrlParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">UrlParser.java</span></div><h1>UrlParser.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc;
+
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.mariadb.jdbc.internal.logging.LoggerFactory;
+import org.mariadb.jdbc.internal.util.DefaultOptions;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.constant.HaMode;
+import org.mariadb.jdbc.internal.util.constant.ParameterConstant;
+
+/**
+ * &lt;p&gt;parse and verification of URL.&lt;/p&gt;
+ * &lt;p&gt;basic syntax :&lt;br&gt;
+ * {@code jdbc:(mysql|mariadb):[replication:|failover|loadbalance:|aurora:]//&lt;hostDescription&gt;[,&lt;hostDescription&gt;]/[database&gt;]
+ * [?&lt;key1&gt;=&lt;value1&gt;[&amp;&lt;key2&gt;=&lt;value2&gt;]] }
+ * &lt;/p&gt;
+ * &lt;p&gt;
+ * hostDescription:&lt;br&gt; - simple :&lt;br&gt; {@code &lt;host&gt;:&lt;portnumber&gt;}&lt;br&gt; (for example
+ * localhost:3306)&lt;br&gt;&lt;br&gt; - complex :&lt;br&gt; {@code address=[(type=(master|slave))][(port=&lt;portnumber&gt;)](host=&lt;host&gt;)}&lt;br&gt;
+ * &lt;br&gt;&lt;br&gt;
+ * type is by default master&lt;br&gt; port is by default 3306&lt;br&gt;
+ * &lt;/p&gt;
+ * &lt;p&gt;
+ * host can be dns name, ipv4 or ipv6.&lt;br&gt; in case of ipv6 and simple host description, the ip must
+ * be written inside bracket.&lt;br&gt; exemple : {@code jdbc:mariadb://[2001:0660:7401:0200:0000:0000:0edf:bdd7]:3306}&lt;br&gt;
+ * &lt;/p&gt;
+ * &lt;p&gt;
+ * Some examples :&lt;br&gt; {@code jdbc:mariadb://localhost:3306/database?user=greg&amp;password=pass}&lt;br&gt;
+ * {@code jdbc:mariadb://address=(type=master)(host=master1),address=(port=3307)(type=slave)(host=slave1)/database?user=greg&amp;password=pass}&lt;br&gt;
+ * &lt;/p&gt;
+ */
+public class UrlParser implements Cloneable {
+
+  private static final String DISABLE_MYSQL_URL = &quot;disableMariaDbDriver&quot;;
+<span class="nc" id="L92">  private static final Pattern URL_PARAMETER = Pattern</span>
+<span class="nc" id="L93">      .compile(&quot;(\\/([^\\?]*))?(\\?(.+))*&quot;, Pattern.DOTALL);</span>
+<span class="nc" id="L94">  private static final Pattern AWS_PATTERN = Pattern</span>
+<span class="nc" id="L95">      .compile(&quot;(.+)\\.([a-z0-9\\-]+\\.rds\\.amazonaws\\.com)&quot;,</span>
+          Pattern.CASE_INSENSITIVE);
+
+  private String database;
+<span class="nc" id="L99">  private Options options = null;</span>
+  private List&lt;HostAddress&gt; addresses;
+  private HaMode haMode;
+  private String initialUrl;
+  private boolean multiMaster;
+
+<span class="nc" id="L105">  private UrlParser() {</span>
+<span class="nc" id="L106">  }</span>
+
+  protected UrlParser(String database, List&lt;HostAddress&gt; addresses, Options options,
+<span class="nc" id="L109">      HaMode haMode) {</span>
+<span class="nc" id="L110">    this.options = options;</span>
+<span class="nc" id="L111">    this.database = database;</span>
+<span class="nc" id="L112">    this.addresses = addresses;</span>
+<span class="nc" id="L113">    this.haMode = haMode;</span>
+<span class="nc bnc" id="L114" title="All 2 branches missed.">    if (haMode == HaMode.AURORA) {</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">      for (HostAddress hostAddress : addresses) {</span>
+<span class="nc" id="L116">        hostAddress.type = null;</span>
+<span class="nc" id="L117">      }</span>
+    } else {
+<span class="nc bnc" id="L119" title="All 2 branches missed.">      for (HostAddress hostAddress : addresses) {</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">        if (hostAddress.type == null) {</span>
+<span class="nc" id="L121">          hostAddress.type = ParameterConstant.TYPE_MASTER;</span>
+        }
+<span class="nc" id="L123">      }</span>
+    }
+
+<span class="nc" id="L126">    DefaultOptions.optionCoherenceValidation(options);</span>
+<span class="nc" id="L127">    setInitialUrl();</span>
+<span class="nc" id="L128">    loadMultiMasterValue();</span>
+<span class="nc" id="L129">  }</span>
+
+  /**
+   * Tell if mariadb driver accept url string. (Correspond to interface
+   * java.jdbc.Driver.acceptsURL() method)
+   *
+   * @param url url String
+   * @return true if url string correspond.
+   */
+  public static boolean acceptsUrl(String url) {
+<span class="nc bnc" id="L139" title="All 4 branches missed.">    return (url != null) &amp;&amp; (url.startsWith(&quot;jdbc:mariadb:&quot;)</span>
+<span class="nc bnc" id="L140" title="All 4 branches missed.">        || (url.startsWith(&quot;jdbc:mysql:&quot;) &amp;&amp; !url.contains(DISABLE_MYSQL_URL)));</span>
+  }
+
+  public static UrlParser parse(final String url) throws SQLException {
+<span class="nc" id="L144">    return parse(url, new Properties());</span>
+  }
+
+  /**
+   * Parse url connection string with additional properties.
+   *
+   * @param url  connection string
+   * @param prop properties
+   * @return UrlParser instance
+   * @throws SQLException if parsing exception occur
+   */
+  public static UrlParser parse(final String url, Properties prop) throws SQLException {
+<span class="nc bnc" id="L156" title="All 2 branches missed.">    if (url != null</span>
+<span class="nc bnc" id="L157" title="All 4 branches missed.">        &amp;&amp; (url.startsWith(&quot;jdbc:mariadb:&quot;) || url.startsWith(&quot;jdbc:mysql:&quot;) &amp;&amp; !url</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">        .contains(DISABLE_MYSQL_URL))) {</span>
+<span class="nc" id="L159">      UrlParser urlParser = new UrlParser();</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">      parseInternal(urlParser, url, (prop == null) ? new Properties() : prop);</span>
+<span class="nc" id="L161">      return urlParser;</span>
+    }
+<span class="nc" id="L163">    return null;</span>
+  }
+
+  /**
+   * Parses the connection URL in order to set the UrlParser instance with all the information
+   * provided through the URL.
+   *
+   * @param urlParser  object instance in which all data from the connection url is stored
+   * @param url        connection URL
+   * @param properties properties
+   * @throws SQLException if format is incorrect
+   */
+  private static void parseInternal(UrlParser urlParser, String url, Properties properties)
+      throws SQLException {
+    try {
+<span class="nc" id="L178">      urlParser.initialUrl = url;</span>
+<span class="nc" id="L179">      int separator = url.indexOf(&quot;//&quot;);</span>
+<span class="nc bnc" id="L180" title="All 2 branches missed.">      if (separator == -1) {</span>
+<span class="nc" id="L181">        throw new IllegalArgumentException(</span>
+            &quot;url parsing error : '//' is not present in the url &quot; + url);
+      }
+
+<span class="nc" id="L185">      urlParser.haMode = parseHaMode(url, separator);</span>
+
+<span class="nc" id="L187">      String urlSecondPart = url.substring(separator + 2);</span>
+<span class="nc" id="L188">      int dbIndex = urlSecondPart.indexOf(&quot;/&quot;);</span>
+<span class="nc" id="L189">      int paramIndex = urlSecondPart.indexOf(&quot;?&quot;);</span>
+
+      String hostAddressesString;
+      String additionalParameters;
+<span class="nc bnc" id="L193" title="All 8 branches missed.">      if ((dbIndex &lt; paramIndex &amp;&amp; dbIndex &lt; 0) || (dbIndex &gt; paramIndex &amp;&amp; paramIndex &gt; -1)) {</span>
+<span class="nc" id="L194">        hostAddressesString = urlSecondPart.substring(0, paramIndex);</span>
+<span class="nc" id="L195">        additionalParameters = urlSecondPart.substring(paramIndex);</span>
+<span class="nc bnc" id="L196" title="All 8 branches missed.">      } else if ((dbIndex &lt; paramIndex &amp;&amp; dbIndex &gt; -1) || (dbIndex &gt; paramIndex</span>
+          &amp;&amp; paramIndex &lt; 0)) {
+<span class="nc" id="L198">        hostAddressesString = urlSecondPart.substring(0, dbIndex);</span>
+<span class="nc" id="L199">        additionalParameters = urlSecondPart.substring(dbIndex);</span>
+      } else {
+<span class="nc" id="L201">        hostAddressesString = urlSecondPart;</span>
+<span class="nc" id="L202">        additionalParameters = null;</span>
+      }
+
+<span class="nc" id="L205">      defineUrlParserParameters(urlParser, properties, hostAddressesString, additionalParameters);</span>
+<span class="nc" id="L206">      setDefaultHostAddressType(urlParser);</span>
+<span class="nc" id="L207">      urlParser.loadMultiMasterValue();</span>
+<span class="nc" id="L208">    } catch (IllegalArgumentException i) {</span>
+<span class="nc" id="L209">      throw new SQLException(&quot;error parsing url : &quot; + i.getMessage(), i);</span>
+<span class="nc" id="L210">    }</span>
+<span class="nc" id="L211">  }</span>
+
+  /*
+  Parse ConnectorJ compatible urls
+  jdbc:[mariadb|mysql]://host:port/database
+  Example: jdbc:mariadb://localhost:3306/test?user=root&amp;password=passwd
+  */
+
+  /**
+   * Sets the parameters of the UrlParser instance: addresses, database and options. It parses
+   * through the additional parameters given in order to extract the database and the options for
+   * the connection.
+   *
+   * @param urlParser            object instance in which all data from the connection URL is
+   *                             stored
+   * @param properties           properties
+   * @param hostAddressesString  string that holds all the host addresses
+   * @param additionalParameters string that holds all parameters defined for the connection
+   */
+  private static void defineUrlParserParameters(UrlParser urlParser, Properties properties,
+      String hostAddressesString,
+      String additionalParameters) {
+
+<span class="nc bnc" id="L234" title="All 2 branches missed.">    if (additionalParameters != null) {</span>
+      //noinspection Annotator
+<span class="nc" id="L236">      Matcher matcher = URL_PARAMETER.matcher(additionalParameters);</span>
+
+<span class="nc bnc" id="L238" title="All 2 branches missed.">      if (matcher.find()) {</span>
+
+<span class="nc" id="L240">        urlParser.database = matcher.group(2);</span>
+<span class="nc" id="L241">        urlParser.options = DefaultOptions</span>
+<span class="nc" id="L242">            .parse(urlParser.haMode, matcher.group(4), properties, urlParser.options);</span>
+<span class="nc" id="L243">        DefaultOptions.optionCoherenceValidation(urlParser.options);</span>
+<span class="nc bnc" id="L244" title="All 4 branches missed.">        if (urlParser.database != null &amp;&amp; urlParser.database.isEmpty()) {</span>
+<span class="nc" id="L245">          urlParser.database = null;</span>
+        }
+
+      } else {
+
+<span class="nc" id="L250">        urlParser.database = null;</span>
+<span class="nc" id="L251">        urlParser.options = DefaultOptions</span>
+<span class="nc" id="L252">            .parse(urlParser.haMode, &quot;&quot;, properties, urlParser.options);</span>
+<span class="nc" id="L253">        DefaultOptions.optionCoherenceValidation(urlParser.options);</span>
+
+      }
+
+<span class="nc" id="L257">    } else {</span>
+
+<span class="nc" id="L259">      urlParser.database = null;</span>
+<span class="nc" id="L260">      urlParser.options = DefaultOptions.parse(urlParser.haMode, &quot;&quot;, properties, urlParser.options);</span>
+<span class="nc" id="L261">      DefaultOptions.optionCoherenceValidation(urlParser.options);</span>
+
+    }
+
+<span class="nc bnc" id="L265" title="All 6 branches missed.">    LoggerFactory.init(urlParser.options.log</span>
+        || urlParser.options.profileSql
+        || urlParser.options.slowQueryThresholdNanos != null);
+<span class="nc" id="L268">    urlParser.addresses = HostAddress.parse(hostAddressesString, urlParser.haMode);</span>
+<span class="nc" id="L269">  }</span>
+
+  private static HaMode parseHaMode(String url, int separator) {
+    //parser is sure to have at least 2 colon, since jdbc:[mysql|mariadb]: is tested.
+<span class="nc" id="L273">    int firstColonPos = url.indexOf(':');</span>
+<span class="nc" id="L274">    int secondColonPos = url.indexOf(':', firstColonPos + 1);</span>
+<span class="nc" id="L275">    int thirdColonPos = url.indexOf(':', secondColonPos + 1);</span>
+
+<span class="nc bnc" id="L277" title="All 4 branches missed.">    if (thirdColonPos &gt; separator || thirdColonPos == -1) {</span>
+<span class="nc bnc" id="L278" title="All 2 branches missed.">      if (secondColonPos == separator - 1) {</span>
+<span class="nc" id="L279">        return HaMode.NONE;</span>
+      }
+<span class="nc" id="L281">      thirdColonPos = separator;</span>
+    }
+
+    try {
+<span class="nc" id="L285">      return HaMode</span>
+<span class="nc" id="L286">          .valueOf(url.substring(secondColonPos + 1, thirdColonPos).toUpperCase(Locale.ROOT));</span>
+<span class="nc" id="L287">    } catch (IllegalArgumentException i) {</span>
+<span class="nc" id="L288">      throw new IllegalArgumentException(</span>
+          &quot;wrong failover parameter format in connection String &quot; + url);
+    }
+
+  }
+
+  private static void setDefaultHostAddressType(UrlParser urlParser) {
+<span class="nc bnc" id="L295" title="All 2 branches missed.">    if (urlParser.haMode == HaMode.AURORA) {</span>
+<span class="nc bnc" id="L296" title="All 2 branches missed.">      for (HostAddress hostAddress : urlParser.addresses) {</span>
+<span class="nc" id="L297">        hostAddress.type = null;</span>
+<span class="nc" id="L298">      }</span>
+    } else {
+<span class="nc bnc" id="L300" title="All 2 branches missed.">      for (HostAddress hostAddress : urlParser.addresses) {</span>
+<span class="nc bnc" id="L301" title="All 2 branches missed.">        if (hostAddress.type == null) {</span>
+<span class="nc" id="L302">          hostAddress.type = ParameterConstant.TYPE_MASTER;</span>
+        }
+<span class="nc" id="L304">      }</span>
+    }
+<span class="nc" id="L306">  }</span>
+
+  private void setInitialUrl() {
+<span class="nc" id="L309">    StringBuilder sb = new StringBuilder();</span>
+<span class="nc" id="L310">    sb.append(&quot;jdbc:mariadb:&quot;);</span>
+<span class="nc bnc" id="L311" title="All 2 branches missed.">    if (haMode != HaMode.NONE) {</span>
+<span class="nc" id="L312">      sb.append(haMode.toString().toLowerCase(Locale.ROOT)).append(&quot;:&quot;);</span>
+    }
+<span class="nc" id="L314">    sb.append(&quot;//&quot;);</span>
+
+<span class="nc bnc" id="L316" title="All 2 branches missed.">    for (int i = 0; i &lt; addresses.size(); i++) {</span>
+<span class="nc" id="L317">      HostAddress hostAddress = addresses.get(i);</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">      if (i &gt; 0) {</span>
+<span class="nc" id="L319">        sb.append(&quot;,&quot;);</span>
+      }
+<span class="nc" id="L321">      sb.append(&quot;address=(host=&quot;).append(hostAddress.host).append(&quot;)&quot;)</span>
+<span class="nc" id="L322">          .append(&quot;(port=&quot;).append(hostAddress.port).append(&quot;)&quot;);</span>
+<span class="nc bnc" id="L323" title="All 2 branches missed.">      if (hostAddress.type != null) {</span>
+<span class="nc" id="L324">        sb.append(&quot;(type=&quot;).append(hostAddress.type).append(&quot;)&quot;);</span>
+      }
+    }
+
+<span class="nc" id="L328">    sb.append(&quot;/&quot;);</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">    if (database != null) {</span>
+<span class="nc" id="L330">      sb.append(database);</span>
+    }
+<span class="nc" id="L332">    DefaultOptions.propertyString(options, haMode, sb);</span>
+<span class="nc" id="L333">    initialUrl = sb.toString();</span>
+<span class="nc" id="L334">  }</span>
+
+  /**
+   * Permit to set parameters not forced. if options useBatchMultiSend and usePipelineAuth are not
+   * explicitly set in connection string, value will default to true or false according if aurora
+   * detection.
+   *
+   * @return UrlParser for easy testing
+   */
+  public UrlParser auroraPipelineQuirks() {
+
+    //Aurora has issue with pipelining, depending on network speed.
+    //Driver must rely on information provided by user : hostname if dns, and HA mode.&lt;/p&gt;
+<span class="nc" id="L347">    boolean disablePipeline = isAurora();</span>
+
+<span class="nc bnc" id="L349" title="All 2 branches missed.">    if (options.useBatchMultiSend == null) {</span>
+<span class="nc bnc" id="L350" title="All 2 branches missed.">      options.useBatchMultiSend = disablePipeline ? Boolean.FALSE : Boolean.TRUE;</span>
+    }
+
+<span class="nc bnc" id="L353" title="All 2 branches missed.">    if (options.usePipelineAuth == null) {</span>
+<span class="nc bnc" id="L354" title="All 2 branches missed.">      options.usePipelineAuth = disablePipeline ? Boolean.FALSE : Boolean.TRUE;</span>
+    }
+<span class="nc" id="L356">    return this;</span>
+  }
+
+  /**
+   * Detection of Aurora.
+   * &lt;p&gt;
+   * Aurora rely on MySQL, then cannot be identified by protocol. But Aurora doesn't permit some
+   * behaviour normally working with MySQL : pipelining. So Driver must identified if server is
+   * Aurora to disable pipeline options that are enable by default.
+   * &lt;/p&gt;
+   *
+   * @return true if aurora.
+   */
+  public boolean isAurora() {
+<span class="nc bnc" id="L370" title="All 2 branches missed.">    if (haMode == HaMode.AURORA) {</span>
+<span class="nc" id="L371">      return true;</span>
+    }
+<span class="nc bnc" id="L373" title="All 2 branches missed.">    if (addresses != null) {</span>
+<span class="nc bnc" id="L374" title="All 2 branches missed.">      for (HostAddress hostAddress : addresses) {</span>
+<span class="nc" id="L375">        Matcher matcher = AWS_PATTERN.matcher(hostAddress.host);</span>
+<span class="nc bnc" id="L376" title="All 2 branches missed.">        if (matcher.find()) {</span>
+<span class="nc" id="L377">          return true;</span>
+        }
+<span class="nc" id="L379">      }</span>
+    }
+<span class="nc" id="L381">    return false;</span>
+  }
+
+  /**
+   * Parse url connection string.
+   *
+   * @param url connection string
+   * @throws SQLException if url format is incorrect
+   */
+  public void parseUrl(String url) throws SQLException {
+<span class="nc bnc" id="L391" title="All 2 branches missed.">    if (acceptsUrl(url)) {</span>
+<span class="nc" id="L392">      parseInternal(this, url, new Properties());</span>
+    }
+<span class="nc" id="L394">  }</span>
+
+  public String getUsername() {
+<span class="nc" id="L397">    return options.user;</span>
+  }
+
+  public void setUsername(String username) {
+<span class="nc" id="L401">    options.user = username;</span>
+<span class="nc" id="L402">  }</span>
+
+  public String getPassword() {
+<span class="nc" id="L405">    return options.password;</span>
+  }
+
+  public void setPassword(String password) {
+<span class="nc" id="L409">    options.password = password;</span>
+<span class="nc" id="L410">  }</span>
+
+  public String getDatabase() {
+<span class="nc" id="L413">    return database;</span>
+  }
+
+  public void setDatabase(String database) {
+<span class="nc" id="L417">    this.database = database;</span>
+<span class="nc" id="L418">  }</span>
+
+  public List&lt;HostAddress&gt; getHostAddresses() {
+<span class="nc" id="L421">    return this.addresses;</span>
+  }
+
+  public void setHostAddresses(List&lt;HostAddress&gt; addresses) {
+<span class="nc" id="L425">    this.addresses = addresses;</span>
+<span class="nc" id="L426">  }</span>
+
+  public Options getOptions() {
+<span class="nc" id="L429">    return options;</span>
+  }
+
+  protected void setProperties(String urlParameters) {
+<span class="nc" id="L433">    DefaultOptions.parse(this.haMode, urlParameters, this.options);</span>
+<span class="nc" id="L434">    setInitialUrl();</span>
+<span class="nc" id="L435">  }</span>
+
+  /**
+   * ToString implementation.
+   *
+   * @return String value
+   */
+  public String toString() {
+<span class="nc" id="L443">    return initialUrl;</span>
+  }
+
+  public String getInitialUrl() {
+<span class="nc" id="L447">    return initialUrl;</span>
+  }
+
+  public HaMode getHaMode() {
+<span class="nc" id="L451">    return haMode;</span>
+  }
+
+  @Override
+  public boolean equals(Object parser) {
+<span class="nc bnc" id="L456" title="All 2 branches missed.">    if (this == parser) {</span>
+<span class="nc" id="L457">      return true;</span>
+    }
+<span class="nc bnc" id="L459" title="All 2 branches missed.">    if (!(parser instanceof UrlParser)) {</span>
+<span class="nc" id="L460">      return false;</span>
+    }
+
+<span class="nc" id="L463">    UrlParser urlParser = (UrlParser) parser;</span>
+<span class="nc bnc" id="L464" title="All 4 branches missed.">    return (initialUrl != null ? initialUrl.equals(urlParser.getInitialUrl())</span>
+<span class="nc bnc" id="L465" title="All 2 branches missed.">        : urlParser.getInitialUrl() == null)</span>
+<span class="nc bnc" id="L466" title="All 4 branches missed.">        &amp;&amp; (getUsername() != null ? getUsername().equals(urlParser.getUsername())</span>
+<span class="nc bnc" id="L467" title="All 2 branches missed.">        : urlParser.getUsername() == null)</span>
+<span class="nc bnc" id="L468" title="All 4 branches missed.">        &amp;&amp; (getPassword() != null ? getPassword().equals(urlParser.getPassword())</span>
+<span class="nc bnc" id="L469" title="All 2 branches missed.">        : urlParser.getPassword() == null);</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc bnc" id="L474" title="All 2 branches missed.">    int result = options.password != null ? options.password.hashCode() : 0;</span>
+<span class="nc bnc" id="L475" title="All 2 branches missed.">    result = 31 * result + (options.user != null ? options.user.hashCode() : 0);</span>
+<span class="nc" id="L476">    result = 31 * result + initialUrl.hashCode();</span>
+<span class="nc" id="L477">    return result;</span>
+  }
+
+  private void loadMultiMasterValue() {
+<span class="nc bnc" id="L481" title="All 6 branches missed.">    if (haMode == HaMode.SEQUENTIAL</span>
+        || haMode == HaMode.REPLICATION
+        || haMode == HaMode.FAILOVER) {
+<span class="nc" id="L484">      boolean firstMaster = false;</span>
+<span class="nc bnc" id="L485" title="All 2 branches missed.">      for (HostAddress host : addresses) {</span>
+<span class="nc bnc" id="L486" title="All 2 branches missed.">        if (host.type.equals(ParameterConstant.TYPE_MASTER)) {</span>
+<span class="nc bnc" id="L487" title="All 2 branches missed.">          if (firstMaster) {</span>
+<span class="nc" id="L488">            multiMaster = true;</span>
+<span class="nc" id="L489">            return;</span>
+          } else {
+<span class="nc" id="L491">            firstMaster = true;</span>
+          }
+        }
+<span class="nc" id="L494">      }</span>
+    }
+<span class="nc" id="L496">    multiMaster = false;</span>
+<span class="nc" id="L497">  }</span>
+
+  public boolean isMultiMaster() {
+<span class="nc" id="L500">    return multiMaster;</span>
+  }
+
+  @Override
+  public Object clone() throws CloneNotSupportedException {
+<span class="nc" id="L505">    UrlParser tmpUrlParser = (UrlParser) super.clone();</span>
+<span class="nc" id="L506">    tmpUrlParser.options = (Options) options.clone();</span>
+<span class="nc" id="L507">    tmpUrlParser.addresses = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L508">    tmpUrlParser.addresses.addAll(addresses);</span>
+<span class="nc" id="L509">    return tmpUrlParser;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

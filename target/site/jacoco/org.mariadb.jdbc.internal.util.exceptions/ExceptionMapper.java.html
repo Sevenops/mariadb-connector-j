@@ -1,0 +1,565 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ExceptionMapper.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.util.exceptions</a> &gt; <span class="el_source">ExceptionMapper.java</span></div><h1>ExceptionMapper.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.util.exceptions;
+
+import static org.mariadb.jdbc.internal.util.SqlStates.CONNECTION_EXCEPTION;
+
+import java.sql.ResultSet;
+import java.sql.SQLDataException;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.SQLIntegrityConstraintViolationException;
+import java.sql.SQLInvalidAuthorizationSpecException;
+import java.sql.SQLNonTransientConnectionException;
+import java.sql.SQLSyntaxErrorException;
+import java.sql.SQLTimeoutException;
+import java.sql.SQLTransactionRollbackException;
+import java.sql.SQLTransientException;
+import java.sql.SQLWarning;
+import java.sql.Statement;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+
+import org.mariadb.jdbc.MariaDbConnection;
+import org.mariadb.jdbc.MariaDbStatement;
+import org.mariadb.jdbc.internal.util.SqlStates;
+
+
+<span class="nc" id="L79">public class ExceptionMapper {</span>
+
+<span class="nc" id="L81">  private static final Set&lt;Integer&gt; LOCK_DEADLOCK_ERROR_CODES = new HashSet&lt;&gt;(Arrays.asList(1205, 1213, 1614));</span>
+
+  /**
+   * Helper to throw exception.
+   *
+   * @param exception  exception
+   * @param connection current connection
+   * @param statement  current statement
+   * @throws SQLException exception
+   */
+  public static void throwException(SQLException exception, MariaDbConnection connection,
+      MariaDbStatement statement) throws SQLException {
+<span class="nc" id="L93">    throw getException(exception, connection, statement, false);</span>
+  }
+
+  public static SQLException connException(String message) {
+<span class="nc" id="L97">    return connException(message, null);</span>
+  }
+
+  public static SQLException connException(String message, Throwable cause) {
+<span class="nc" id="L101">    return get(message, CONNECTION_EXCEPTION.getSqlState(), -1, cause, false);</span>
+  }
+
+
+  /**
+   * Helper to decorate exception with associate subclass of {@link SQLException} exception.
+   *
+   * @param exception  exception
+   * @param connection current connection
+   * @param statement  current statement
+   * @param timeout    was timeout on query
+   * @return SQLException exception
+   */
+  public static SQLException getException(SQLException exception, MariaDbConnection connection,
+      MariaDbStatement statement, boolean timeout) {
+    final StringBuilder message;
+<span class="nc" id="L117">    String errMsg = exception.getMessage();</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">    if (errMsg.contains(&quot;\n&quot;)) {</span>
+<span class="nc" id="L119">      errMsg = errMsg.substring(0, errMsg.indexOf(&quot;\n&quot;));</span>
+    }
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    if (connection != null) {</span>
+<span class="nc" id="L122">      message = new StringBuilder(&quot;(conn=&quot;)</span>
+<span class="nc" id="L123">          .append(connection.getServerThreadId())</span>
+<span class="nc" id="L124">          .append(&quot;) &quot;)</span>
+<span class="nc" id="L125">          .append(errMsg);</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">    } else if (statement != null) {</span>
+<span class="nc" id="L127">      message = new StringBuilder(&quot;(conn=&quot;)</span>
+<span class="nc" id="L128">          .append(statement.getServerThreadId())</span>
+<span class="nc" id="L129">          .append(&quot;) &quot;)</span>
+<span class="nc" id="L130">          .append(errMsg);</span>
+    } else {
+<span class="nc" id="L132">      message = new StringBuilder(errMsg);</span>
+    }
+
+    SQLException sqlException;
+<span class="nc" id="L136">    SqlStates state = null;</span>
+
+<span class="nc bnc" id="L138" title="All 2 branches missed.">    if (exception.getSQLState() != null) {</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">      if (connection != null</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">          &amp;&amp; exception.getSQLState() != null</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">          &amp;&amp; LOCK_DEADLOCK_ERROR_CODES.contains(exception.getErrorCode())) {</span>
+
+<span class="nc bnc" id="L143" title="All 2 branches missed.">        if (connection.includeDeadLockInfo()) {</span>
+          try {
+<span class="nc" id="L145">            Statement stmt = connection.createStatement();</span>
+<span class="nc" id="L146">            ResultSet rs = stmt.executeQuery(&quot;SHOW ENGINE INNODB STATUS&quot;);</span>
+<span class="nc bnc" id="L147" title="All 2 branches missed.">            if (rs.next()) {</span>
+<span class="nc" id="L148">              message.append(&quot;\ndeadlock information: &quot;)</span>
+<span class="nc" id="L149">                  .append(rs.getString(3));</span>
+            }
+<span class="nc" id="L151">          } catch (SQLException sqle) {</span>
+            //eat
+<span class="nc" id="L153">          }</span>
+        }
+
+<span class="nc bnc" id="L156" title="All 2 branches missed.">        if (connection.includeThreadsTraces()) {</span>
+<span class="nc" id="L157">          message.append(&quot;\n\ncurrent threads: &quot;);</span>
+<span class="nc" id="L158">          Thread.getAllStackTraces().forEach((thread, traces) -&gt; {</span>
+<span class="nc" id="L159">            message.append(&quot;\n  name:\&quot;&quot;)</span>
+<span class="nc" id="L160">                .append(thread.getName())</span>
+<span class="nc" id="L161">                .append(&quot;\&quot; pid:&quot;)</span>
+<span class="nc" id="L162">                .append(thread.getId())</span>
+<span class="nc" id="L163">                .append(&quot; status:&quot;)</span>
+<span class="nc" id="L164">                .append(thread.getState());</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">            for (int i = 0; i &lt; traces.length; i++) {</span>
+<span class="nc" id="L166">              message.append(&quot;\n    &quot;).append(traces[i]);</span>
+            }
+<span class="nc" id="L168">          });</span>
+        }
+      }
+<span class="nc" id="L171">      sqlException = get(message.toString(), exception.getSQLState(), exception.getErrorCode(),</span>
+          exception, timeout);
+<span class="nc" id="L173">      String sqlState = exception.getSQLState();</span>
+<span class="nc" id="L174">      state = SqlStates.fromString(sqlState);</span>
+<span class="nc" id="L175">      SQLException nextException = exception.getNextException();</span>
+<span class="nc bnc" id="L176" title="All 2 branches missed.">      if (nextException != null) {</span>
+<span class="nc" id="L177">        sqlException.setNextException(nextException);</span>
+      }
+<span class="nc" id="L179">    } else {</span>
+<span class="nc" id="L180">      sqlException = exception;</span>
+    }
+
+<span class="nc bnc" id="L183" title="All 2 branches missed.">    if (connection != null) {</span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">      if (SqlStates.CONNECTION_EXCEPTION.equals(state)) {</span>
+<span class="nc" id="L185">        connection.setHostFailed();</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">        if (connection.pooledConnection != null) {</span>
+<span class="nc" id="L187">          connection.pooledConnection.fireConnectionErrorOccured(sqlException);</span>
+        }
+<span class="nc bnc" id="L189" title="All 4 branches missed.">      } else if (connection.pooledConnection != null &amp;&amp; statement != null) {</span>
+<span class="nc" id="L190">        connection.pooledConnection.fireStatementErrorOccured(statement, sqlException);</span>
+      }
+    }
+
+<span class="nc" id="L194">    return sqlException;</span>
+  }
+
+  /**
+   * Check connection exception to report to poolConnection listeners.
+   *
+   * @param exception  current exception
+   * @param connection current connection
+   */
+  public static void checkConnectionException(SQLException exception,
+      MariaDbConnection connection) {
+<span class="nc bnc" id="L205" title="All 2 branches missed.">    if (exception.getSQLState() != null) {</span>
+<span class="nc" id="L206">      SqlStates state = SqlStates.fromString(exception.getSQLState());</span>
+<span class="nc bnc" id="L207" title="All 2 branches missed.">      if (SqlStates.CONNECTION_EXCEPTION.equals(state)) {</span>
+<span class="nc" id="L208">        connection.setHostFailed();</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">        if (connection.pooledConnection != null) {</span>
+<span class="nc" id="L210">          connection.pooledConnection.fireConnectionErrorOccured(exception);</span>
+        }
+      }
+    }
+<span class="nc" id="L214">  }</span>
+
+  /**
+   * Helper to decorate exception with associate subclass of {@link SQLException} exception.
+   *
+   * @param message   exception message
+   * @param sqlState  sqlstate
+   * @param errorCode errorCode
+   * @param exception cause
+   * @param timeout   was timeout on query
+   * @return SQLException exception
+   */
+  public static SQLException get(final String message, String sqlState, int errorCode,
+      final Throwable exception, boolean timeout) {
+<span class="nc" id="L228">    final SqlStates state = SqlStates.fromString(sqlState);</span>
+<span class="nc bnc" id="L229" title="All 12 branches missed.">    switch (state) {</span>
+      case DATA_EXCEPTION:
+<span class="nc" id="L231">        return new SQLDataException(message, sqlState, errorCode, exception);</span>
+      case FEATURE_NOT_SUPPORTED:
+<span class="nc" id="L233">        return new SQLFeatureNotSupportedException(message, sqlState, errorCode, exception);</span>
+      case CONSTRAINT_VIOLATION:
+<span class="nc" id="L235">        return new SQLIntegrityConstraintViolationException(message, sqlState, errorCode,</span>
+            exception);
+      case INVALID_AUTHORIZATION:
+<span class="nc" id="L238">        return new SQLInvalidAuthorizationSpecException(message, sqlState, errorCode, exception);</span>
+      case CONNECTION_EXCEPTION:
+<span class="nc" id="L240">        return new SQLNonTransientConnectionException(message, sqlState, errorCode, exception);</span>
+      case SYNTAX_ERROR_ACCESS_RULE:
+<span class="nc" id="L242">        return new SQLSyntaxErrorException(message, sqlState, errorCode, exception);</span>
+      case TRANSACTION_ROLLBACK:
+<span class="nc" id="L244">        return new SQLTransactionRollbackException(message, sqlState, errorCode, exception);</span>
+      case WARNING:
+<span class="nc" id="L246">        return new SQLWarning(message, sqlState, errorCode, exception);</span>
+      case INTERRUPTED_EXCEPTION:
+<span class="nc bnc" id="L248" title="All 4 branches missed.">        if (timeout &amp;&amp; &quot;70100&quot;.equals(sqlState)) {</span>
+<span class="nc" id="L249">          return new SQLTimeoutException(message, sqlState, errorCode, exception);</span>
+        }
+<span class="nc bnc" id="L251" title="All 2 branches missed.">        if (exception instanceof SQLNonTransientConnectionException) {</span>
+<span class="nc" id="L252">          return new SQLNonTransientConnectionException(message, sqlState, errorCode, exception);</span>
+        }
+<span class="nc" id="L254">        return new SQLTransientException(message, sqlState, errorCode, exception);</span>
+      case TIMEOUT_EXCEPTION:
+<span class="nc" id="L256">        return new SQLTimeoutException(message, sqlState, errorCode, exception);</span>
+      case UNDEFINED_SQLSTATE:
+<span class="nc bnc" id="L258" title="All 2 branches missed.">        if (exception instanceof SQLNonTransientConnectionException) {</span>
+<span class="nc" id="L259">          return new SQLNonTransientConnectionException(message, sqlState, errorCode, exception);</span>
+        }
+<span class="nc" id="L261">        return new SQLException(message, sqlState, errorCode, exception);</span>
+      default:
+        // DISTRIBUTED_TRANSACTION_ERROR,
+<span class="nc" id="L264">        return new SQLException(message, sqlState, errorCode, exception);</span>
+    }
+  }
+
+  public static SQLException getSqlException(String message, Exception exception) {
+<span class="nc" id="L269">    return new SQLException(message, exception);</span>
+  }
+
+  public static SQLException getSqlException(String message, String sqlState, Exception exception) {
+<span class="nc" id="L273">    return new SQLException(message, sqlState, 0, exception);</span>
+  }
+
+  public static SQLException getSqlException(String message) {
+<span class="nc" id="L277">    return new SQLException(message);</span>
+  }
+
+  public static SQLException getFeatureNotSupportedException(String message) {
+<span class="nc" id="L281">    return new SQLFeatureNotSupportedException(message);</span>
+  }
+
+  /**
+   * Mapp code to State.
+   *
+   * @param code code
+   * @return String
+   */
+  public static String mapCodeToSqlState(int code) {
+<span class="nc bnc" id="L291" title="All 134 branches missed.">    switch (code) {</span>
+      case 1022: //ER_DUP_KEY
+<span class="nc" id="L293">        return &quot;23000&quot;;</span>
+      case 1037: //ER_OUTOFMEMORY
+<span class="nc" id="L295">        return &quot;HY001&quot;;</span>
+      case 1038: //ER_OUT_OF_SORTMEMORY
+<span class="nc" id="L297">        return &quot;HY001&quot;;</span>
+      case 1040: //ER_CON_COUNT_ERROR
+<span class="nc" id="L299">        return &quot;08004&quot;;</span>
+      case 1042: //ER_BAD_HOST_ERROR
+<span class="nc" id="L301">        return &quot;08S01&quot;;</span>
+      case 1043: //ER_HANDSHAKE_ERROR
+<span class="nc" id="L303">        return &quot;08S01&quot;;</span>
+      case 1044: //ER_DBACCESS_DENIED_ERROR
+<span class="nc" id="L305">        return &quot;42000&quot;;</span>
+      case 1045: //ER_ACCESS_DENIED_ERROR
+<span class="nc" id="L307">        return &quot;28000&quot;;</span>
+      case 1047: //ER_UNKNOWN_COM_ERROR
+<span class="nc" id="L309">        return &quot;HY000&quot;;</span>
+      case 1050: //ER_TABLE_EXISTS_ERROR
+<span class="nc" id="L311">        return &quot;42S01&quot;;</span>
+      case 1051: //ER_BAD_TABLE_ERROR
+<span class="nc" id="L313">        return &quot;42S02&quot;;</span>
+      case 1052: //ER_NON_UNIQ_ERROR
+<span class="nc" id="L315">        return &quot;23000&quot;;</span>
+      case 1053: //ER_SERVER_SHUTDOWN
+<span class="nc" id="L317">        return &quot;08S01&quot;;</span>
+      case 1054: //ER_BAD_FIELD_ERROR
+<span class="nc" id="L319">        return &quot;42S22&quot;;</span>
+      case 1055: //ER_WRONG_FIELD_WITH_GROUP
+<span class="nc" id="L321">        return &quot;42000&quot;;</span>
+      case 1056: //ER_WRONG_GROUP_FIELD
+<span class="nc" id="L323">        return &quot;42000&quot;;</span>
+      case 1057: //ER_WRONG_SUM_SELECT
+<span class="nc" id="L325">        return &quot;42000&quot;;</span>
+      case 1058: //ER_WRONG_VALUE_COUNT
+<span class="nc" id="L327">        return &quot;21S01&quot;;</span>
+      case 1059: //ER_TOO_LONG_IDENT
+<span class="nc" id="L329">        return &quot;42000&quot;;</span>
+      case 1060: //ER_DUP_FIELDNAME
+<span class="nc" id="L331">        return &quot;42S21&quot;;</span>
+      case 1061: //ER_DUP_KEYNAME
+<span class="nc" id="L333">        return &quot;42000&quot;;</span>
+      case 1062: //ER_DUP_ENTRY
+<span class="nc" id="L335">        return &quot;23000&quot;;</span>
+      case 1063: //ER_WRONG_FIELD_SPEC
+<span class="nc" id="L337">        return &quot;42000&quot;;</span>
+      case 1064: //ER_PARSE_ERROR
+<span class="nc" id="L339">        return &quot;42000&quot;;</span>
+      case 1065: //ER_EMPTY_QUERY
+<span class="nc" id="L341">        return &quot;42000&quot;;</span>
+      case 1066: //ER_NONUNIQ_TABLE
+<span class="nc" id="L343">        return &quot;42000&quot;;</span>
+      case 1067: //ER_INVALID_DEFAULT
+<span class="nc" id="L345">        return &quot;42000&quot;;</span>
+      case 1068: //ER_MULTIPLE_PRI_KEY
+<span class="nc" id="L347">        return &quot;42000&quot;;</span>
+      case 1069: //ER_TOO_MANY_KEYS
+<span class="nc" id="L349">        return &quot;42000&quot;;</span>
+      case 1070: //ER_TOO_MANY_KEY_PARTS
+<span class="nc" id="L351">        return &quot;42000&quot;;</span>
+      case 1071: //ER_TOO_LONG_KEY
+<span class="nc" id="L353">        return &quot;42000&quot;;</span>
+      case 1072: //ER_KEY_COLUMN_DOES_NOT_EXITS
+<span class="nc" id="L355">        return &quot;42000&quot;;</span>
+      case 1073: //ER_BLOB_USED_AS_KEY
+<span class="nc" id="L357">        return &quot;42000&quot;;</span>
+      case 1074: //ER_TOO_BIG_FIELDLENGTH
+<span class="nc" id="L359">        return &quot;42000&quot;;</span>
+      case 1075: //ER_WRONG_AUTO_KEY
+<span class="nc" id="L361">        return &quot;42000&quot;;</span>
+      case 1080: //ER_FORCING_CLOSE
+<span class="nc" id="L363">        return &quot;08S01&quot;;</span>
+      case 1081: //ER_IPSOCK_ERROR
+<span class="nc" id="L365">        return &quot;08S01&quot;;</span>
+      case 1082: //ER_NO_SUCH_INDEX
+<span class="nc" id="L367">        return &quot;42S12&quot;;</span>
+      case 1083: //ER_WRONG_FIELD_TERMINATORS
+<span class="nc" id="L369">        return &quot;42000&quot;;</span>
+      case 1084: //ER_BLOBS_AND_NO_TERMINATED
+<span class="nc" id="L371">        return &quot;42000&quot;;</span>
+      case 1090: //ER_CANT_REMOVE_ALL_FIELDS
+<span class="nc" id="L373">        return &quot;42000&quot;;</span>
+      case 1091: //ER_CANT_DROP_FIELD_OR_KEY
+<span class="nc" id="L375">        return &quot;42000&quot;;</span>
+      case 1101: //ER_BLOB_CANT_HAVE_DEFAULT
+<span class="nc" id="L377">        return &quot;42000&quot;;</span>
+      case 1102: //ER_WRONG_DB_NAME
+<span class="nc" id="L379">        return &quot;42000&quot;;</span>
+      case 1103: //ER_WRONG_TABLE_NAME
+<span class="nc" id="L381">        return &quot;42000&quot;;</span>
+      case 1104: //ER_TOO_BIG_SELECT
+<span class="nc" id="L383">        return &quot;42000&quot;;</span>
+      case 1106: //ER_UNKNOWN_PROCEDURE
+<span class="nc" id="L385">        return &quot;42000&quot;;</span>
+      case 1107: //ER_WRONG_PARAMCOUNT_TO_PROCEDURE
+<span class="nc" id="L387">        return &quot;42000&quot;;</span>
+      case 1109: //ER_UNKNOWN_TABLE
+<span class="nc" id="L389">        return &quot;42S02&quot;;</span>
+      case 1110: //ER_FIELD_SPECIFIED_TWICE
+<span class="nc" id="L391">        return &quot;42000&quot;;</span>
+      case 1112: //ER_UNSUPPORTED_EXTENSION
+<span class="nc" id="L393">        return &quot;42000&quot;;</span>
+      case 1113: //ER_TABLE_MUST_HAVE_COLUMNS
+<span class="nc" id="L395">        return &quot;42000&quot;;</span>
+      case 1115: //ER_UNKNOWN_CHARACTER_SET
+<span class="nc" id="L397">        return &quot;42000&quot;;</span>
+      case 1118: //ER_TOO_BIG_ROWSIZE
+<span class="nc" id="L399">        return &quot;42000&quot;;</span>
+      case 1120: //ER_WRONG_OUTER_JOIN
+<span class="nc" id="L401">        return &quot;42000&quot;;</span>
+      case 1121: //ER_NULL_COLUMN_IN_INDEX
+<span class="nc" id="L403">        return &quot;42000&quot;;</span>
+      case 1129: //ER_HOST_IS_BLOCKED
+<span class="nc" id="L405">        return &quot;HY000&quot;;</span>
+      case 1130: //ER_HOST_NOT_PRIVILEGED
+<span class="nc" id="L407">        return &quot;HY000&quot;;</span>
+      case 1131: //ER_PASSWORD_ANONYMOUS_USER
+<span class="nc" id="L409">        return &quot;42000&quot;;</span>
+      case 1132: //ER_PASSWORD_NOT_ALLOWED
+<span class="nc" id="L411">        return &quot;42000&quot;;</span>
+      case 1133: //ER_PASSWORD_NO_MATCH
+<span class="nc" id="L413">        return &quot;42000&quot;;</span>
+      case 1136: //ER_WRONG_VALUE_COUNT_ON_ROW
+<span class="nc" id="L415">        return &quot;21S01&quot;;</span>
+      case 1138: //ER_INVALID_USE_OF_NULL
+<span class="nc" id="L417">        return &quot;42000&quot;;</span>
+      case 1139: //ER_REGEXP_ERROR
+<span class="nc" id="L419">        return &quot;42000&quot;;</span>
+      case 1140: //ER_MIX_OF_GROUP_FUNC_AND_FIELDS
+<span class="nc" id="L421">        return &quot;42000&quot;;</span>
+      case 1141: //ER_NONEXISTING_GRANT
+<span class="nc" id="L423">        return &quot;42000&quot;;</span>
+      case 1142: //ER_TABLEACCESS_DENIED_ERROR
+<span class="nc" id="L425">        return &quot;42000&quot;;</span>
+      case 1143: //ER_COLUMNACCESS_DENIED_ERROR
+<span class="nc" id="L427">        return &quot;42000&quot;;</span>
+      case 1144: //ER_ILLEGAL_GRANT_FOR_TABLE
+<span class="nc" id="L429">        return &quot;42000&quot;;</span>
+      case 1145: //ER_GRANT_WRONG_HOST_OR_USER
+<span class="nc" id="L431">        return &quot;42000&quot;;</span>
+      case 1146: //ER_NO_SUCH_TABLE
+<span class="nc" id="L433">        return &quot;42S02&quot;;</span>
+      case 1147: //ER_NONEXISTING_TABLE_GRANT
+<span class="nc" id="L435">        return &quot;42000&quot;;</span>
+      case 1148: //ER_NOT_ALLOWED_COMMAND
+<span class="nc" id="L437">        return &quot;42000&quot;;</span>
+      case 1149: //ER_SYNTAX_ERROR
+<span class="nc" id="L439">        return &quot;42000&quot;;</span>
+      case 1152: //ER_ABORTING_CONNECTION
+<span class="nc" id="L441">        return &quot;08S01&quot;;</span>
+      case 1153: //ER_NET_PACKET_TOO_LARGE
+<span class="nc" id="L443">        return &quot;08S01&quot;;</span>
+      case 1154: //ER_NET_READ_ERROR_FROM_PIPE
+<span class="nc" id="L445">        return &quot;08S01&quot;;</span>
+      case 1155: //ER_NET_FCNTL_ERROR
+<span class="nc" id="L447">        return &quot;08S01&quot;;</span>
+      case 1156: //ER_NET_PACKETS_OUT_OF_ORDER
+<span class="nc" id="L449">        return &quot;08S01&quot;;</span>
+      case 1157: //ER_NET_UNCOMPRESS_ERROR
+<span class="nc" id="L451">        return &quot;08S01&quot;;</span>
+      case 1158: //ER_NET_READ_ERROR
+<span class="nc" id="L453">        return &quot;08S01&quot;;</span>
+      case 1159: //ER_NET_READ_INTERRUPTED
+<span class="nc" id="L455">        return &quot;08S01&quot;;</span>
+      case 1160: //ER_NET_ERROR_ON_WRITE
+<span class="nc" id="L457">        return &quot;08S01&quot;;</span>
+      case 1161: //ER_NET_WRITE_INTERRUPTED
+<span class="nc" id="L459">        return &quot;08S01&quot;;</span>
+      case 1162: //ER_TOO_LONG_STRING
+<span class="nc" id="L461">        return &quot;42000&quot;;</span>
+      case 1163: //ER_TABLE_CANT_HANDLE_BLOB
+<span class="nc" id="L463">        return &quot;42000&quot;;</span>
+      case 1164: //ER_TABLE_CANT_HANDLE_AUTO_INCREMENT
+<span class="nc" id="L465">        return &quot;42000&quot;;</span>
+      case 1166: //ER_WRONG_COLUMN_NAME
+<span class="nc" id="L467">        return &quot;42000&quot;;</span>
+      case 1167: //ER_WRONG_KEY_COLUMN
+<span class="nc" id="L469">        return &quot;42000&quot;;</span>
+      case 1169: //ER_DUP_UNIQUE
+<span class="nc" id="L471">        return &quot;23000&quot;;</span>
+      case 1170: //ER_BLOB_KEY_WITHOUT_LENGTH
+<span class="nc" id="L473">        return &quot;42000&quot;;</span>
+      case 1171: //ER_PRIMARY_CANT_HAVE_NULL
+<span class="nc" id="L475">        return &quot;42000&quot;;</span>
+      case 1172: //ER_TOO_MANY_ROWS
+<span class="nc" id="L477">        return &quot;42000&quot;;</span>
+      case 1173: //ER_REQUIRES_PRIMARY_KEY
+<span class="nc" id="L479">        return &quot;42000&quot;;</span>
+      case 1177: //ER_CHECK_NO_SUCH_TABLE
+<span class="nc" id="L481">        return &quot;42000&quot;;</span>
+      case 1178: //ER_CHECK_NOT_IMPLEMENTED
+<span class="nc" id="L483">        return &quot;42000&quot;;</span>
+      case 1179: //ER_CANT_DO_THIS_DURING_AN_TRANSACTION
+<span class="nc" id="L485">        return &quot;25000&quot;;</span>
+      case 1184: //ER_NEW_ABORTING_CONNECTION
+<span class="nc" id="L487">        return &quot;08S01&quot;;</span>
+      case 1189: //ER_MASTER_NET_READ
+<span class="nc" id="L489">        return &quot;08S01&quot;;</span>
+      case 1190: //ER_MASTER_NET_WRITE
+<span class="nc" id="L491">        return &quot;08S01&quot;;</span>
+      case 1203: //ER_TOO_MANY_USER_CONNECTIONS
+<span class="nc" id="L493">        return &quot;42000&quot;;</span>
+      case 1205: //ER_LOCK_WAIT_TIMEOUT
+<span class="nc" id="L495">        return &quot;41000&quot;;</span>
+      case 1207: //ER_READ_ONLY_TRANSACTION
+<span class="nc" id="L497">        return &quot;25000&quot;;</span>
+      case 1211: //ER_NO_PERMISSION_TO_CREATE_USER
+<span class="nc" id="L499">        return &quot;42000&quot;;</span>
+      case 1213: //ER_LOCK_DEADLOCK
+<span class="nc" id="L501">        return &quot;40001&quot;;</span>
+      case 1216: //ER_NO_REFERENCED_ROW
+<span class="nc" id="L503">        return &quot;23000&quot;;</span>
+      case 1217: //ER_ROW_IS_REFERENCED
+<span class="nc" id="L505">        return &quot;23000&quot;;</span>
+      case 1218: //ER_CONNECT_TO_MASTER
+<span class="nc" id="L507">        return &quot;08S01&quot;;</span>
+      case 1222: //ER_WRONG_NUMBER_OF_COLUMNS_IN_SELECT
+<span class="nc" id="L509">        return &quot;21000&quot;;</span>
+      case 1226: //ER_USER_LIMIT_REACHED
+<span class="nc" id="L511">        return &quot;42000&quot;;</span>
+      case 1230: //ER_NO_DEFAULT
+<span class="nc" id="L513">        return &quot;42000&quot;;</span>
+      case 1231: //ER_WRONG_VALUE_FOR_VAR
+<span class="nc" id="L515">        return &quot;42000&quot;;</span>
+      case 1232: //ER_WRONG_TYPE_FOR_VAR
+<span class="nc" id="L517">        return &quot;42000&quot;;</span>
+      case 1234: //ER_CANT_USE_OPTION_HERE
+<span class="nc" id="L519">        return &quot;42000&quot;;</span>
+      case 1235: //ER_NOT_SUPPORTED_YET
+<span class="nc" id="L521">        return &quot;42000&quot;;</span>
+      case 1239: //ER_WRONG_FK_DEF
+<span class="nc" id="L523">        return &quot;42000&quot;;</span>
+      case 1241: //ER_OPERAND_COLUMNS
+<span class="nc" id="L525">        return &quot;21000&quot;;</span>
+      case 1242: //ER_SUBQUERY_NO_1_ROW
+<span class="nc" id="L527">        return &quot;21000&quot;;</span>
+      case 1247: //ER_ILLEGAL_REFERENCE
+<span class="nc" id="L529">        return &quot;42S22&quot;;</span>
+      case 1248: //ER_DERIVED_MUST_HAVE_ALIAS
+<span class="nc" id="L531">        return &quot;42000&quot;;</span>
+      case 1249: //ER_SELECT_REDUCED
+<span class="nc" id="L533">        return &quot;01000&quot;;</span>
+      case 1250: //ER_TABLENAME_NOT_ALLOWED_HERE
+<span class="nc" id="L535">        return &quot;42000&quot;;</span>
+      case 1251: //ER_NOT_SUPPORTED_AUTH_MODE
+<span class="nc" id="L537">        return &quot;08004&quot;;</span>
+      case 1252: //ER_SPATIAL_CANT_HAVE_NULL
+<span class="nc" id="L539">        return &quot;42000&quot;;</span>
+      case 1253: //ER_COLLATION_CHARSET_MISMATCH
+<span class="nc" id="L541">        return &quot;42000&quot;;</span>
+      case 1261: //ER_WARN_TOO_FEW_RECORDS
+<span class="nc" id="L543">        return &quot;01000&quot;;</span>
+      case 1262: //ER_WARN_TOO_MANY_RECORDS
+<span class="nc" id="L545">        return &quot;01000&quot;;</span>
+      case 1263: //ER_WARN_NULL_TO_NOTNULL
+<span class="nc" id="L547">        return &quot;01000&quot;;</span>
+      case 1264: //ER_WARN_DATA_OUT_OF_RANGE
+<span class="nc" id="L549">        return &quot;01000&quot;;</span>
+      case 1265: //ER_WARN_DATA_TRUNCATED
+<span class="nc" id="L551">        return &quot;01000&quot;;</span>
+      case 1280: //ER_WRONG_NAME_FOR_INDEX
+<span class="nc" id="L553">        return &quot;42000&quot;;</span>
+      case 1281: //ER_WRONG_NAME_FOR_CATALOG
+<span class="nc" id="L555">        return &quot;42000&quot;;</span>
+      case 1286: //ER_UNKNOWN_STORAGE_ENGINE
+<span class="nc" id="L557">        return &quot;42000&quot;;</span>
+      default:
+<span class="nc" id="L559">        return null;</span>
+    }
+  }
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

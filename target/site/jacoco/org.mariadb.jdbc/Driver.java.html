@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Driver.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">Driver.java</span></div><h1>Driver.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc;
+
+import java.lang.reflect.Field;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.DriverPropertyInfo;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+import org.mariadb.jdbc.internal.util.DefaultOptions;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.constant.Version;
+
+
+<span class="nc" id="L69">public final class Driver implements java.sql.Driver {</span>
+
+  static {
+    try {
+<span class="nc" id="L73">      DriverManager.registerDriver(new Driver());</span>
+<span class="nc" id="L74">    } catch (SQLException e) {</span>
+<span class="nc" id="L75">      throw new RuntimeException(&quot;Could not register driver&quot;, e);</span>
+<span class="nc" id="L76">    }</span>
+<span class="nc" id="L77">  }</span>
+
+  /**
+   * Connect to the given connection string.
+   *
+   * @param url the url to connect to
+   * @return a connection
+   * @throws SQLException if it is not possible to connect
+   */
+  public Connection connect(final String url, final Properties props) throws SQLException {
+
+<span class="nc" id="L88">    UrlParser urlParser = UrlParser.parse(url, props);</span>
+<span class="nc bnc" id="L89" title="All 4 branches missed.">    if (urlParser == null || urlParser.getHostAddresses() == null) {</span>
+<span class="nc" id="L90">      return null;</span>
+    } else {
+<span class="nc" id="L92">      return MariaDbConnection.newConnection(urlParser, null);</span>
+    }
+
+  }
+
+  /**
+   * returns true if the driver can accept the url.
+   *
+   * @param url the url to test
+   * @return true if the url is valid for this driver
+   */
+  @Override
+  public boolean acceptsURL(String url) {
+<span class="nc" id="L105">    return UrlParser.acceptsUrl(url);</span>
+  }
+
+  /**
+   * Get the property info.
+   *
+   * @param url  the url to get properties for
+   * @param info the info props
+   * @return something - not implemented
+   * @throws SQLException if there is a problem getting the property info
+   */
+  public DriverPropertyInfo[] getPropertyInfo(String url,
+      Properties info)
+      throws SQLException {
+<span class="nc bnc" id="L119" title="All 2 branches missed.">    if (url != null) {</span>
+<span class="nc" id="L120">      UrlParser urlParser = UrlParser.parse(url, info);</span>
+<span class="nc bnc" id="L121" title="All 4 branches missed.">      if (urlParser == null || urlParser.getOptions() == null) {</span>
+<span class="nc" id="L122">        return new DriverPropertyInfo[0];</span>
+      }
+
+<span class="nc" id="L125">      List&lt;DriverPropertyInfo&gt; props = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">      for (DefaultOptions o : DefaultOptions.values()) {</span>
+        try {
+<span class="nc" id="L128">          Field field = Options.class.getField(o.getOptionName());</span>
+<span class="nc" id="L129">          Object value = field.get(urlParser.getOptions());</span>
+<span class="nc" id="L130">          DriverPropertyInfo propertyInfo = new DriverPropertyInfo(field.getName(),</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">              value == null ? null : value.toString());</span>
+<span class="nc" id="L132">          propertyInfo.description = o.getDescription();</span>
+<span class="nc" id="L133">          propertyInfo.required = o.isRequired();</span>
+<span class="nc" id="L134">          props.add(propertyInfo);</span>
+<span class="nc" id="L135">        } catch (NoSuchFieldException | IllegalAccessException e) {</span>
+          //eat error
+<span class="nc" id="L137">        }</span>
+      }
+<span class="nc" id="L139">      return props.toArray(new DriverPropertyInfo[props.size()]);</span>
+    }
+
+<span class="nc" id="L142">    return new DriverPropertyInfo[0];</span>
+  }
+
+  /**
+   * gets the major version of the driver.
+   *
+   * @return the major versions
+   */
+  public int getMajorVersion() {
+<span class="nc" id="L151">    return Version.majorVersion;</span>
+  }
+
+  /**
+   * gets the minor version of the driver.
+   *
+   * @return the minor version
+   */
+  public int getMinorVersion() {
+<span class="nc" id="L160">    return Version.minorVersion;</span>
+  }
+
+  /**
+   * checks if the driver is jdbc compliant (not yet!).
+   *
+   * @return false since the driver is not compliant
+   */
+  public boolean jdbcCompliant() {
+<span class="nc" id="L169">    return false;</span>
+  }
+
+  public java.util.logging.Logger getParentLogger() throws SQLFeatureNotSupportedException {
+<span class="nc" id="L173">    throw new SQLFeatureNotSupportedException(&quot;Use logging parameters for enabling logging.&quot;);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

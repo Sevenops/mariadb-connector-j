@@ -1,0 +1,1923 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractQueryProtocol.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.protocol</a> &gt; <span class="el_source">AbstractQueryProtocol.java</span></div><h1>AbstractQueryProtocol.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.protocol;
+
+import static org.mariadb.jdbc.internal.com.Packet.COM_PING;
+import static org.mariadb.jdbc.internal.com.Packet.COM_QUERY;
+import static org.mariadb.jdbc.internal.com.Packet.COM_RESET_CONNECTION;
+import static org.mariadb.jdbc.internal.com.Packet.COM_STMT_BULK_EXECUTE;
+import static org.mariadb.jdbc.internal.com.Packet.COM_STMT_CLOSE;
+import static org.mariadb.jdbc.internal.com.Packet.COM_STMT_PREPARE;
+import static org.mariadb.jdbc.internal.com.Packet.COM_STMT_SEND_LONG_DATA;
+import static org.mariadb.jdbc.internal.com.Packet.CURSOR_TYPE_NO_CURSOR;
+import static org.mariadb.jdbc.internal.com.Packet.EOF;
+import static org.mariadb.jdbc.internal.com.Packet.ERROR;
+import static org.mariadb.jdbc.internal.com.Packet.LOCAL_INFILE;
+import static org.mariadb.jdbc.internal.com.Packet.OK;
+import static org.mariadb.jdbc.internal.util.SqlStates.CONNECTION_EXCEPTION;
+import static org.mariadb.jdbc.internal.util.SqlStates.FEATURE_NOT_SUPPORTED;
+import static org.mariadb.jdbc.internal.util.SqlStates.INTERRUPTED_EXCEPTION;
+import static org.mariadb.jdbc.internal.util.SqlStates.UNDEFINED_SQLSTATE;
+
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.SocketException;
+import java.net.URL;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.SQLNonTransientConnectionException;
+import java.sql.SQLTimeoutException;
+import java.sql.SQLTransientConnectionException;
+import java.sql.Statement;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.ServiceLoader;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.locks.ReentrantLock;
+import org.mariadb.jdbc.LocalInfileInterceptor;
+import org.mariadb.jdbc.MariaDbConnection;
+import org.mariadb.jdbc.MariaDbStatement;
+import org.mariadb.jdbc.UrlParser;
+import org.mariadb.jdbc.internal.MariaDbServerCapabilities;
+import org.mariadb.jdbc.internal.com.read.Buffer;
+import org.mariadb.jdbc.internal.com.read.ErrorPacket;
+import org.mariadb.jdbc.internal.com.read.dao.Results;
+import org.mariadb.jdbc.internal.com.read.resultset.ColumnInformation;
+import org.mariadb.jdbc.internal.com.read.resultset.SelectResultSet;
+import org.mariadb.jdbc.internal.com.read.resultset.UpdatableResultSet;
+import org.mariadb.jdbc.internal.com.send.ComQuery;
+import org.mariadb.jdbc.internal.com.send.ComStmtExecute;
+import org.mariadb.jdbc.internal.com.send.ComStmtPrepare;
+import org.mariadb.jdbc.internal.com.send.SendChangeDbPacket;
+import org.mariadb.jdbc.internal.com.send.parameters.ParameterHolder;
+import org.mariadb.jdbc.internal.io.output.PacketOutputStream;
+import org.mariadb.jdbc.internal.logging.Logger;
+import org.mariadb.jdbc.internal.logging.LoggerFactory;
+import org.mariadb.jdbc.internal.util.BulkStatus;
+import org.mariadb.jdbc.internal.util.LogQueryTool;
+import org.mariadb.jdbc.internal.util.Utils;
+import org.mariadb.jdbc.internal.util.constant.ServerStatus;
+import org.mariadb.jdbc.internal.util.constant.StateChange;
+import org.mariadb.jdbc.internal.util.dao.ClientPrepareResult;
+import org.mariadb.jdbc.internal.util.dao.PrepareResult;
+import org.mariadb.jdbc.internal.util.dao.ServerPrepareResult;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+import org.mariadb.jdbc.internal.util.exceptions.MaxAllowedPacketException;
+import org.mariadb.jdbc.internal.util.pool.GlobalStateInfo;
+import org.mariadb.jdbc.internal.util.scheduler.SchedulerServiceProviderHolder;
+
+
+public class AbstractQueryProtocol extends AbstractConnectProtocol implements Protocol {
+
+<span class="nc" id="L131">  private static final Logger logger = LoggerFactory.getLogger(AbstractQueryProtocol.class);</span>
+  private static final String CHECK_GALERA_STATE_QUERY = &quot;show status like 'wsrep_local_state'&quot;;
+
+<span class="nc" id="L134">  protected static ThreadPoolExecutor readScheduler = null;</span>
+  private final LogQueryTool logQuery;
+<span class="nc" id="L136">  private int transactionIsolationLevel = 0;</span>
+  private InputStream localInfileInputStream;
+  private long maxRows;  /* max rows returned by a statement */
+<span class="nc" id="L139">  private volatile int statementIdToRelease = -1;</span>
+<span class="nc" id="L140">  private FutureTask activeFutureTask = null;</span>
+  private boolean interrupted;
+  private final List&lt;String&gt; galeraAllowedStates;
+
+  /**
+   * Get a protocol instance.
+   *
+   * @param urlParser connection URL information's
+   * @param lock      the lock for thread synchronisation
+   */
+
+  AbstractQueryProtocol(final UrlParser urlParser, final GlobalStateInfo globalInfo,
+      final ReentrantLock lock) {
+<span class="nc" id="L153">    super(urlParser, globalInfo, lock);</span>
+<span class="nc" id="L154">    logQuery = new LogQueryTool(options);</span>
+<span class="nc bnc" id="L155" title="All 2 branches missed.">    galeraAllowedStates = urlParser.getOptions().galeraAllowedState == null</span>
+<span class="nc" id="L156">        ? Collections.emptyList() :</span>
+<span class="nc" id="L157">        Arrays.asList(urlParser.getOptions().galeraAllowedState.split(&quot;,&quot;));</span>
+<span class="nc" id="L158">  }</span>
+
+  /**
+   * Reset connection state.
+   *
+   * &lt;ol&gt;
+   * &lt;li&gt;Transaction will be rollback&lt;/li&gt;
+   * &lt;li&gt;transaction isolation will be reset&lt;/li&gt;
+   * &lt;li&gt;user variables will be removed&lt;/li&gt;
+   * &lt;li&gt;sessions variables will be reset to global values&lt;/li&gt;
+   * &lt;/ol&gt;
+   *
+   * @throws SQLException if command failed
+   */
+  @Override
+  public void reset() throws SQLException {
+<span class="nc" id="L174">    cmdPrologue();</span>
+    try {
+
+<span class="nc" id="L177">      writer.startPacket(0);</span>
+<span class="nc" id="L178">      writer.write(COM_RESET_CONNECTION);</span>
+<span class="nc" id="L179">      writer.flush();</span>
+<span class="nc" id="L180">      getResult(new Results());</span>
+
+      //clear prepare statement cache
+<span class="nc bnc" id="L183" title="All 4 branches missed.">      if (options.cachePrepStmts &amp;&amp; options.useServerPrepStmts) {</span>
+<span class="nc" id="L184">        serverPrepareStatementCache.clear();</span>
+      }
+
+<span class="nc" id="L187">    } catch (SQLException sqlException) {</span>
+<span class="nc" id="L188">      throw logQuery</span>
+<span class="nc" id="L189">          .exceptionWithQuery(&quot;COM_RESET_CONNECTION failed.&quot;, sqlException, explicitClosed);</span>
+<span class="nc" id="L190">    } catch (IOException e) {</span>
+<span class="nc" id="L191">      throw handleIoException(e);</span>
+<span class="nc" id="L192">    }</span>
+
+<span class="nc" id="L194">  }</span>
+
+  /**
+   * Execute internal query.
+   *
+   * &lt;p&gt; !! will not support multi values queries !! &lt;/p&gt;
+   *
+   * @param sql sql
+   * @throws SQLException in any exception occur
+   */
+  public void executeQuery(final String sql) throws SQLException {
+<span class="nc" id="L205">    executeQuery(isMasterConnection(), new Results(), sql);</span>
+<span class="nc" id="L206">  }</span>
+
+  /**
+   * Execute query directly to outputStream.
+   *
+   * @param mustExecuteOnMaster was intended to be launched on master connection
+   * @param results             result
+   * @param sql                 the query to executeInternal
+   * @throws SQLException exception
+   */
+  @Override
+  public void executeQuery(boolean mustExecuteOnMaster, Results results, final String sql)
+      throws SQLException {
+
+<span class="nc" id="L220">    cmdPrologue();</span>
+    try {
+
+<span class="nc" id="L223">      writer.startPacket(0);</span>
+<span class="nc" id="L224">      writer.write(COM_QUERY);</span>
+<span class="nc" id="L225">      writer.write(sql);</span>
+<span class="nc" id="L226">      writer.flush();</span>
+<span class="nc" id="L227">      getResult(results);</span>
+
+<span class="nc" id="L229">    } catch (SQLException sqlException) {</span>
+<span class="nc bnc" id="L230" title="All 4 branches missed.">      if (&quot;70100&quot;.equals(sqlException.getSQLState()) &amp;&amp; 1927 == sqlException.getErrorCode()) {</span>
+<span class="nc" id="L231">        throw handleIoException(sqlException);</span>
+      }
+<span class="nc" id="L233">      throw logQuery.exceptionWithQuery(sql, sqlException, explicitClosed);</span>
+<span class="nc" id="L234">    } catch (IOException e) {</span>
+<span class="nc" id="L235">      throw handleIoException(e);</span>
+<span class="nc" id="L236">    }</span>
+
+<span class="nc" id="L238">  }</span>
+
+  @Override
+  public void executeQuery(boolean mustExecuteOnMaster, Results results, final String sql,
+      Charset charset) throws SQLException {
+<span class="nc" id="L243">    cmdPrologue();</span>
+    try {
+
+<span class="nc" id="L246">      writer.startPacket(0);</span>
+<span class="nc" id="L247">      writer.write(COM_QUERY);</span>
+<span class="nc" id="L248">      writer.write(sql.getBytes(charset));</span>
+<span class="nc" id="L249">      writer.flush();</span>
+<span class="nc" id="L250">      getResult(results);</span>
+
+<span class="nc" id="L252">    } catch (SQLException sqlException) {</span>
+<span class="nc" id="L253">      throw logQuery.exceptionWithQuery(sql, sqlException, explicitClosed);</span>
+<span class="nc" id="L254">    } catch (IOException e) {</span>
+<span class="nc" id="L255">      throw handleIoException(e);</span>
+<span class="nc" id="L256">    }</span>
+
+<span class="nc" id="L258">  }</span>
+
+
+  /**
+   * Execute a unique clientPrepareQuery.
+   *
+   * @param mustExecuteOnMaster was intended to be launched on master connection
+   * @param results             results
+   * @param clientPrepareResult clientPrepareResult
+   * @param parameters          parameters
+   * @throws SQLException exception
+   */
+  public void executeQuery(boolean mustExecuteOnMaster, Results results,
+      final ClientPrepareResult clientPrepareResult,
+      ParameterHolder[] parameters) throws SQLException {
+<span class="nc" id="L273">    cmdPrologue();</span>
+    try {
+
+<span class="nc bnc" id="L276" title="All 2 branches missed.">      if (clientPrepareResult.getParamCount() == 0 &amp;&amp; !clientPrepareResult</span>
+<span class="nc bnc" id="L277" title="All 2 branches missed.">          .isQueryMultiValuesRewritable()) {</span>
+<span class="nc bnc" id="L278" title="All 2 branches missed.">        if (clientPrepareResult.getQueryParts().size() == 1) {</span>
+<span class="nc" id="L279">          ComQuery.sendDirect(writer, clientPrepareResult.getQueryParts().get(0));</span>
+        } else {
+<span class="nc" id="L281">          ComQuery.sendMultiDirect(writer, clientPrepareResult.getQueryParts());</span>
+        }
+      } else {
+<span class="nc" id="L284">        writer.startPacket(0);</span>
+<span class="nc" id="L285">        ComQuery.sendSubCmd(writer, clientPrepareResult, parameters, -1);</span>
+<span class="nc" id="L286">        writer.flush();</span>
+      }
+<span class="nc" id="L288">      getResult(results);</span>
+
+<span class="nc" id="L290">    } catch (SQLException queryException) {</span>
+<span class="nc" id="L291">      throw logQuery.exceptionWithQuery(parameters, queryException, clientPrepareResult);</span>
+<span class="nc" id="L292">    } catch (IOException e) {</span>
+<span class="nc" id="L293">      throw handleIoException(e);</span>
+<span class="nc" id="L294">    }</span>
+<span class="nc" id="L295">  }</span>
+
+  /**
+   * Execute a unique clientPrepareQuery.
+   *
+   * @param mustExecuteOnMaster was intended to be launched on master connection
+   * @param results             results
+   * @param clientPrepareResult clientPrepareResult
+   * @param parameters          parameters
+   * @param queryTimeout        if timeout is set and must use max_statement_time
+   * @throws SQLException exception
+   */
+  public void executeQuery(boolean mustExecuteOnMaster, Results results,
+      final ClientPrepareResult clientPrepareResult,
+      ParameterHolder[] parameters, int queryTimeout) throws SQLException {
+<span class="nc" id="L310">    cmdPrologue();</span>
+    try {
+
+<span class="nc bnc" id="L313" title="All 2 branches missed.">      if (clientPrepareResult.getParamCount() == 0 &amp;&amp; !clientPrepareResult</span>
+<span class="nc bnc" id="L314" title="All 2 branches missed.">          .isQueryMultiValuesRewritable()) {</span>
+<span class="nc bnc" id="L315" title="All 2 branches missed.">        if (clientPrepareResult.getQueryParts().size() == 1) {</span>
+<span class="nc" id="L316">          ComQuery.sendDirect(writer, clientPrepareResult.getQueryParts().get(0), queryTimeout);</span>
+        } else {
+<span class="nc" id="L318">          ComQuery.sendMultiDirect(writer, clientPrepareResult.getQueryParts(), queryTimeout);</span>
+        }
+      } else {
+<span class="nc" id="L321">        writer.startPacket(0);</span>
+<span class="nc" id="L322">        ComQuery.sendSubCmd(writer, clientPrepareResult, parameters, queryTimeout);</span>
+<span class="nc" id="L323">        writer.flush();</span>
+      }
+<span class="nc" id="L325">      getResult(results);</span>
+
+<span class="nc" id="L327">    } catch (SQLException queryException) {</span>
+<span class="nc" id="L328">      throw logQuery.exceptionWithQuery(parameters, queryException, clientPrepareResult);</span>
+<span class="nc" id="L329">    } catch (IOException e) {</span>
+<span class="nc" id="L330">      throw handleIoException(e);</span>
+<span class="nc" id="L331">    }</span>
+<span class="nc" id="L332">  }</span>
+
+  /**
+   * Execute clientPrepareQuery batch.
+   *
+   * @param mustExecuteOnMaster was intended to be launched on master connection
+   * @param results             results
+   * @param prepareResult       ClientPrepareResult
+   * @param parametersList      List of parameters
+   * @param hasLongData         has parameter with long data (stream)
+   * @throws SQLException exception
+   */
+  public boolean executeBatchClient(boolean mustExecuteOnMaster, Results results,
+      final ClientPrepareResult prepareResult,
+      final List&lt;ParameterHolder[]&gt; parametersList, boolean hasLongData)
+      throws SQLException {
+
+    //***********************************************************************************************************
+    // Multiple solution for batching :
+    // - rewrite as multi-values (only if generated keys are not needed and query can be rewritten)
+    // - multiple INSERT separate by semi-columns
+    // - use pipeline
+    // - use bulk
+    // - one after the other
+    //***********************************************************************************************************
+
+<span class="nc bnc" id="L358" title="All 2 branches missed.">    if (options.rewriteBatchedStatements) {</span>
+<span class="nc bnc" id="L359" title="All 2 branches missed.">      if (prepareResult.isQueryMultiValuesRewritable()</span>
+<span class="nc bnc" id="L360" title="All 2 branches missed.">          &amp;&amp; results.getAutoGeneratedKeys() == Statement.NO_GENERATED_KEYS) {</span>
+
+        //values rewritten in one query :
+        // INSERT INTO X(a,b) VALUES (1,2), (3,4), ...
+<span class="nc" id="L364">        executeBatchRewrite(results, prepareResult, parametersList, true);</span>
+<span class="nc" id="L365">        return true;</span>
+
+<span class="nc bnc" id="L367" title="All 2 branches missed.">      } else if (prepareResult.isQueryMultipleRewritable()) {</span>
+
+<span class="nc bnc" id="L369" title="All 4 branches missed.">        if (options.useBulkStmts</span>
+            &amp;&amp; !hasLongData
+<span class="nc bnc" id="L371" title="All 2 branches missed.">            &amp;&amp; prepareResult.isQueryMultipleRewritable() //INSERT FROM SELECT not allowed</span>
+<span class="nc bnc" id="L372" title="All 2 branches missed.">            &amp;&amp; results.getAutoGeneratedKeys() == Statement.NO_GENERATED_KEYS</span>
+<span class="nc bnc" id="L373" title="All 2 branches missed.">            &amp;&amp; versionGreaterOrEqual(10, 2, 7)</span>
+<span class="nc bnc" id="L374" title="All 2 branches missed.">            &amp;&amp; executeBulkBatch(results, prepareResult.getSql(), null, parametersList)) {</span>
+<span class="nc" id="L375">          return true;</span>
+        }
+
+        //multi rewritten in one query :
+        // INSERT INTO X(a,b) VALUES (1,2);INSERT INTO X(a,b) VALUES (3,4); ...
+<span class="nc" id="L380">        executeBatchRewrite(results, prepareResult, parametersList, false);</span>
+<span class="nc" id="L381">        return true;</span>
+      }
+    }
+
+<span class="nc bnc" id="L385" title="All 4 branches missed.">    if (options.useBulkStmts</span>
+        &amp;&amp; !hasLongData
+<span class="nc bnc" id="L387" title="All 2 branches missed.">        &amp;&amp; results.getAutoGeneratedKeys() == Statement.NO_GENERATED_KEYS</span>
+<span class="nc bnc" id="L388" title="All 2 branches missed.">        &amp;&amp; versionGreaterOrEqual(10, 2, 7)</span>
+<span class="nc bnc" id="L389" title="All 2 branches missed.">        &amp;&amp; executeBulkBatch(results, prepareResult.getSql(), null, parametersList)) {</span>
+<span class="nc" id="L390">      return true;</span>
+    }
+
+<span class="nc bnc" id="L393" title="All 2 branches missed.">    if (options.useBatchMultiSend) {</span>
+      //send by bulk : send data by bulk before reading corresponding results
+<span class="nc" id="L395">      executeBatchMulti(results, prepareResult, parametersList);</span>
+<span class="nc" id="L396">      return true;</span>
+    }
+
+<span class="nc" id="L399">    return false;</span>
+  }
+
+  /**
+   * Execute clientPrepareQuery batch.
+   *
+   * @param results             results
+   * @param sql                 sql command
+   * @param serverPrepareResult prepare result if exist
+   * @param parametersList      List of parameters
+   * @return if executed
+   * @throws SQLException exception
+   */
+  private boolean executeBulkBatch(Results results, String sql,
+      ServerPrepareResult serverPrepareResult,
+      final List&lt;ParameterHolder[]&gt; parametersList) throws SQLException {
+
+    //**************************************************************************************
+    // Ensure BULK can be use :
+    // - server version &gt;= 10.2.7
+    // - no stream
+    // - parameter type doesn't change
+    // - avoid INSERT FROM SELECT
+    //**************************************************************************************
+
+    //ensure that there is no long data and type doesn't change
+<span class="nc" id="L425">    ParameterHolder[] initParameters = parametersList.get(0);</span>
+<span class="nc" id="L426">    int parameterCount = initParameters.length;</span>
+<span class="nc" id="L427">    short[] types = new short[parameterCount];</span>
+<span class="nc bnc" id="L428" title="All 2 branches missed.">    for (int i = 0; i &lt; parameterCount; i++) {</span>
+<span class="nc" id="L429">      types[i] = initParameters[i].getColumnType().getType();</span>
+    }
+
+    //must ensure that data type doesn't change
+<span class="nc bnc" id="L433" title="All 2 branches missed.">    for (ParameterHolder[] parameters : parametersList) {</span>
+<span class="nc bnc" id="L434" title="All 2 branches missed.">      for (int i = 0; i &lt; parameterCount; i++) {</span>
+<span class="nc bnc" id="L435" title="All 2 branches missed.">        if (parameters[i].getColumnType().getType() != types[i]) {</span>
+<span class="nc" id="L436">          return false;</span>
+        }
+      }
+<span class="nc" id="L439">    }</span>
+
+    //any select query is not applicable to bulk
+<span class="nc bnc" id="L442" title="All 2 branches missed.">    if (sql.toLowerCase(Locale.ROOT).contains(&quot;select&quot;)) {</span>
+<span class="nc" id="L443">      return false;</span>
+    }
+
+<span class="nc" id="L446">    cmdPrologue();</span>
+
+<span class="nc" id="L448">    ServerPrepareResult tmpServerPrepareResult = serverPrepareResult;</span>
+    try {
+<span class="nc" id="L450">      SQLException exception = null;</span>
+
+      //**************************************************************************************
+      // send PREPARE if needed
+      //**************************************************************************************
+<span class="nc bnc" id="L455" title="All 2 branches missed.">      if (serverPrepareResult == null) {</span>
+<span class="nc" id="L456">        tmpServerPrepareResult = prepare(sql, true);</span>
+      }
+
+      //**************************************************************************************
+      // send BULK
+      //**************************************************************************************
+      int statementId =
+<span class="nc bnc" id="L463" title="All 2 branches missed.">          tmpServerPrepareResult != null ? tmpServerPrepareResult.getStatementId() : -1;</span>
+
+<span class="nc" id="L465">      byte[] lastCmdData = null;</span>
+<span class="nc" id="L466">      int index = 0;</span>
+<span class="nc" id="L467">      ParameterHolder[] firstParameters = parametersList.get(0);</span>
+
+      do {
+<span class="nc" id="L470">        writer.startPacket(0);</span>
+<span class="nc" id="L471">        writer.write(COM_STMT_BULK_EXECUTE);</span>
+<span class="nc" id="L472">        writer.writeInt(statementId);</span>
+<span class="nc" id="L473">        writer.writeShort((short) 128); //always SEND_TYPES_TO_SERVER</span>
+
+<span class="nc bnc" id="L475" title="All 2 branches missed.">        for (ParameterHolder param : firstParameters) {</span>
+<span class="nc" id="L476">          writer.writeShort(param.getColumnType().getType());</span>
+        }
+
+<span class="nc bnc" id="L479" title="All 2 branches missed.">        if (lastCmdData != null) {</span>
+<span class="nc" id="L480">          writer.checkMaxAllowedLength(lastCmdData.length);</span>
+<span class="nc" id="L481">          writer.write(lastCmdData);</span>
+<span class="nc" id="L482">          writer.mark();</span>
+<span class="nc" id="L483">          index++;</span>
+<span class="nc" id="L484">          lastCmdData = null;</span>
+        }
+
+<span class="nc bnc" id="L487" title="All 2 branches missed.">        for (; index &lt; parametersList.size(); index++) {</span>
+<span class="nc" id="L488">          ParameterHolder[] parameters = parametersList.get(index);</span>
+<span class="nc bnc" id="L489" title="All 2 branches missed.">          for (int i = 0; i &lt; parameterCount; i++) {</span>
+<span class="nc" id="L490">            ParameterHolder holder = parameters[i];</span>
+<span class="nc bnc" id="L491" title="All 2 branches missed.">            if (holder.isNullData()) {</span>
+<span class="nc" id="L492">              writer.write(1); //NULL</span>
+            } else {
+<span class="nc" id="L494">              writer.write(0); //NONE</span>
+<span class="nc" id="L495">              holder.writeBinary(writer);</span>
+            }
+          }
+
+          //if buffer &gt; MAX_ALLOWED_PACKET, flush until last mark.
+<span class="nc bnc" id="L500" title="All 4 branches missed.">          if (writer.exceedMaxLength() &amp;&amp; writer.isMarked()) {</span>
+<span class="nc" id="L501">            writer.flushBufferStopAtMark();</span>
+          }
+
+          //if flushed, quit loop
+<span class="nc bnc" id="L505" title="All 2 branches missed.">          if (writer.bufferIsDataAfterMark()) {</span>
+<span class="nc" id="L506">            break;</span>
+          }
+
+<span class="nc" id="L509">          writer.checkMaxAllowedLength(0);</span>
+<span class="nc" id="L510">          writer.mark();</span>
+        }
+
+<span class="nc bnc" id="L513" title="All 2 branches missed.">        if (writer.bufferIsDataAfterMark()) {</span>
+          //flush has been done
+<span class="nc" id="L515">          lastCmdData = writer.resetMark();</span>
+        } else {
+<span class="nc" id="L517">          writer.flush();</span>
+<span class="nc" id="L518">          writer.resetMark();</span>
+        }
+
+        try {
+<span class="nc" id="L522">          getResult(results);</span>
+<span class="nc" id="L523">        } catch (SQLException sqle) {</span>
+<span class="nc bnc" id="L524" title="All 4 branches missed.">          if (&quot;HY000&quot;.equals(sqle.getSQLState()) &amp;&amp; sqle.getErrorCode() == 1295) {</span>
+            //query contain commands that cannot be handled by BULK protocol
+            // clear error and special error code, so it won't leak anywhere
+            // and wouldn't be misinterpreted as an additional update count
+<span class="nc" id="L528">            results.getCmdInformation().reset();</span>
+<span class="nc" id="L529">            return false;</span>
+          }
+<span class="nc bnc" id="L531" title="All 2 branches missed.">          if (exception == null) {</span>
+<span class="nc" id="L532">            exception = logQuery.exceptionWithQuery(sql, sqle, explicitClosed);</span>
+<span class="nc bnc" id="L533" title="All 2 branches missed.">            if (!options.continueBatchOnError) {</span>
+<span class="nc" id="L534">              throw exception;</span>
+            }
+          }
+<span class="nc" id="L537">        }</span>
+
+<span class="nc bnc" id="L539" title="All 2 branches missed.">      } while (index &lt; parametersList.size() - 1);</span>
+
+<span class="nc bnc" id="L541" title="All 2 branches missed.">      if (lastCmdData != null) {</span>
+<span class="nc" id="L542">        writer.startPacket(0);</span>
+<span class="nc" id="L543">        writer.write(COM_STMT_BULK_EXECUTE);</span>
+<span class="nc" id="L544">        writer.writeInt(statementId);</span>
+<span class="nc" id="L545">        writer.writeShort((byte) 0x80); //always SEND_TYPES_TO_SERVER</span>
+
+<span class="nc bnc" id="L547" title="All 2 branches missed.">        for (ParameterHolder param : firstParameters) {</span>
+<span class="nc" id="L548">          writer.writeShort(param.getColumnType().getType());</span>
+        }
+<span class="nc" id="L550">        writer.write(lastCmdData);</span>
+<span class="nc" id="L551">        writer.flush();</span>
+        try {
+<span class="nc" id="L553">          getResult(results);</span>
+<span class="nc" id="L554">        } catch (SQLException sqle) {</span>
+<span class="nc bnc" id="L555" title="All 4 branches missed.">          if (&quot;HY000&quot;.equals(sqle.getSQLState()) &amp;&amp; sqle.getErrorCode() == 1295) {</span>
+            //query contain SELECT. cannot be handle by BULK protocol
+<span class="nc" id="L557">            return false;</span>
+          }
+<span class="nc bnc" id="L559" title="All 2 branches missed.">          if (exception == null) {</span>
+<span class="nc" id="L560">            exception = logQuery.exceptionWithQuery(sql, sqle, explicitClosed);</span>
+<span class="nc bnc" id="L561" title="All 2 branches missed.">            if (!options.continueBatchOnError) {</span>
+<span class="nc" id="L562">              throw exception;</span>
+            }
+          }
+<span class="nc" id="L565">        }</span>
+      }
+
+<span class="nc bnc" id="L568" title="All 2 branches missed.">      if (exception != null) {</span>
+<span class="nc" id="L569">        throw exception;</span>
+      }
+<span class="nc" id="L571">      results.setRewritten(true);</span>
+<span class="nc" id="L572">      return true;</span>
+
+<span class="nc" id="L574">    } catch (IOException e) {</span>
+<span class="nc" id="L575">      throw handleIoException(e);</span>
+    } finally {
+<span class="nc bnc" id="L577" title="All 4 branches missed.">      if (serverPrepareResult == null &amp;&amp; tmpServerPrepareResult != null) {</span>
+<span class="nc" id="L578">        releasePrepareStatement(tmpServerPrepareResult);</span>
+      }
+<span class="nc" id="L580">      writer.resetMark();</span>
+    }
+  }
+
+  private void initializeBatchReader() {
+<span class="nc bnc" id="L585" title="All 4 branches missed.">    if (options.useBatchMultiSend &amp;&amp; readScheduler == null) {</span>
+<span class="nc" id="L586">      synchronized (AbstractQueryProtocol.class) {</span>
+<span class="nc bnc" id="L587" title="All 2 branches missed.">        if (readScheduler == null) {</span>
+<span class="nc" id="L588">          readScheduler = SchedulerServiceProviderHolder.getBulkScheduler();</span>
+        }
+<span class="nc" id="L590">      }</span>
+    }
+<span class="nc" id="L592">  }</span>
+
+  /**
+   * Execute clientPrepareQuery batch.
+   *
+   * @param results             results
+   * @param clientPrepareResult ClientPrepareResult
+   * @param parametersList      List of parameters
+   * @throws SQLException exception
+   */
+  private void executeBatchMulti(Results results, final ClientPrepareResult clientPrepareResult,
+      final List&lt;ParameterHolder[]&gt; parametersList) throws SQLException {
+
+<span class="nc" id="L605">    cmdPrologue();</span>
+<span class="nc" id="L606">    initializeBatchReader();</span>
+<span class="nc" id="L607">    new AbstractMultiSend(this, writer, results, clientPrepareResult, parametersList) {</span>
+
+      @Override
+      public void sendCmd(PacketOutputStream writer, Results results,
+          List&lt;ParameterHolder[]&gt; parametersList, List&lt;String&gt; queries, int paramCount,
+          BulkStatus status,
+          PrepareResult prepareResult)
+          throws IOException {
+
+<span class="nc" id="L616">        ParameterHolder[] parameters = parametersList.get(status.sendCmdCounter);</span>
+<span class="nc" id="L617">        writer.startPacket(0);</span>
+<span class="nc" id="L618">        ComQuery.sendSubCmd(writer, clientPrepareResult, parameters, -1);</span>
+<span class="nc" id="L619">        writer.flush();</span>
+<span class="nc" id="L620">      }</span>
+
+
+      @Override
+      public SQLException handleResultException(SQLException qex, Results results,
+          List&lt;ParameterHolder[]&gt; parametersList, List&lt;String&gt; queries, int currentCounter,
+          int sendCmdCounter, int paramCount, PrepareResult prepareResult) {
+
+<span class="nc" id="L628">        int counter = results.getCurrentStatNumber() - 1;</span>
+<span class="nc" id="L629">        ParameterHolder[] parameters = parametersList.get(counter);</span>
+<span class="nc" id="L630">        List&lt;byte[]&gt; queryParts = clientPrepareResult.getQueryParts();</span>
+<span class="nc" id="L631">        StringBuilder sql = new StringBuilder(new String(queryParts.get(0)));</span>
+
+<span class="nc bnc" id="L633" title="All 2 branches missed.">        for (int i = 0; i &lt; paramCount; i++) {</span>
+<span class="nc" id="L634">          sql.append(parameters[i].toString()).append(new String(queryParts.get(i + 1)));</span>
+        }
+
+<span class="nc" id="L637">        return logQuery.exceptionWithQuery(sql.toString(), qex, explicitClosed);</span>
+      }
+
+
+      @Override
+      public int getParamCount() {
+<span class="nc" id="L643">        return clientPrepareResult.getQueryParts().size() - 1;</span>
+      }
+
+
+      @Override
+      public int getTotalExecutionNumber() {
+<span class="nc" id="L649">        return parametersList.size();</span>
+      }
+
+<span class="nc" id="L652">    }.executeBatch();</span>
+
+<span class="nc" id="L654">  }</span>
+
+  /**
+   * Execute batch from Statement.executeBatch().
+   *
+   * @param mustExecuteOnMaster was intended to be launched on master connection
+   * @param results             results
+   * @param queries             queries
+   * @throws SQLException if any exception occur
+   */
+  public void executeBatchStmt(boolean mustExecuteOnMaster, Results results,
+      final List&lt;String&gt; queries)
+      throws SQLException {
+<span class="nc" id="L667">    cmdPrologue();</span>
+<span class="nc bnc" id="L668" title="All 2 branches missed.">    if (this.options.rewriteBatchedStatements) {</span>
+
+      //check that queries are rewritable
+<span class="nc" id="L671">      boolean canAggregateSemiColumn = true;</span>
+<span class="nc bnc" id="L672" title="All 2 branches missed.">      for (String query : queries) {</span>
+<span class="nc bnc" id="L673" title="All 2 branches missed.">        if (!ClientPrepareResult.canAggregateSemiColon(query, noBackslashEscapes())) {</span>
+<span class="nc" id="L674">          canAggregateSemiColumn = false;</span>
+<span class="nc" id="L675">          break;</span>
+        }
+<span class="nc" id="L677">      }</span>
+
+<span class="nc bnc" id="L679" title="All 2 branches missed.">      if (isInterrupted()) {</span>
+        //interrupted by timeout, must throw an exception manually
+<span class="nc" id="L681">        throw new SQLTimeoutException(&quot;Timeout during batch execution&quot;);</span>
+      }
+
+<span class="nc bnc" id="L684" title="All 2 branches missed.">      if (canAggregateSemiColumn) {</span>
+<span class="nc" id="L685">        executeBatchAggregateSemiColon(results, queries);</span>
+      } else {
+<span class="nc" id="L687">        executeBatch(results, queries);</span>
+      }
+
+<span class="nc" id="L690">    } else {</span>
+<span class="nc" id="L691">      executeBatch(results, queries);</span>
+    }
+<span class="nc" id="L693">  }</span>
+
+  /**
+   * Execute list of queries not rewritable.
+   *
+   * @param results result object
+   * @param queries list of queries
+   * @throws SQLException exception
+   */
+  private void executeBatch(Results results, final List&lt;String&gt; queries)
+      throws SQLException {
+
+<span class="nc bnc" id="L705" title="All 2 branches missed.">    if (!options.useBatchMultiSend) {</span>
+
+<span class="nc" id="L707">      String sql = null;</span>
+<span class="nc" id="L708">      SQLException exception = null;</span>
+
+<span class="nc bnc" id="L710" title="All 4 branches missed.">      for (int i = 0; i &lt; queries.size() &amp;&amp; !isInterrupted(); i++) {</span>
+
+        try {
+
+<span class="nc" id="L714">          sql = queries.get(i);</span>
+<span class="nc" id="L715">          writer.startPacket(0);</span>
+<span class="nc" id="L716">          writer.write(COM_QUERY);</span>
+<span class="nc" id="L717">          writer.write(sql);</span>
+<span class="nc" id="L718">          writer.flush();</span>
+<span class="nc" id="L719">          getResult(results);</span>
+
+<span class="nc" id="L721">        } catch (SQLException sqlException) {</span>
+<span class="nc bnc" id="L722" title="All 2 branches missed.">          if (exception == null) {</span>
+<span class="nc" id="L723">            exception = logQuery.exceptionWithQuery(sql, sqlException, explicitClosed);</span>
+<span class="nc bnc" id="L724" title="All 2 branches missed.">            if (!options.continueBatchOnError) {</span>
+<span class="nc" id="L725">              throw exception;</span>
+            }
+          }
+<span class="nc" id="L728">        } catch (IOException e) {</span>
+<span class="nc bnc" id="L729" title="All 2 branches missed.">          if (exception == null) {</span>
+<span class="nc" id="L730">            exception = handleIoException(e);</span>
+<span class="nc bnc" id="L731" title="All 2 branches missed.">            if (!options.continueBatchOnError) {</span>
+<span class="nc" id="L732">              throw exception;</span>
+            }
+          }
+<span class="nc" id="L735">        }</span>
+      }
+<span class="nc" id="L737">      stopIfInterrupted();</span>
+
+<span class="nc bnc" id="L739" title="All 2 branches missed.">      if (exception != null) {</span>
+<span class="nc" id="L740">        throw exception;</span>
+      }
+<span class="nc" id="L742">      return;</span>
+    }
+<span class="nc" id="L744">    initializeBatchReader();</span>
+<span class="nc" id="L745">    new AbstractMultiSend(this, writer, results, queries) {</span>
+
+      @Override
+      public void sendCmd(PacketOutputStream pos, Results results,
+          List&lt;ParameterHolder[]&gt; parametersList, List&lt;String&gt; queries, int paramCount,
+          BulkStatus status,
+          PrepareResult prepareResult)
+          throws IOException {
+
+<span class="nc" id="L754">        String sql = queries.get(status.sendCmdCounter);</span>
+<span class="nc" id="L755">        pos.startPacket(0);</span>
+<span class="nc" id="L756">        pos.write(COM_QUERY);</span>
+<span class="nc" id="L757">        pos.write(sql);</span>
+<span class="nc" id="L758">        pos.flush();</span>
+<span class="nc" id="L759">      }</span>
+
+      @Override
+      public SQLException handleResultException(SQLException qex, Results results,
+          List&lt;ParameterHolder[]&gt; parametersList, List&lt;String&gt; queries, int currentCounter,
+          int sendCmdCounter, int paramCount, PrepareResult prepareResult) {
+
+<span class="nc" id="L766">        String sql = queries.get(currentCounter + sendCmdCounter);</span>
+<span class="nc" id="L767">        return logQuery.exceptionWithQuery(sql, qex, explicitClosed);</span>
+
+      }
+
+      @Override
+      public int getParamCount() {
+<span class="nc" id="L773">        return -1;</span>
+      }
+
+      @Override
+      public int getTotalExecutionNumber() {
+<span class="nc" id="L778">        return queries.size();</span>
+      }
+
+<span class="nc" id="L781">    }.executeBatch();</span>
+
+<span class="nc" id="L783">  }</span>
+
+  /**
+   * Prepare query on server side. Will permit to know the parameter number of the query, and permit
+   * to send only the data on next results.
+   *
+   * &lt;p&gt;For failover, two additional information are in the result-set object : - current
+   * connection : Since server maintain a state of this prepare statement, all query will be
+   * executed on this particular connection. - executeOnMaster : state of current connection when
+   * creating this prepareStatement (if was on master, will only be executed on master. If was on a
+   * slave, can be execute temporary on master, but we keep this flag, so when a slave is connected
+   * back to relaunch this query on slave)&lt;/p&gt;
+   *
+   * @param sql             the query
+   * @param executeOnMaster state of current connection when creating this prepareStatement
+   * @return a ServerPrepareResult object that contain prepare result information.
+   * @throws SQLException if any error occur on connection.
+   */
+  @Override
+  public ServerPrepareResult prepare(String sql, boolean executeOnMaster) throws SQLException {
+
+<span class="nc" id="L804">    cmdPrologue();</span>
+<span class="nc" id="L805">    lock.lock();</span>
+    try {
+<span class="nc bnc" id="L807" title="All 4 branches missed.">      if (options.cachePrepStmts &amp;&amp; options.useServerPrepStmts) {</span>
+
+<span class="nc" id="L809">        ServerPrepareResult pr = serverPrepareStatementCache.get(database + &quot;-&quot; + sql);</span>
+
+<span class="nc bnc" id="L811" title="All 4 branches missed.">        if (pr != null &amp;&amp; pr.incrementShareCounter()) {</span>
+<span class="nc" id="L812">          return pr;</span>
+        }
+
+      }
+<span class="nc" id="L816">      writer.startPacket(0);</span>
+<span class="nc" id="L817">      writer.write(COM_STMT_PREPARE);</span>
+<span class="nc" id="L818">      writer.write(sql);</span>
+<span class="nc" id="L819">      writer.flush();</span>
+
+<span class="nc" id="L821">      ComStmtPrepare comStmtPrepare = new ComStmtPrepare(this, sql);</span>
+<span class="nc" id="L822">      return comStmtPrepare.read(reader, eofDeprecated);</span>
+<span class="nc" id="L823">    } catch (IOException e) {</span>
+<span class="nc" id="L824">      throw handleIoException(e);</span>
+    } finally {
+<span class="nc" id="L826">      lock.unlock();</span>
+    }
+  }
+
+  /**
+   * Execute list of queries. This method is used when using text batch statement and using
+   * rewriting (allowMultiQueries || rewriteBatchedStatements). queries will be send to server
+   * according to max_allowed_packet size.
+   *
+   * @param results result object
+   * @param queries list of queries
+   * @throws SQLException exception
+   */
+  private void executeBatchAggregateSemiColon(Results results, final List&lt;String&gt; queries)
+      throws SQLException {
+
+<span class="nc" id="L842">    String firstSql = null;</span>
+<span class="nc" id="L843">    int currentIndex = 0;</span>
+<span class="nc" id="L844">    int totalQueries = queries.size();</span>
+<span class="nc" id="L845">    SQLException exception = null;</span>
+
+    do {
+
+      try {
+
+<span class="nc" id="L851">        firstSql = queries.get(currentIndex++);</span>
+
+<span class="nc bnc" id="L853" title="All 2 branches missed.">        if (totalQueries == 1) {</span>
+<span class="nc" id="L854">          writer.startPacket(0);</span>
+<span class="nc" id="L855">          writer.write(COM_QUERY);</span>
+<span class="nc" id="L856">          writer.write(firstSql);</span>
+<span class="nc" id="L857">          writer.flush();</span>
+        } else {
+<span class="nc" id="L859">          currentIndex = ComQuery</span>
+<span class="nc" id="L860">              .sendBatchAggregateSemiColon(writer, firstSql, queries, currentIndex);</span>
+        }
+<span class="nc" id="L862">        getResult(results);</span>
+
+<span class="nc" id="L864">      } catch (SQLException sqlException) {</span>
+<span class="nc bnc" id="L865" title="All 2 branches missed.">        if (exception == null) {</span>
+<span class="nc" id="L866">          exception = logQuery.exceptionWithQuery(firstSql, sqlException, explicitClosed);</span>
+<span class="nc bnc" id="L867" title="All 2 branches missed.">          if (!options.continueBatchOnError) {</span>
+<span class="nc" id="L868">            throw exception;</span>
+          }
+        }
+<span class="nc" id="L871">      } catch (IOException e) {</span>
+<span class="nc" id="L872">        throw handleIoException(e);</span>
+<span class="nc" id="L873">      }</span>
+<span class="nc" id="L874">      stopIfInterrupted();</span>
+
+<span class="nc bnc" id="L876" title="All 2 branches missed.">    } while (currentIndex &lt; totalQueries);</span>
+
+<span class="nc bnc" id="L878" title="All 2 branches missed.">    if (exception != null) {</span>
+<span class="nc" id="L879">      throw exception;</span>
+    }
+<span class="nc" id="L881">  }</span>
+
+  /**
+   * Specific execution for batch rewrite that has specific query for memory.
+   *
+   * @param results       result
+   * @param prepareResult prepareResult
+   * @param parameterList parameters
+   * @param rewriteValues is rewritable flag
+   * @throws SQLException exception
+   */
+  private void executeBatchRewrite(Results results,
+      final ClientPrepareResult prepareResult, List&lt;ParameterHolder[]&gt; parameterList,
+      boolean rewriteValues) throws SQLException {
+
+<span class="nc" id="L896">    cmdPrologue();</span>
+
+    ParameterHolder[] parameters;
+<span class="nc" id="L899">    int currentIndex = 0;</span>
+<span class="nc" id="L900">    int totalParameterList = parameterList.size();</span>
+
+    try {
+
+      do {
+
+<span class="nc" id="L906">        currentIndex = ComQuery.sendRewriteCmd(writer, prepareResult.getQueryParts(), currentIndex,</span>
+<span class="nc" id="L907">            prepareResult.getParamCount(), parameterList, rewriteValues);</span>
+<span class="nc" id="L908">        getResult(results);</span>
+
+<span class="nc bnc" id="L910" title="All 2 branches missed.">        if (Thread.currentThread().isInterrupted()) {</span>
+<span class="nc" id="L911">          throw new SQLException(&quot;Interrupted during batch&quot;, INTERRUPTED_EXCEPTION.getSqlState(),</span>
+              -1);
+        }
+
+<span class="nc bnc" id="L915" title="All 2 branches missed.">      } while (currentIndex &lt; totalParameterList);</span>
+
+<span class="nc" id="L917">    } catch (SQLException sqlEx) {</span>
+<span class="nc" id="L918">      throw logQuery.exceptionWithQuery(sqlEx, prepareResult);</span>
+<span class="nc" id="L919">    } catch (IOException e) {</span>
+<span class="nc" id="L920">      throw handleIoException(e);</span>
+    } finally {
+<span class="nc" id="L922">      results.setRewritten(rewriteValues);</span>
+    }
+<span class="nc" id="L924">  }</span>
+
+  /**
+   * Execute Prepare if needed, and execute COM_STMT_EXECUTE queries in batch.
+   *
+   * @param mustExecuteOnMaster must normally be executed on master connection
+   * @param serverPrepareResult prepare result. can be null if not prepared.
+   * @param results             execution results
+   * @param sql                 sql query if needed to be prepared
+   * @param parametersList      parameter list
+   * @param hasLongData         has long data (stream)
+   * @return executed
+   * @throws SQLException if parameter error or connection error occur.
+   */
+  public boolean executeBatchServer(boolean mustExecuteOnMaster,
+      ServerPrepareResult serverPrepareResult,
+      Results results, String sql, final List&lt;ParameterHolder[]&gt; parametersList,
+      boolean hasLongData) throws SQLException {
+
+<span class="nc" id="L943">    cmdPrologue();</span>
+
+<span class="nc bnc" id="L945" title="All 4 branches missed.">    if (options.useBulkStmts</span>
+        &amp;&amp; !hasLongData
+<span class="nc bnc" id="L947" title="All 2 branches missed.">        &amp;&amp; results.getAutoGeneratedKeys() == Statement.NO_GENERATED_KEYS</span>
+<span class="nc bnc" id="L948" title="All 2 branches missed.">        &amp;&amp; versionGreaterOrEqual(10, 2, 7)</span>
+<span class="nc bnc" id="L949" title="All 2 branches missed.">        &amp;&amp; executeBulkBatch(results, sql, serverPrepareResult, parametersList)) {</span>
+<span class="nc" id="L950">      return true;</span>
+    }
+
+<span class="nc bnc" id="L953" title="All 2 branches missed.">    if (!options.useBatchMultiSend) {</span>
+<span class="nc" id="L954">      return false;</span>
+    }
+<span class="nc" id="L956">    initializeBatchReader();</span>
+<span class="nc" id="L957">    new AbstractMultiSend(this, writer, results, serverPrepareResult, parametersList, true, sql) {</span>
+      @Override
+      public void sendCmd(PacketOutputStream writer, Results results,
+          List&lt;ParameterHolder[]&gt; parametersList, List&lt;String&gt; queries, int paramCount,
+          BulkStatus status,
+          PrepareResult prepareResult)
+          throws SQLException, IOException {
+
+<span class="nc" id="L965">        ParameterHolder[] parameters = parametersList.get(status.sendCmdCounter);</span>
+
+        //validate parameter set
+<span class="nc bnc" id="L968" title="All 2 branches missed.">        if (parameters.length &lt; paramCount) {</span>
+<span class="nc" id="L969">          throw new SQLException(&quot;Parameter at position &quot; + (paramCount - 1) + &quot; is not set&quot;,</span>
+              &quot;07004&quot;);
+        }
+
+        //send binary data in a separate stream
+<span class="nc bnc" id="L974" title="All 2 branches missed.">        for (int i = 0; i &lt; paramCount; i++) {</span>
+<span class="nc bnc" id="L975" title="All 2 branches missed.">          if (parameters[i].isLongData()) {</span>
+<span class="nc" id="L976">            writer.startPacket(0);</span>
+<span class="nc" id="L977">            writer.write(COM_STMT_SEND_LONG_DATA);</span>
+<span class="nc" id="L978">            writer.writeInt(statementId);</span>
+<span class="nc" id="L979">            writer.writeShort((short) i);</span>
+<span class="nc" id="L980">            parameters[i].writeBinary(writer);</span>
+<span class="nc" id="L981">            writer.flush();</span>
+          }
+        }
+
+<span class="nc" id="L985">        writer.startPacket(0);</span>
+<span class="nc" id="L986">        ComStmtExecute.writeCmd(statementId, parameters, paramCount, parameterTypeHeader, writer,</span>
+            CURSOR_TYPE_NO_CURSOR);
+<span class="nc" id="L988">        writer.flush();</span>
+<span class="nc" id="L989">      }</span>
+
+      @Override
+      public SQLException handleResultException(SQLException qex, Results results,
+          List&lt;ParameterHolder[]&gt; parametersList, List&lt;String&gt; queries, int currentCounter,
+          int sendCmdCounter, int paramCount, PrepareResult prepareResult) {
+<span class="nc" id="L995">        return logQuery.exceptionWithQuery(qex, prepareResult);</span>
+      }
+
+      @Override
+      public int getParamCount() {
+<span class="nc bnc" id="L1000" title="All 2 branches missed.">        return getPrepareResult() == null ? parametersList.get(0).length</span>
+<span class="nc" id="L1001">            : ((ServerPrepareResult) getPrepareResult()).getParameters().length;</span>
+      }
+
+      @Override
+      public int getTotalExecutionNumber() {
+<span class="nc" id="L1006">        return parametersList.size();</span>
+      }
+
+<span class="nc" id="L1009">    }.executeBatch();</span>
+<span class="nc" id="L1010">    return true;</span>
+  }
+
+  /**
+   * Execute a query that is already prepared.
+   *
+   * @param mustExecuteOnMaster must execute on master
+   * @param serverPrepareResult prepare result
+   * @param results             execution result
+   * @param parameters          parameters
+   * @throws SQLException exception
+   */
+  @Override
+  public void executePreparedQuery(boolean mustExecuteOnMaster,
+      ServerPrepareResult serverPrepareResult, Results results,
+      ParameterHolder[] parameters)
+      throws SQLException {
+
+<span class="nc" id="L1028">    cmdPrologue();</span>
+
+    try {
+
+<span class="nc" id="L1032">      int parameterCount = serverPrepareResult.getParameters().length;</span>
+
+      //send binary data in a separate stream
+<span class="nc bnc" id="L1035" title="All 2 branches missed.">      for (int i = 0; i &lt; parameterCount; i++) {</span>
+<span class="nc bnc" id="L1036" title="All 2 branches missed.">        if (parameters[i].isLongData()) {</span>
+<span class="nc" id="L1037">          writer.startPacket(0);</span>
+<span class="nc" id="L1038">          writer.write(COM_STMT_SEND_LONG_DATA);</span>
+<span class="nc" id="L1039">          writer.writeInt(serverPrepareResult.getStatementId());</span>
+<span class="nc" id="L1040">          writer.writeShort((short) i);</span>
+<span class="nc" id="L1041">          parameters[i].writeBinary(writer);</span>
+<span class="nc" id="L1042">          writer.flush();</span>
+        }
+      }
+
+      //send execute query
+<span class="nc" id="L1047">      ComStmtExecute.send(writer, serverPrepareResult.getStatementId(), parameters,</span>
+<span class="nc" id="L1048">              parameterCount, serverPrepareResult.getParameterTypeHeader(), CURSOR_TYPE_NO_CURSOR);</span>
+<span class="nc" id="L1049">      getResult(results);</span>
+
+<span class="nc" id="L1051">    } catch (SQLException qex) {</span>
+<span class="nc" id="L1052">      throw logQuery.exceptionWithQuery(parameters, qex, serverPrepareResult);</span>
+<span class="nc" id="L1053">    } catch (IOException e) {</span>
+<span class="nc" id="L1054">      throw handleIoException(e);</span>
+<span class="nc" id="L1055">    }</span>
+<span class="nc" id="L1056">  }</span>
+
+  /**
+   * Rollback transaction.
+   */
+  public void rollback() throws SQLException {
+
+<span class="nc" id="L1063">    cmdPrologue();</span>
+
+<span class="nc" id="L1065">    lock.lock();</span>
+    try {
+
+<span class="nc bnc" id="L1068" title="All 2 branches missed.">      if (inTransaction()) {</span>
+<span class="nc" id="L1069">        executeQuery(&quot;ROLLBACK&quot;);</span>
+      }
+
+<span class="nc" id="L1072">    } catch (Exception e) {</span>
+      /* eat exception */
+    } finally {
+<span class="nc" id="L1075">      lock.unlock();</span>
+    }
+<span class="nc" id="L1077">  }</span>
+
+  /**
+   * Force release of prepare statement that are not used. This method will be call when adding a
+   * new prepare statement in cache, so the packet can be send to server without problem.
+   *
+   * @param statementId prepared statement Id to remove.
+   * @return true if successfully released
+   * @throws SQLException if connection exception.
+   */
+  public boolean forceReleasePrepareStatement(int statementId) throws SQLException {
+
+<span class="nc bnc" id="L1089" title="All 2 branches missed.">    if (lock.tryLock()) {</span>
+
+      try {
+
+<span class="nc" id="L1093">        checkClose();</span>
+
+        try {
+<span class="nc" id="L1096">          writer.startPacket(0);</span>
+<span class="nc" id="L1097">          writer.write(COM_STMT_CLOSE);</span>
+<span class="nc" id="L1098">          writer.writeInt(statementId);</span>
+<span class="nc" id="L1099">          writer.flush();</span>
+<span class="nc" id="L1100">          return true;</span>
+<span class="nc" id="L1101">        } catch (IOException e) {</span>
+<span class="nc" id="L1102">          connected = false;</span>
+<span class="nc" id="L1103">          throw new SQLException(&quot;Could not deallocate query: &quot; + e.getMessage(),</span>
+<span class="nc" id="L1104">              CONNECTION_EXCEPTION.getSqlState(), e);</span>
+        }
+
+      } finally {
+<span class="nc" id="L1108">        lock.unlock();</span>
+      }
+
+    } else {
+      //lock is used by another thread (bulk reading)
+<span class="nc" id="L1113">      statementIdToRelease = statementId;</span>
+    }
+
+<span class="nc" id="L1116">    return false;</span>
+  }
+
+  /**
+   * Force release of prepare statement that are not used. This permit to deallocate a statement
+   * that cannot be release due to multi-thread use.
+   *
+   * @throws SQLException if connection occur
+   */
+  public void forceReleaseWaitingPrepareStatement() throws SQLException {
+<span class="nc bnc" id="L1126" title="All 4 branches missed.">    if (statementIdToRelease != -1 &amp;&amp; forceReleasePrepareStatement(statementIdToRelease)) {</span>
+<span class="nc" id="L1127">      statementIdToRelease = -1;</span>
+    }
+<span class="nc" id="L1129">  }</span>
+
+  @Override
+  public boolean ping() throws SQLException {
+
+<span class="nc" id="L1134">    cmdPrologue();</span>
+<span class="nc" id="L1135">    lock.lock();</span>
+    try {
+
+<span class="nc" id="L1138">      writer.startPacket(0);</span>
+<span class="nc" id="L1139">      writer.write(COM_PING);</span>
+<span class="nc" id="L1140">      writer.flush();</span>
+
+<span class="nc" id="L1142">      Buffer buffer = reader.getPacket(true);</span>
+<span class="nc bnc" id="L1143" title="All 2 branches missed.">      return buffer.getByteAt(0) == OK;</span>
+
+<span class="nc" id="L1145">    } catch (IOException e) {</span>
+<span class="nc" id="L1146">      connected = false;</span>
+<span class="nc" id="L1147">      throw new SQLException(&quot;Could not ping: &quot; + e.getMessage(),</span>
+<span class="nc" id="L1148">          CONNECTION_EXCEPTION.getSqlState(), e);</span>
+    } finally {
+<span class="nc" id="L1150">      lock.unlock();</span>
+    }
+  }
+
+  /**
+   * Check that connection is valid. !! careful, timeout is in milliseconds,
+   * connection.isValid(timeout) is in seconds !!
+   *
+   * @param timeout timeout in milliseconds
+   * @return true is valid
+   * @throws SQLException if any error occur
+   */
+  @Override
+  public boolean isValid(int timeout) throws SQLException {
+
+<span class="nc" id="L1165">    int initialTimeout = -1;</span>
+    try {
+<span class="nc" id="L1167">      initialTimeout = socket.getSoTimeout();</span>
+<span class="nc bnc" id="L1168" title="All 2 branches missed.">      if (initialTimeout == 0) {</span>
+<span class="nc" id="L1169">        socket.setSoTimeout(timeout);</span>
+      }
+<span class="nc bnc" id="L1171" title="All 4 branches missed.">      if (isMasterConnection() &amp;&amp; !galeraAllowedStates.isEmpty()) {</span>
+        //this is a galera node.
+        //checking not only that node is responding, but that galera state is allowed.
+<span class="nc" id="L1174">        Results results = new Results();</span>
+<span class="nc" id="L1175">        executeQuery(true, results, CHECK_GALERA_STATE_QUERY);</span>
+<span class="nc" id="L1176">        results.commandEnd();</span>
+<span class="nc" id="L1177">        ResultSet rs = results.getResultSet();</span>
+
+<span class="nc bnc" id="L1179" title="All 6 branches missed.">        return rs != null &amp;&amp; rs.next() &amp;&amp; galeraAllowedStates.contains(rs.getString(2));</span>
+      }
+
+<span class="nc" id="L1182">      return ping();</span>
+
+<span class="nc" id="L1184">    } catch (SocketException socketException) {</span>
+<span class="nc" id="L1185">      logger.trace(&quot;Connection is not valid&quot;, socketException);</span>
+<span class="nc" id="L1186">      connected = false;</span>
+<span class="nc" id="L1187">      return false;</span>
+    } finally {
+
+      //set back initial socket timeout
+      try {
+<span class="nc bnc" id="L1192" title="All 2 branches missed.">        if (initialTimeout != -1) {</span>
+<span class="nc" id="L1193">          socket.setSoTimeout(initialTimeout);</span>
+        }
+<span class="nc" id="L1195">      } catch (SocketException socketException) {</span>
+<span class="nc" id="L1196">        logger.warn(&quot;Could not set socket timeout back to &quot; + initialTimeout, socketException);</span>
+<span class="nc" id="L1197">        connected = false;</span>
+        //eat
+<span class="nc" id="L1199">      }</span>
+    }
+  }
+
+  @Override
+  public String getCatalog() throws SQLException {
+
+<span class="nc bnc" id="L1206" title="All 2 branches missed.">    if ((serverCapabilities &amp; MariaDbServerCapabilities.CLIENT_SESSION_TRACK) != 0) {</span>
+      //client session track return empty value, not null value. Java require sending null if empty
+<span class="nc bnc" id="L1208" title="All 4 branches missed.">      if (database != null &amp;&amp; database.isEmpty()) {</span>
+<span class="nc" id="L1209">        return null;</span>
+      }
+<span class="nc" id="L1211">      return database;</span>
+    }
+
+<span class="nc" id="L1214">    cmdPrologue();</span>
+<span class="nc" id="L1215">    lock.lock();</span>
+    try {
+<span class="nc" id="L1217">      Results results = new Results();</span>
+<span class="nc" id="L1218">      executeQuery(isMasterConnection(), results, &quot;select database()&quot;);</span>
+<span class="nc" id="L1219">      results.commandEnd();</span>
+<span class="nc" id="L1220">      ResultSet rs = results.getResultSet();</span>
+<span class="nc bnc" id="L1221" title="All 2 branches missed.">      if (rs.next()) {</span>
+<span class="nc" id="L1222">        this.database = rs.getString(1);</span>
+<span class="nc" id="L1223">        return database;</span>
+      }
+<span class="nc" id="L1225">      return null;</span>
+    } finally {
+<span class="nc" id="L1227">      lock.unlock();</span>
+    }
+  }
+
+  @Override
+  public void setCatalog(final String database) throws SQLException {
+
+<span class="nc" id="L1234">    cmdPrologue();</span>
+
+<span class="nc" id="L1236">    lock.lock();</span>
+    try {
+
+<span class="nc" id="L1239">      SendChangeDbPacket.send(writer, database);</span>
+<span class="nc" id="L1240">      final Buffer buffer = reader.getPacket(true);</span>
+
+<span class="nc bnc" id="L1242" title="All 2 branches missed.">      if (buffer.getByteAt(0) == ERROR) {</span>
+<span class="nc" id="L1243">        final ErrorPacket ep = new ErrorPacket(buffer);</span>
+<span class="nc" id="L1244">        throw new SQLException(&quot;Could not select database '&quot; + database + &quot;' : &quot; + ep.getMessage(),</span>
+<span class="nc" id="L1245">            ep.getSqlState(), ep.getErrorNumber());</span>
+      }
+
+<span class="nc" id="L1248">      this.database = database;</span>
+
+<span class="nc" id="L1250">    } catch (IOException e) {</span>
+<span class="nc" id="L1251">      throw handleIoException(e);</span>
+    } finally {
+<span class="nc" id="L1253">      lock.unlock();</span>
+    }
+<span class="nc" id="L1255">  }</span>
+
+  @Override
+  public void resetDatabase() throws SQLException {
+<span class="nc bnc" id="L1259" title="All 2 branches missed.">    if (!database.equals(urlParser.getDatabase())) {</span>
+<span class="nc" id="L1260">      setCatalog(urlParser.getDatabase());</span>
+    }
+<span class="nc" id="L1262">  }</span>
+
+  /**
+   * Cancels the current query - clones the current protocol and executes a query using the new
+   * connection.
+   *
+   * @throws SQLException never thrown
+   */
+  @Override
+  public void cancelCurrentQuery() throws SQLException {
+<span class="nc" id="L1272">    try (MasterProtocol copiedProtocol = new MasterProtocol(urlParser, new GlobalStateInfo(),</span>
+        new ReentrantLock())) {
+<span class="nc" id="L1274">      copiedProtocol.setHostAddress(getHostAddress());</span>
+<span class="nc" id="L1275">      copiedProtocol.connect();</span>
+      //no lock, because there is already a query running that possessed the lock.
+<span class="nc" id="L1277">      copiedProtocol.executeQuery(&quot;KILL QUERY &quot; + serverThreadId);</span>
+    }
+<span class="nc" id="L1279">    interrupted = true;</span>
+<span class="nc" id="L1280">  }</span>
+
+  /**
+   * Get current autocommit status.
+   *
+   * @return autocommit status
+   */
+  @Override
+  public boolean getAutocommit() {
+<span class="nc bnc" id="L1289" title="All 2 branches missed.">    return ((serverStatus &amp; ServerStatus.AUTOCOMMIT) != 0);</span>
+  }
+
+  @Override
+  public boolean inTransaction() {
+<span class="nc bnc" id="L1294" title="All 2 branches missed.">    return ((serverStatus &amp; ServerStatus.IN_TRANSACTION) != 0);</span>
+  }
+
+  public void closeExplicit() {
+<span class="nc" id="L1298">    this.explicitClosed = true;</span>
+<span class="nc" id="L1299">    close();</span>
+<span class="nc" id="L1300">  }</span>
+
+  /**
+   * Deallocate prepare statement if not used anymore.
+   *
+   * @param serverPrepareResult allocation result
+   * @throws SQLException if de-allocation failed.
+   */
+  @Override
+  public void releasePrepareStatement(ServerPrepareResult serverPrepareResult) throws SQLException {
+    //If prepared cache is enable, the ServerPrepareResult can be shared in many PrepStatement,
+    //so synchronised use count indicator will be decrement.
+<span class="nc" id="L1312">    serverPrepareResult.decrementShareCounter();</span>
+
+    //deallocate from server if not cached
+<span class="nc bnc" id="L1315" title="All 2 branches missed.">    if (serverPrepareResult.canBeDeallocate()) {</span>
+<span class="nc" id="L1316">      forceReleasePrepareStatement(serverPrepareResult.getStatementId());</span>
+    }
+<span class="nc" id="L1318">  }</span>
+
+  public long getMaxRows() {
+<span class="nc" id="L1321">    return maxRows;</span>
+  }
+
+  @Override
+  public void setMaxRows(long max) throws SQLException {
+<span class="nc bnc" id="L1326" title="All 2 branches missed.">    if (maxRows != max) {</span>
+<span class="nc bnc" id="L1327" title="All 2 branches missed.">      if (max == 0) {</span>
+<span class="nc" id="L1328">        executeQuery(&quot;set @@SQL_SELECT_LIMIT=DEFAULT&quot;);</span>
+      } else {
+<span class="nc" id="L1330">        executeQuery(&quot;set @@SQL_SELECT_LIMIT=&quot; + max);</span>
+      }
+<span class="nc" id="L1332">      maxRows = max;</span>
+    }
+<span class="nc" id="L1334">  }</span>
+
+  @Override
+  public void setLocalInfileInputStream(InputStream inputStream) {
+<span class="nc" id="L1338">    this.localInfileInputStream = inputStream;</span>
+<span class="nc" id="L1339">  }</span>
+
+  /**
+   * Returns the connection timeout in milliseconds.
+   *
+   * @return the connection timeout in milliseconds.
+   * @throws SocketException if there is an error in the underlying protocol, such as a TCP error.
+   */
+  @Override
+  public int getTimeout() throws SocketException {
+<span class="nc" id="L1349">    return this.socket.getSoTimeout();</span>
+  }
+
+  /**
+   * Sets the connection timeout.
+   *
+   * @param timeout the timeout, in milliseconds
+   * @throws SocketException if there is an error in the underlying protocol, such as a TCP error.
+   */
+  @Override
+  public void setTimeout(int timeout) throws SocketException {
+<span class="nc" id="L1360">    lock.lock();</span>
+    try {
+<span class="nc" id="L1362">      this.socket.setSoTimeout(timeout);</span>
+    } finally {
+<span class="nc" id="L1364">      lock.unlock();</span>
+    }
+<span class="nc" id="L1366">  }</span>
+
+  /**
+   * Set transaction isolation.
+   *
+   * @param level transaction level.
+   * @throws SQLException if transaction level is unknown
+   */
+  public void setTransactionIsolation(final int level) throws SQLException {
+<span class="nc" id="L1375">    cmdPrologue();</span>
+<span class="nc" id="L1376">    lock.lock();</span>
+    try {
+<span class="nc" id="L1378">      String query = &quot;SET SESSION TRANSACTION ISOLATION LEVEL&quot;;</span>
+<span class="nc bnc" id="L1379" title="All 5 branches missed.">      switch (level) {</span>
+        case Connection.TRANSACTION_READ_UNCOMMITTED:
+<span class="nc" id="L1381">          query += &quot; READ UNCOMMITTED&quot;;</span>
+<span class="nc" id="L1382">          break;</span>
+        case Connection.TRANSACTION_READ_COMMITTED:
+<span class="nc" id="L1384">          query += &quot; READ COMMITTED&quot;;</span>
+<span class="nc" id="L1385">          break;</span>
+        case Connection.TRANSACTION_REPEATABLE_READ:
+<span class="nc" id="L1387">          query += &quot; REPEATABLE READ&quot;;</span>
+<span class="nc" id="L1388">          break;</span>
+        case Connection.TRANSACTION_SERIALIZABLE:
+<span class="nc" id="L1390">          query += &quot; SERIALIZABLE&quot;;</span>
+<span class="nc" id="L1391">          break;</span>
+        default:
+<span class="nc" id="L1393">          throw new SQLException(&quot;Unsupported transaction isolation level&quot;);</span>
+      }
+<span class="nc" id="L1395">      executeQuery(query);</span>
+<span class="nc" id="L1396">      transactionIsolationLevel = level;</span>
+    } finally {
+<span class="nc" id="L1398">      lock.unlock();</span>
+    }
+<span class="nc" id="L1400">  }</span>
+
+  public int getTransactionIsolationLevel() {
+<span class="nc" id="L1403">    return transactionIsolationLevel;</span>
+  }
+
+  private void checkClose() throws SQLException {
+<span class="nc bnc" id="L1407" title="All 2 branches missed.">    if (!this.connected) {</span>
+<span class="nc" id="L1408">      throw new SQLException(&quot;Connection is close&quot;, &quot;08000&quot;, 1220);</span>
+    }
+<span class="nc" id="L1410">  }</span>
+
+  @Override
+  public void getResult(Results results) throws SQLException {
+
+<span class="nc" id="L1415">    readPacket(results);</span>
+
+    //load additional results
+<span class="nc bnc" id="L1418" title="All 2 branches missed.">    while (hasMoreResults()) {</span>
+<span class="nc" id="L1419">      readPacket(results);</span>
+    }
+
+<span class="nc" id="L1422">  }</span>
+
+  /**
+   * Read server response packet.
+   *
+   * @param results result object
+   * @throws SQLException if sub-result connection fail
+   * @see &lt;a href=&quot;https://mariadb.com/kb/en/mariadb/4-server-response-packets/&quot;&gt;server response
+   * packets&lt;/a&gt;
+   */
+  private void readPacket(Results results) throws SQLException {
+    Buffer buffer;
+    try {
+<span class="nc" id="L1435">      buffer = reader.getPacket(true);</span>
+<span class="nc" id="L1436">    } catch (IOException e) {</span>
+<span class="nc" id="L1437">      throw handleIoException(e);</span>
+<span class="nc" id="L1438">    }</span>
+
+<span class="nc bnc" id="L1440" title="All 4 branches missed.">    switch (buffer.getByteAt(0)) {</span>
+
+      //*********************************************************************************************************
+      //* OK response
+      //*********************************************************************************************************
+      case OK:
+<span class="nc" id="L1446">        readOkPacket(buffer, results);</span>
+<span class="nc" id="L1447">        break;</span>
+
+      //*********************************************************************************************************
+      //* ERROR response
+      //*********************************************************************************************************
+      case ERROR:
+<span class="nc" id="L1453">        throw readErrorPacket(buffer, results);</span>
+
+        //*********************************************************************************************************
+        //* LOCAL INFILE response
+        //*********************************************************************************************************
+      case LOCAL_INFILE:
+<span class="nc" id="L1459">        readLocalInfilePacket(buffer, results);</span>
+<span class="nc" id="L1460">        break;</span>
+
+      //*********************************************************************************************************
+      //* ResultSet
+      //*********************************************************************************************************
+      default:
+<span class="nc" id="L1466">        readResultSet(buffer, results);</span>
+        break;
+
+    }
+
+<span class="nc" id="L1471">  }</span>
+
+  /**
+   * Read OK_Packet.
+   *
+   * @param buffer  current buffer
+   * @param results result object
+   * @see &lt;a href=&quot;https://mariadb.com/kb/en/mariadb/ok_packet/&quot;&gt;OK_Packet&lt;/a&gt;
+   */
+  private void readOkPacket(Buffer buffer, Results results) {
+<span class="nc" id="L1481">    buffer.skipByte(); //fieldCount</span>
+<span class="nc" id="L1482">    final long updateCount = buffer.getLengthEncodedNumeric();</span>
+<span class="nc" id="L1483">    final long insertId = buffer.getLengthEncodedNumeric();</span>
+
+<span class="nc" id="L1485">    serverStatus = buffer.readShort();</span>
+<span class="nc bnc" id="L1486" title="All 2 branches missed.">    hasWarnings = (buffer.readShort() &gt; 0);</span>
+
+<span class="nc bnc" id="L1488" title="All 2 branches missed.">    if ((serverStatus &amp; ServerStatus.SERVER_SESSION_STATE_CHANGED) != 0) {</span>
+<span class="nc" id="L1489">      handleStateChange(buffer, results);</span>
+    }
+
+<span class="nc" id="L1492">    results.addStats(updateCount, insertId, hasMoreResults());</span>
+<span class="nc" id="L1493">  }</span>
+
+  private void handleStateChange(Buffer buf, Results results) {
+<span class="nc" id="L1496">    buf.skipLengthEncodedBytes(); //info</span>
+<span class="nc bnc" id="L1497" title="All 2 branches missed.">    while (buf.remaining() &gt; 0) {</span>
+<span class="nc" id="L1498">      Buffer stateInfo = buf.getLengthEncodedBuffer();</span>
+<span class="nc bnc" id="L1499" title="All 2 branches missed.">      if (stateInfo.remaining() &gt; 0) {</span>
+<span class="nc bnc" id="L1500" title="All 3 branches missed.">        switch (stateInfo.readByte()) {</span>
+
+          case StateChange.SESSION_TRACK_SYSTEM_VARIABLES:
+<span class="nc" id="L1503">            Buffer sessionVariableBuf = stateInfo.getLengthEncodedBuffer();</span>
+<span class="nc" id="L1504">            String variable = sessionVariableBuf.readStringLengthEncoded(StandardCharsets.UTF_8);</span>
+<span class="nc" id="L1505">            String value = sessionVariableBuf.readStringLengthEncoded(StandardCharsets.UTF_8);</span>
+<span class="nc" id="L1506">            logger.debug(&quot;System variable change :  {} = {}&quot;, variable, value);</span>
+
+            //only variable uses
+<span class="nc bnc" id="L1509" title="All 2 branches missed.">            switch (variable) {</span>
+
+              case &quot;auto_increment_increment&quot;:
+<span class="nc" id="L1512">                autoIncrementIncrement = Integer.parseInt(value);</span>
+<span class="nc" id="L1513">                results.setAutoIncrement(autoIncrementIncrement);</span>
+<span class="nc" id="L1514">                break;</span>
+
+              default:
+                //variable not used by driver
+            }
+<span class="nc" id="L1519">            break;</span>
+
+          case StateChange.SESSION_TRACK_SCHEMA:
+<span class="nc" id="L1522">            Buffer sessionSchemaBuf = stateInfo.getLengthEncodedBuffer();</span>
+<span class="nc" id="L1523">            database = sessionSchemaBuf.readStringLengthEncoded(StandardCharsets.UTF_8);</span>
+<span class="nc" id="L1524">            logger.debug(&quot;Database change : now is '{}'&quot;, database);</span>
+<span class="nc" id="L1525">            break;</span>
+
+          default:
+<span class="nc" id="L1528">            stateInfo.skipLengthEncodedBytes();</span>
+        }
+      }
+<span class="nc" id="L1531">    }</span>
+
+<span class="nc" id="L1533">  }</span>
+
+  /**
+   * Get current auto increment increment. *** no lock needed ****
+   *
+   * @return auto increment increment.
+   * @throws SQLException if cannot retrieve auto increment value
+   */
+  public int getAutoIncrementIncrement() throws SQLException {
+<span class="nc bnc" id="L1542" title="All 2 branches missed.">    if (autoIncrementIncrement == 0) {</span>
+<span class="nc" id="L1543">      lock.lock();</span>
+      try {
+<span class="nc" id="L1545">        Results results = new Results();</span>
+<span class="nc" id="L1546">        executeQuery(true, results, &quot;select @@auto_increment_increment&quot;);</span>
+<span class="nc" id="L1547">        results.commandEnd();</span>
+<span class="nc" id="L1548">        ResultSet rs = results.getResultSet();</span>
+<span class="nc" id="L1549">        rs.next();</span>
+<span class="nc" id="L1550">        autoIncrementIncrement = rs.getInt(1);</span>
+<span class="nc" id="L1551">      } catch (SQLException e) {</span>
+<span class="nc bnc" id="L1552" title="All 2 branches missed.">        if (e.getSQLState().startsWith(&quot;08&quot;)) {</span>
+<span class="nc" id="L1553">          throw e;</span>
+        }
+<span class="nc" id="L1555">        autoIncrementIncrement = 1;</span>
+      } finally {
+<span class="nc" id="L1557">        lock.unlock();</span>
+      }
+    }
+<span class="nc" id="L1560">    return autoIncrementIncrement;</span>
+  }
+
+  /**
+   * Read ERR_Packet.
+   *
+   * @param buffer  current buffer
+   * @param results result object
+   * @return SQLException if sub-result connection fail
+   * @see &lt;a href=&quot;https://mariadb.com/kb/en/mariadb/err_packet/&quot;&gt;ERR_Packet&lt;/a&gt;
+   */
+  private SQLException readErrorPacket(Buffer buffer, Results results) {
+<span class="nc" id="L1572">    removeHasMoreResults();</span>
+<span class="nc" id="L1573">    this.hasWarnings = false;</span>
+<span class="nc" id="L1574">    buffer.skipByte();</span>
+<span class="nc" id="L1575">    final int errorNumber = buffer.readShort();</span>
+    String message;
+    String sqlState;
+<span class="nc bnc" id="L1578" title="All 2 branches missed.">    if (buffer.readByte() == '#') {</span>
+<span class="nc" id="L1579">      sqlState = new String(buffer.readRawBytes(5));</span>
+<span class="nc" id="L1580">      message = buffer.readStringNullEnd(StandardCharsets.UTF_8);</span>
+    } else {
+      // Pre-4.1 message, still can be output in newer versions (e.g with 'Too many connections')
+<span class="nc" id="L1583">      buffer.position -= 1;</span>
+<span class="nc" id="L1584">      message = new String(buffer.buf, buffer.position, buffer.limit - buffer.position,</span>
+          StandardCharsets.UTF_8);
+<span class="nc" id="L1586">      sqlState = &quot;HY000&quot;;</span>
+    }
+<span class="nc" id="L1588">    results.addStatsError(false);</span>
+
+    //force current status to in transaction to ensure rollback/commit, since command may have issue a transaction
+<span class="nc" id="L1591">    serverStatus |= ServerStatus.IN_TRANSACTION;</span>
+
+<span class="nc" id="L1593">    removeActiveStreamingResult();</span>
+<span class="nc" id="L1594">    return new SQLException(message, sqlState, errorNumber);</span>
+  }
+
+  /**
+   * Read Local_infile Packet.
+   *
+   * @param buffer  current buffer
+   * @param results result object
+   * @throws SQLException if sub-result connection fail
+   * @see &lt;a href=&quot;https://mariadb.com/kb/en/mariadb/local_infile-packet/&quot;&gt;local_infile packet&lt;/a&gt;
+   */
+  private void readLocalInfilePacket(Buffer buffer, Results results) throws SQLException {
+
+<span class="nc" id="L1607">    int seq = 2;</span>
+<span class="nc" id="L1608">    buffer.getLengthEncodedNumeric(); //field pos</span>
+<span class="nc" id="L1609">    String fileName = buffer.readStringNullEnd(StandardCharsets.UTF_8);</span>
+    try {
+      // Server request the local file (LOCAL DATA LOCAL INFILE)
+      // We do accept general URLs, too. If the localInfileStream is
+      // set, use that.
+      InputStream is;
+<span class="nc" id="L1615">      writer.startPacket(seq);</span>
+<span class="nc bnc" id="L1616" title="All 2 branches missed.">      if (localInfileInputStream == null) {</span>
+
+<span class="nc bnc" id="L1618" title="All 2 branches missed.">        if (!getUrlParser().getOptions().allowLocalInfile) {</span>
+<span class="nc" id="L1619">          writer.writeEmptyPacket();</span>
+<span class="nc" id="L1620">          reader.getPacket(true);</span>
+<span class="nc" id="L1621">          throw new SQLException(</span>
+              &quot;Usage of LOCAL INFILE is disabled. To use it enable it via the connection property allowLocalInfile=true&quot;,
+<span class="nc" id="L1623">              FEATURE_NOT_SUPPORTED.getSqlState(), -1);</span>
+        }
+
+        //validate all defined interceptors
+<span class="nc" id="L1627">        ServiceLoader&lt;LocalInfileInterceptor&gt; loader = ServiceLoader</span>
+<span class="nc" id="L1628">            .load(LocalInfileInterceptor.class);</span>
+<span class="nc bnc" id="L1629" title="All 2 branches missed.">        for (LocalInfileInterceptor interceptor : loader) {</span>
+<span class="nc bnc" id="L1630" title="All 2 branches missed.">          if (!interceptor.validate(fileName)) {</span>
+<span class="nc" id="L1631">            writer.writeEmptyPacket();</span>
+<span class="nc" id="L1632">            reader.getPacket(true);</span>
+<span class="nc" id="L1633">            throw new SQLException(&quot;LOCAL DATA LOCAL INFILE request to send local file named \&quot;&quot;</span>
+<span class="nc" id="L1634">                + fileName + &quot;\&quot; not validated by interceptor \&quot;&quot; + interceptor.getClass().getName()</span>
+                + &quot;\&quot;&quot;);
+          }
+<span class="nc" id="L1637">        }</span>
+
+        try {
+<span class="nc" id="L1640">          URL url = new URL(fileName);</span>
+<span class="nc" id="L1641">          is = url.openStream();</span>
+<span class="nc" id="L1642">        } catch (IOException ioe) {</span>
+          try {
+<span class="nc" id="L1644">            is = new FileInputStream(fileName);</span>
+<span class="nc" id="L1645">          } catch (FileNotFoundException f) {</span>
+<span class="nc" id="L1646">            writer.writeEmptyPacket();</span>
+<span class="nc" id="L1647">            reader.getPacket(true);</span>
+<span class="nc" id="L1648">            throw new SQLException(&quot;Could not send file : &quot; + f.getMessage(), &quot;22000&quot;, -1, f);</span>
+<span class="nc" id="L1649">          }</span>
+<span class="nc" id="L1650">        }</span>
+<span class="nc" id="L1651">      } else {</span>
+<span class="nc" id="L1652">        is = localInfileInputStream;</span>
+<span class="nc" id="L1653">        localInfileInputStream = null;</span>
+      }
+
+      try {
+
+<span class="nc" id="L1658">        byte[] buf = new byte[8192];</span>
+        int len;
+<span class="nc bnc" id="L1660" title="All 2 branches missed.">        while ((len = is.read(buf)) &gt; 0) {</span>
+<span class="nc" id="L1661">          writer.startPacket(seq++);</span>
+<span class="nc" id="L1662">          writer.write(buf, 0, len);</span>
+<span class="nc" id="L1663">          writer.flush();</span>
+        }
+<span class="nc" id="L1665">        writer.writeEmptyPacket();</span>
+
+<span class="nc" id="L1667">      } catch (IOException ioe) {</span>
+<span class="nc" id="L1668">        throw handleIoException(ioe);</span>
+      } finally {
+<span class="nc" id="L1670">        is.close();</span>
+      }
+
+<span class="nc" id="L1673">      getResult(results);</span>
+
+<span class="nc" id="L1675">    } catch (IOException e) {</span>
+<span class="nc" id="L1676">      throw handleIoException(e);</span>
+<span class="nc" id="L1677">    }</span>
+<span class="nc" id="L1678">  }</span>
+
+  /**
+   * Read ResultSet Packet.
+   *
+   * @param buffer  current buffer
+   * @param results result object
+   * @throws SQLException if sub-result connection fail
+   * @see &lt;a href=&quot;https://mariadb.com/kb/en/mariadb/resultset/&quot;&gt;resultSet packets&lt;/a&gt;
+   */
+  private void readResultSet(Buffer buffer, Results results) throws SQLException {
+<span class="nc" id="L1689">    long fieldCount = buffer.getLengthEncodedNumeric();</span>
+
+    try {
+
+      //read columns information's
+<span class="nc" id="L1694">      ColumnInformation[] ci = new ColumnInformation[(int) fieldCount];</span>
+<span class="nc bnc" id="L1695" title="All 2 branches missed.">      for (int i = 0; i &lt; fieldCount; i++) {</span>
+<span class="nc" id="L1696">        ci[i] = new ColumnInformation(reader.getPacket(false));</span>
+      }
+
+<span class="nc" id="L1699">      boolean callableResult = false;</span>
+<span class="nc bnc" id="L1700" title="All 2 branches missed.">      if (!eofDeprecated) {</span>
+        //read EOF packet
+        //EOF status is mandatory because :
+        // - Call query will have an callable resultSet for OUT parameters
+        //   -&gt; this resultSet must be identified and not listed in JDBC statement.getResultSet()
+        // - after a callable resultSet, a OK packet is send, but mysql does send the  a bad &quot;more result flag&quot;
+<span class="nc" id="L1706">        Buffer bufferEof = reader.getPacket(true);</span>
+<span class="nc bnc" id="L1707" title="All 2 branches missed.">        if (bufferEof.readByte() != EOF) {</span>
+          //using IOException to close connection,
+<span class="nc" id="L1709">          throw new IOException(</span>
+              &quot;Packets out of order when reading field packets, expected was EOF stream.&quot;
+<span class="nc bnc" id="L1711" title="All 2 branches missed.">                  + ((options.enablePacketDebug) ? getTraces() : &quot;Packet contents (hex) = &quot;</span>
+<span class="nc" id="L1712">                  + Utils.hexdump(options.maxQuerySizeToLog, 0, bufferEof.limit, bufferEof.buf)));</span>
+        }
+<span class="nc" id="L1714">        bufferEof.skipBytes(2); //Skip warningCount</span>
+<span class="nc bnc" id="L1715" title="All 2 branches missed.">        callableResult = (bufferEof.readShort() &amp; ServerStatus.PS_OUT_PARAMETERS) != 0;</span>
+      }
+
+      //read resultSet
+      SelectResultSet selectResultSet;
+<span class="nc bnc" id="L1720" title="All 2 branches missed.">      if (results.getResultSetConcurrency() == ResultSet.CONCUR_READ_ONLY) {</span>
+<span class="nc" id="L1721">        selectResultSet = new SelectResultSet(ci, results, this, reader, callableResult,</span>
+            eofDeprecated);
+      } else {
+        //remove fetch size to permit updating results without creating new connection
+<span class="nc" id="L1725">        results.removeFetchSize();</span>
+<span class="nc" id="L1726">        selectResultSet = new UpdatableResultSet(ci, results, this, reader, callableResult,</span>
+            eofDeprecated);
+      }
+
+<span class="nc bnc" id="L1730" title="All 4 branches missed.">      results.addResultSet(selectResultSet, hasMoreResults() || results.getFetchSize() &gt; 0);</span>
+
+<span class="nc" id="L1732">    } catch (IOException e) {</span>
+<span class="nc" id="L1733">      throw handleIoException(e);</span>
+<span class="nc" id="L1734">    }</span>
+<span class="nc" id="L1735">  }</span>
+
+  public void prologProxy(ServerPrepareResult serverPrepareResult, long maxRows, boolean hasProxy,
+      MariaDbConnection connection, MariaDbStatement statement) throws SQLException {
+<span class="nc" id="L1739">    prolog(maxRows, hasProxy, connection, statement);</span>
+<span class="nc" id="L1740">  }</span>
+
+  /**
+   * Preparation before command.
+   *
+   * @param maxRows    query max rows
+   * @param hasProxy   has proxy
+   * @param connection current connection
+   * @param statement  current statement
+   * @throws SQLException if any error occur.
+   */
+  public void prolog(long maxRows, boolean hasProxy, MariaDbConnection connection,
+      MariaDbStatement statement)
+      throws SQLException {
+<span class="nc bnc" id="L1754" title="All 2 branches missed.">    if (explicitClosed) {</span>
+<span class="nc" id="L1755">      throw new SQLException(&quot;execute() is called on closed connection&quot;);</span>
+    }
+    //old failover handling
+<span class="nc bnc" id="L1758" title="All 4 branches missed.">    if (!hasProxy &amp;&amp; shouldReconnectWithoutProxy()) {</span>
+      try {
+<span class="nc" id="L1760">        connectWithoutProxy();</span>
+<span class="nc" id="L1761">      } catch (SQLException qe) {</span>
+<span class="nc" id="L1762">        ExceptionMapper.throwException(qe, connection, statement);</span>
+<span class="nc" id="L1763">      }</span>
+    }
+
+    try {
+<span class="nc" id="L1767">      setMaxRows(maxRows);</span>
+<span class="nc" id="L1768">    } catch (SQLException qe) {</span>
+<span class="nc" id="L1769">      ExceptionMapper.throwException(qe, connection, statement);</span>
+<span class="nc" id="L1770">    }</span>
+
+<span class="nc" id="L1772">    connection.reenableWarnings();</span>
+<span class="nc" id="L1773">  }</span>
+
+  public ServerPrepareResult addPrepareInCache(String key,
+      ServerPrepareResult serverPrepareResult) {
+<span class="nc" id="L1777">    return serverPrepareStatementCache.put(key, serverPrepareResult);</span>
+  }
+
+  private void cmdPrologue() throws SQLException {
+
+    //load active result if any so buffer are clean for next query
+<span class="nc bnc" id="L1783" title="All 2 branches missed.">    if (activeStreamingResult != null) {</span>
+<span class="nc" id="L1784">      activeStreamingResult.loadFully(false, this);</span>
+<span class="nc" id="L1785">      activeStreamingResult = null;</span>
+    }
+
+<span class="nc bnc" id="L1788" title="All 2 branches missed.">    if (activeFutureTask != null) {</span>
+      //wait for remaining batch result to be read, to ensure correct connection state
+      try {
+<span class="nc" id="L1791">        activeFutureTask.get();</span>
+<span class="nc" id="L1792">      } catch (ExecutionException executionException) {</span>
+        //last batch exception are to be discarded
+<span class="nc" id="L1794">      } catch (InterruptedException interruptedException) {</span>
+<span class="nc" id="L1795">        Thread.currentThread().interrupt();</span>
+<span class="nc" id="L1796">        throw new SQLException(&quot;Interrupted reading remaining batch response &quot;,</span>
+<span class="nc" id="L1797">            INTERRUPTED_EXCEPTION.getSqlState(), -1, interruptedException);</span>
+      } finally {
+        //bulk can prepare, and so if prepare cache is enable, can replace an already cached prepareStatement
+        //this permit to release those old prepared statement without conflict.
+<span class="nc" id="L1801">        forceReleaseWaitingPrepareStatement();</span>
+      }
+<span class="nc" id="L1803">      activeFutureTask = null;</span>
+    }
+
+<span class="nc bnc" id="L1806" title="All 2 branches missed.">    if (!this.connected) {</span>
+<span class="nc" id="L1807">      throw new SQLException(&quot;Connection is closed&quot;, &quot;08000&quot;, 1220);</span>
+    }
+<span class="nc" id="L1809">    interrupted = false;</span>
+
+<span class="nc" id="L1811">  }</span>
+
+  /**
+   * Set current state after a failover.
+   *
+   * @param maxRows                   current Max rows
+   * @param transactionIsolationLevel current transactionIsolationLevel
+   * @param database                  current database
+   * @param autocommit                current autocommit state
+   * @throws SQLException if any error occur.
+   */
+  //TODO set all client affected variables when implementing CONJ-319
+  public void resetStateAfterFailover(long maxRows, int transactionIsolationLevel, String database,
+      boolean autocommit) throws SQLException {
+<span class="nc" id="L1825">    setMaxRows(maxRows);</span>
+
+<span class="nc bnc" id="L1827" title="All 2 branches missed.">    if (transactionIsolationLevel != 0) {</span>
+<span class="nc" id="L1828">      setTransactionIsolation(transactionIsolationLevel);</span>
+    }
+
+<span class="nc bnc" id="L1831" title="All 6 branches missed.">    if (database != null &amp;&amp; !&quot;&quot;.equals(database) &amp;&amp; !getDatabase().equals(database)) {</span>
+<span class="nc" id="L1832">      setCatalog(database);</span>
+    }
+
+<span class="nc bnc" id="L1835" title="All 2 branches missed.">    if (getAutocommit() != autocommit) {</span>
+<span class="nc bnc" id="L1836" title="All 2 branches missed.">      executeQuery(&quot;set autocommit=&quot; + (autocommit ? &quot;1&quot; : &quot;0&quot;));</span>
+    }
+<span class="nc" id="L1838">  }</span>
+
+  /**
+   * Handle IoException (reconnect if Exception is due to having send too much data, making server
+   * close the connection.
+   *
+   * &lt;p&gt;There is 3 kind of IOException :&lt;/p&gt;
+   * &lt;ol&gt;
+   * &lt;li&gt; MaxAllowedPacketException :
+   * without need of reconnect : thrown when driver don't send packet that would have been too big
+   * then error is not a CONNECTION_EXCEPTION&lt;/li&gt;
+   * &lt;li&gt;packets size is greater than max_allowed_packet (can be checked with
+   * writer.isAllowedCmdLength()). Need to reconnect&lt;/li&gt;
+   * &lt;li&gt;unknown IO error throw a CONNECTION_EXCEPTION&lt;/li&gt;
+   * &lt;/ol&gt;
+   *
+   * @param initialException initial Io error
+   * @return the resulting error to return to client.
+   */
+  public SQLException handleIoException(Exception initialException) {
+    boolean mustReconnect;
+<span class="nc" id="L1859">    boolean driverPreventError = false;</span>
+
+<span class="nc bnc" id="L1861" title="All 2 branches missed.">    if (initialException instanceof MaxAllowedPacketException) {</span>
+<span class="nc" id="L1862">      mustReconnect = ((MaxAllowedPacketException) initialException).isMustReconnect();</span>
+<span class="nc bnc" id="L1863" title="All 2 branches missed.">      driverPreventError = !mustReconnect;</span>
+    } else {
+<span class="nc" id="L1865">      mustReconnect = writer.exceedMaxLength();</span>
+    }
+
+<span class="nc bnc" id="L1868" title="All 2 branches missed.">    if (mustReconnect) {</span>
+      try {
+<span class="nc" id="L1870">        connect();</span>
+<span class="nc" id="L1871">      } catch (SQLException queryException) {</span>
+<span class="nc" id="L1872">        connected = false;</span>
+<span class="nc" id="L1873">        return new SQLNonTransientConnectionException(initialException.getMessage()</span>
+<span class="nc" id="L1874">            + &quot;\nError during reconnection&quot; + getTraces(), CONNECTION_EXCEPTION.getSqlState(),</span>
+            initialException);
+<span class="nc" id="L1876">      }</span>
+
+      try {
+<span class="nc" id="L1879">        resetStateAfterFailover(getMaxRows(), getTransactionIsolationLevel(), getDatabase(),</span>
+<span class="nc" id="L1880">            getAutocommit());</span>
+<span class="nc" id="L1881">      } catch (SQLException queryException) {</span>
+<span class="nc" id="L1882">        return new SQLException(&quot;reconnection succeed, but resetting previous state failed&quot;,</span>
+<span class="nc" id="L1883">            UNDEFINED_SQLSTATE.getSqlState() + getTraces(), initialException);</span>
+<span class="nc" id="L1884">      }</span>
+
+<span class="nc" id="L1886">      return new SQLTransientConnectionException(&quot;Could not send query: query size is &gt;= to max_allowed_packet (&quot;</span>
+<span class="nc" id="L1887">          + writer.getMaxAllowedPacket() + &quot;)&quot; + getTraces(), UNDEFINED_SQLSTATE.getSqlState(),</span>
+          initialException);
+    }
+<span class="nc bnc" id="L1890" title="All 2 branches missed.">    if (!driverPreventError) {</span>
+<span class="nc" id="L1891">      connected = false;</span>
+    }
+<span class="nc" id="L1893">    return new SQLNonTransientConnectionException(initialException.getMessage() + getTraces(),</span>
+<span class="nc bnc" id="L1894" title="All 2 branches missed.">        driverPreventError ? UNDEFINED_SQLSTATE.getSqlState() : CONNECTION_EXCEPTION.getSqlState(),</span>
+        initialException);
+
+  }
+
+  public void setActiveFutureTask(FutureTask activeFutureTask) {
+<span class="nc" id="L1900">    this.activeFutureTask = activeFutureTask;</span>
+<span class="nc" id="L1901">  }</span>
+
+  public void interrupt() {
+<span class="nc" id="L1904">    interrupted = true;</span>
+<span class="nc" id="L1905">  }</span>
+
+  public boolean isInterrupted() {
+<span class="nc" id="L1908">    return interrupted;</span>
+  }
+
+  /**
+   * Throw TimeoutException if timeout has been reached.
+   *
+   * @throws SQLTimeoutException to indicate timeout exception.
+   */
+  public void stopIfInterrupted() throws SQLTimeoutException {
+<span class="nc bnc" id="L1917" title="All 2 branches missed.">    if (isInterrupted()) {</span>
+      //interrupted during read, must throw an exception manually
+<span class="nc" id="L1919">      throw new SQLTimeoutException(&quot;Timeout during batch execution&quot;);</span>
+    }
+<span class="nc" id="L1921">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

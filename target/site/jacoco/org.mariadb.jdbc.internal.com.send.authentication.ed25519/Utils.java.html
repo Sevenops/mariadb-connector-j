@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Utils.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.send.authentication.ed25519</a> &gt; <span class="el_source">Utils.java</span></div><h1>Utils.java</h1><pre class="source lang-java linenums">/**
+ * EdDSA-Java by str4d
+ *
+ * To the extent possible under law, the person who associated CC0 with EdDSA-Java has waived all
+ * copyright and related or neighboring rights to EdDSA-Java.
+ *
+ * You should have received a copy of the CC0 legalcode along with this work. If not, see
+ * &lt;https://creativecommons.org/publicdomain/zero/1.0/&gt;.
+ */
+package org.mariadb.jdbc.internal.com.send.authentication.ed25519;
+
+/**
+ * Basic utilities for EdDSA. Not for external use, not maintained as a public API.
+ *
+ * @author str4d
+ */
+<span class="nc" id="L17">public class Utils {</span>
+
+  /**
+   * Constant-time byte comparison.
+   *
+   * @param b a byte
+   * @param c a byte
+   * @return 1 if b and c are equal, 0 otherwise.
+   */
+  public static int equal(int b, int c) {
+<span class="nc" id="L27">    int result = 0;</span>
+<span class="nc" id="L28">    int xor = b ^ c;</span>
+<span class="nc bnc" id="L29" title="All 2 branches missed.">    for (int i = 0; i &lt; 8; i++) {</span>
+<span class="nc" id="L30">      result |= xor &gt;&gt; i;</span>
+    }
+<span class="nc" id="L32">    return (result ^ 0x01) &amp; 0x01;</span>
+  }
+
+  /**
+   * Constant-time byte[] comparison.
+   *
+   * @param b a byte[]
+   * @param c a byte[]
+   * @return 1 if b and c are equal, 0 otherwise.
+   */
+  public static int equal(byte[] b, byte[] c) {
+<span class="nc" id="L43">    int result = 0;</span>
+<span class="nc bnc" id="L44" title="All 2 branches missed.">    for (int i = 0; i &lt; 32; i++) {</span>
+<span class="nc" id="L45">      result |= b[i] ^ c[i];</span>
+    }
+
+<span class="nc" id="L48">    return equal(result, 0);</span>
+  }
+
+  /**
+   * Constant-time determine if byte is negative.
+   *
+   * @param b the byte to check.
+   * @return 1 if the byte is negative, 0 otherwise.
+   */
+  public static int negative(int b) {
+<span class="nc" id="L58">    return (b &gt;&gt; 8) &amp; 1;</span>
+  }
+
+  /**
+   * Get the i'th bit of a byte array.
+   *
+   * @param h the byte array.
+   * @param i the bit index.
+   * @return 0 or 1, the value of the i'th bit in h
+   */
+  public static int bit(byte[] h, int i) {
+<span class="nc" id="L69">    return (h[i &gt;&gt; 3] &gt;&gt; (i &amp; 7)) &amp; 1;</span>
+  }
+
+  /**
+   * Converts a hex string to bytes.
+   *
+   * @param s the hex string to be converted.
+   * @return the byte[]
+   */
+  public static byte[] hexToBytes(String s) {
+<span class="nc" id="L79">    int len = s.length();</span>
+<span class="nc" id="L80">    byte[] data = new byte[len / 2];</span>
+<span class="nc bnc" id="L81" title="All 2 branches missed.">    for (int i = 0; i &lt; len; i += 2) {</span>
+<span class="nc" id="L82">      data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) &lt;&lt; 4)</span>
+<span class="nc" id="L83">          + Character.digit(s.charAt(i + 1), 16));</span>
+    }
+<span class="nc" id="L85">    return data;</span>
+  }
+
+  /**
+   * Converts bytes to a hex string.
+   *
+   * @param raw the byte[] to be converted.
+   * @return the hex representation as a string.
+   */
+  public static String bytesToHex(byte[] raw) {
+<span class="nc bnc" id="L95" title="All 2 branches missed.">    if (raw == null) {</span>
+<span class="nc" id="L96">      return null;</span>
+    }
+<span class="nc" id="L98">    final StringBuilder hex = new StringBuilder(2 * raw.length);</span>
+<span class="nc bnc" id="L99" title="All 2 branches missed.">    for (final byte b : raw) {</span>
+<span class="nc" id="L100">      hex.append(Character.forDigit((b &amp; 0xF0) &gt;&gt; 4, 16))</span>
+<span class="nc" id="L101">          .append(Character.forDigit((b &amp; 0x0F), 16));</span>
+    }
+<span class="nc" id="L103">    return hex.toString();</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

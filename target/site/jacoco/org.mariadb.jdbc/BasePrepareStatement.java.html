@@ -1,0 +1,1667 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BasePrepareStatement.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">BasePrepareStatement.java</span></div><h1>BasePrepareStatement.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc;
+
+import java.io.InputStream;
+import java.io.Reader;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.net.URL;
+import java.sql.Array;
+import java.sql.Blob;
+import java.sql.Clob;
+import java.sql.Date;
+import java.sql.NClob;
+import java.sql.ParameterMetaData;
+import java.sql.PreparedStatement;
+import java.sql.Ref;
+import java.sql.RowId;
+import java.sql.SQLException;
+import java.sql.SQLType;
+import java.sql.SQLXML;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.sql.Types;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.util.Calendar;
+import java.util.TimeZone;
+import org.mariadb.jdbc.internal.ColumnType;
+import org.mariadb.jdbc.internal.com.send.parameters.BigDecimalParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.ByteArrayParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.ByteParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.DateParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.DoubleParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.FloatParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.IntParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.LongParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.NullParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.OffsetTimeParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.ParameterHolder;
+import org.mariadb.jdbc.internal.com.send.parameters.ReaderParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.SerializableParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.ShortParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.StreamParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.StringParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.TimeParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.TimestampParameter;
+import org.mariadb.jdbc.internal.com.send.parameters.ZonedDateTimeParameter;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+public abstract class BasePrepareStatement extends MariaDbStatement implements PreparedStatement {
+
+  /**
+   * The ISO-like date-time formatter that formats or parses a date-time with offset and zone, such
+   * as '2011-12-03T10:15:30+01:00[Europe/Paris]'. and without the 'T' time delimiter
+   *
+   * &lt;p&gt;This returns an immutable formatter capable of formatting and parsing
+   * a format that extends the ISO-8601 extended offset date-time format to add the time-zone.&lt;/p&gt;
+   **/
+<span class="nc" id="L117">  public static final DateTimeFormatter SPEC_ISO_ZONED_DATE_TIME = new DateTimeFormatterBuilder()</span>
+<span class="nc" id="L118">      .parseCaseInsensitive()</span>
+<span class="nc" id="L119">      .append(DateTimeFormatter.ISO_LOCAL_DATE)</span>
+<span class="nc" id="L120">      .optionalStart()</span>
+<span class="nc" id="L121">      .appendLiteral('T')</span>
+<span class="nc" id="L122">      .optionalEnd()</span>
+<span class="nc" id="L123">      .optionalStart()</span>
+<span class="nc" id="L124">      .appendLiteral(' ')</span>
+<span class="nc" id="L125">      .optionalEnd()</span>
+<span class="nc" id="L126">      .append(DateTimeFormatter.ISO_LOCAL_TIME)</span>
+<span class="nc" id="L127">      .appendOffsetId()</span>
+<span class="nc" id="L128">      .optionalStart()</span>
+<span class="nc" id="L129">      .appendLiteral('[')</span>
+<span class="nc" id="L130">      .parseCaseSensitive()</span>
+<span class="nc" id="L131">      .appendZoneRegionId()</span>
+<span class="nc" id="L132">      .appendLiteral(']')</span>
+<span class="nc" id="L133">      .toFormatter();</span>
+  protected int autoGeneratedKeys;
+<span class="nc" id="L135">  protected boolean hasLongData = false;</span>
+  private boolean useFractionalSeconds;
+  private boolean noBackslashEscapes;
+
+  /**
+   * Constructor. Base class that permit setting parameters for client and server PrepareStatement.
+   *
+   * @param connection           current connection
+   * @param resultSetScrollType  one of the following &lt;code&gt;ResultSet&lt;/code&gt; constants:
+   *                             &lt;code&gt;ResultSet.TYPE_FORWARD_ONLY&lt;/code&gt;,
+   *                             &lt;code&gt;ResultSet.TYPE_SCROLL_INSENSITIVE&lt;/code&gt;, or
+   *                             &lt;code&gt;ResultSet.TYPE_SCROLL_SENSITIVE&lt;/code&gt;
+   * @param resultSetConcurrency one of the following &lt;code&gt;ResultSet&lt;/code&gt; constants:
+   *                             &lt;code&gt;ResultSet.CONCUR_READ_ONLY&lt;/code&gt; or
+   *                             &lt;code&gt;ResultSet.CONCUR_UPDATABLE&lt;/code&gt;
+   * @param autoGeneratedKeys    a flag indicating whether auto-generated keys should be returned;
+   *                             one of
+   *                             &lt;code&gt;Statement.RETURN_GENERATED_KEYS&lt;/code&gt;
+   *                             or &lt;code&gt;Statement.NO_GENERATED_KEYS&lt;/code&gt;
+   */
+  public BasePrepareStatement(MariaDbConnection connection, int resultSetScrollType,
+      int resultSetConcurrency, int autoGeneratedKeys) {
+<span class="nc" id="L157">    super(connection, resultSetScrollType, resultSetConcurrency);</span>
+<span class="nc" id="L158">    this.noBackslashEscapes = protocol.noBackslashEscapes();</span>
+<span class="nc" id="L159">    this.useFractionalSeconds = options.useFractionalSeconds;</span>
+<span class="nc" id="L160">    this.autoGeneratedKeys = autoGeneratedKeys;</span>
+<span class="nc" id="L161">  }</span>
+
+  /**
+   * Clone cached object.
+   *
+   * @param connection connection
+   * @return BasePrepareStatement
+   * @throws CloneNotSupportedException if cloning exception
+   */
+  public BasePrepareStatement clone(MariaDbConnection connection)
+      throws CloneNotSupportedException {
+<span class="nc" id="L172">    BasePrepareStatement base = (BasePrepareStatement) super.clone(connection);</span>
+<span class="nc" id="L173">    base.useFractionalSeconds = options.useFractionalSeconds;</span>
+<span class="nc" id="L174">    return base;</span>
+  }
+
+  @Override
+  public long executeLargeUpdate() throws SQLException {
+<span class="nc bnc" id="L179" title="All 2 branches missed.">    if (executeInternal(getFetchSize())) {</span>
+<span class="nc" id="L180">      return 0;</span>
+    }
+<span class="nc" id="L182">    return getLargeUpdateCount();</span>
+  }
+
+
+  protected abstract boolean executeInternal(int fetchSize) throws SQLException;
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;Reader&lt;/code&gt; object, which is the given
+   * number of characters long. When a very large UNICODE value is input to a
+   * &lt;code&gt;LONGVARCHAR&lt;/code&gt; parameter, it may be more practical to send it via a
+   * &lt;code&gt;java.io.Reader&lt;/code&gt; object. The data will be read from the stream as needed until
+   * end-of-file is reached.  The JDBC driver will do any necessary conversion from UNICODE to the
+   * database char format.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; This stream object can either be a standard Java stream object or your own
+   * subclass that implements the standard interface.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param reader         the &lt;code&gt;java.io.Reader&lt;/code&gt; object that contains the Unicode data
+   * @param length         the number of characters in the stream
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setCharacterStream(final int parameterIndex, final Reader reader, final int length)
+      throws SQLException {
+<span class="nc bnc" id="L209" title="All 2 branches missed.">    if (reader == null) {</span>
+<span class="nc" id="L210">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L211">      return;</span>
+    }
+<span class="nc" id="L213">    setParameter(parameterIndex, new ReaderParameter(reader, length, noBackslashEscapes));</span>
+<span class="nc" id="L214">    hasLongData = true;</span>
+<span class="nc" id="L215">  }</span>
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;Reader&lt;/code&gt; object, which is the given
+   * number of characters long. When a very large UNICODE value is input to a
+   * &lt;code&gt;LONGVARCHAR&lt;/code&gt; parameter, it may be more practical to send it via a
+   * &lt;code&gt;java.io.Reader&lt;/code&gt; object. The data will be read from the stream as needed until
+   * end-of-file is reached.  The JDBC driver will do any necessary conversion from UNICODE to the
+   * database char format.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; This stream object can either be a standard Java stream object or your own
+   * subclass that implements the standard interface.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param reader         the &lt;code&gt;java.io.Reader&lt;/code&gt; object that contains the Unicode data
+   * @param length         the number of characters in the stream
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setCharacterStream(final int parameterIndex, final Reader reader, final long length)
+      throws SQLException {
+<span class="nc bnc" id="L238" title="All 2 branches missed.">    if (reader == null) {</span>
+<span class="nc" id="L239">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L240">      return;</span>
+    }
+<span class="nc" id="L242">    setParameter(parameterIndex, new ReaderParameter(reader, length, noBackslashEscapes));</span>
+<span class="nc" id="L243">    hasLongData = true;</span>
+<span class="nc" id="L244">  }</span>
+
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;Reader&lt;/code&gt; object. When a very large
+   * UNICODE value is input to a &lt;code&gt;LONGVARCHAR&lt;/code&gt; parameter, it may be more practical to
+   * send it via a &lt;code&gt;java.io.Reader&lt;/code&gt; object. The data will be read from the stream as
+   * needed until end-of-file is reached.  The JDBC driver will do any necessary conversion from
+   * UNICODE to the database char format.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; This stream object can either be a standard Java stream object or your own
+   * subclass that implements the standard interface.&lt;/P&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; Consult your JDBC driver
+   * documentation to determine if it might be more efficient to use a version of
+   * &lt;code&gt;setCharacterStream&lt;/code&gt; which takes a length parameter.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param reader         the &lt;code&gt;java.io.Reader&lt;/code&gt; object that contains the Unicode data
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setCharacterStream(final int parameterIndex, final Reader reader)
+      throws SQLException {
+<span class="nc bnc" id="L270" title="All 2 branches missed.">    if (reader == null) {</span>
+<span class="nc" id="L271">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L272">      return;</span>
+    }
+<span class="nc" id="L274">    setParameter(parameterIndex, new ReaderParameter(reader, noBackslashEscapes));</span>
+<span class="nc" id="L275">    hasLongData = true;</span>
+<span class="nc" id="L276">  }</span>
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;REF(&amp;lt;structured-type&amp;gt;)&lt;/code&gt; value. The
+   * driver converts this to an SQL &lt;code&gt;REF&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param ref            an SQL &lt;code&gt;REF&lt;/code&gt; value
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setRef(final int parameterIndex, final Ref ref) throws SQLException {
+<span class="nc" id="L290">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;REF not supported&quot;);</span>
+  }
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.sql.Blob&lt;/code&gt; object. The driver
+   * converts this to an SQL
+   * &lt;code&gt;BLOB&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param blob           a &lt;code&gt;Blob&lt;/code&gt; object that maps an SQL &lt;code&gt;BLOB&lt;/code&gt; value
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setBlob(final int parameterIndex, final Blob blob) throws SQLException {
+<span class="nc bnc" id="L306" title="All 2 branches missed.">    if (blob == null) {</span>
+<span class="nc" id="L307">      setNull(parameterIndex, Types.BLOB);</span>
+<span class="nc" id="L308">      return;</span>
+    }
+<span class="nc" id="L310">    setParameter(parameterIndex,</span>
+<span class="nc" id="L311">        new StreamParameter(blob.getBinaryStream(), blob.length(), noBackslashEscapes));</span>
+<span class="nc" id="L312">    hasLongData = true;</span>
+<span class="nc" id="L313">  }</span>
+
+  /**
+   * Sets the designated parameter to a &lt;code&gt;InputStream&lt;/code&gt; object.  The inputstream must
+   * contain  the number of characters specified by length otherwise a &lt;code&gt;SQLException&lt;/code&gt;
+   * will be generated when the
+   * &lt;code&gt;PreparedStatement&lt;/code&gt; is executed. This method differs from the &lt;code&gt;setBinaryStream
+   * (int, InputStream, int)&lt;/code&gt; method because it informs the driver that the parameter value
+   * should be sent to the server as a
+   * &lt;code&gt;BLOB&lt;/code&gt;.  When the &lt;code&gt;setBinaryStream&lt;/code&gt; method is used, the driver may have
+   * to do extra work to determine whether the parameter data should be sent to the server as a
+   * &lt;code&gt;LONGVARBINARY&lt;/code&gt; or a
+   * &lt;code&gt;BLOB&lt;/code&gt;
+   *
+   * @param parameterIndex index of the first parameter is 1, the second is 2, ...
+   * @param inputStream    An object that contains the data to set the parameter value to.
+   * @param length         the number of bytes in the parameter data.
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs; this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;; if the length
+   *                                         specified is less than zero or if the number of bytes
+   *                                         in the inputstream does not match the specfied length.
+   */
+  public void setBlob(final int parameterIndex, final InputStream inputStream, final long length)
+      throws SQLException {
+<span class="nc bnc" id="L339" title="All 2 branches missed.">    if (inputStream == null) {</span>
+<span class="nc" id="L340">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L341">      return;</span>
+    }
+<span class="nc" id="L343">    setParameter(parameterIndex, new StreamParameter(inputStream, length, noBackslashEscapes));</span>
+<span class="nc" id="L344">    hasLongData = true;</span>
+<span class="nc" id="L345">  }</span>
+
+  /**
+   * Sets the designated parameter to a &lt;code&gt;InputStream&lt;/code&gt; object. This method differs from
+   * the
+   * &lt;code&gt;setBinaryStream (int, InputStream)&lt;/code&gt; method because it informs the driver that the
+   * parameter value should be sent to the server as a &lt;code&gt;BLOB&lt;/code&gt;.  When the
+   * &lt;code&gt;setBinaryStream&lt;/code&gt; method is used, the driver may have to do extra work to determine
+   * whether the parameter data should be sent to the server as a
+   * &lt;code&gt;LONGVARBINARY&lt;/code&gt; or a &lt;code&gt;BLOB&lt;/code&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; Consult your JDBC driver documentation to determine if it might be more
+   * efficient to use a version of &lt;code&gt;setBlob&lt;/code&gt; which takes a length parameter.&lt;/P&gt;
+   *
+   * @param parameterIndex index of the first parameter is 1, the second is 2, ...
+   * @param inputStream    An object that contains the data to set the parameter value to.
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs; this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt; or if parameterIndex
+   *                                         does not correspond to a parameter marker in the SQL
+   *                                         statement,
+   */
+  public void setBlob(final int parameterIndex, final InputStream inputStream) throws SQLException {
+<span class="nc bnc" id="L369" title="All 2 branches missed.">    if (inputStream == null) {</span>
+<span class="nc" id="L370">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L371">      return;</span>
+    }
+
+<span class="nc" id="L374">    setParameter(parameterIndex, new StreamParameter(inputStream, noBackslashEscapes));</span>
+<span class="nc" id="L375">    hasLongData = true;</span>
+<span class="nc" id="L376">  }</span>
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.sql.Clob&lt;/code&gt; object. The driver
+   * converts this to an SQL
+   * &lt;code&gt;CLOB&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param clob           a &lt;code&gt;Clob&lt;/code&gt; object that maps an SQL &lt;code&gt;CLOB&lt;/code&gt; value
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setClob(final int parameterIndex, final Clob clob) throws SQLException {
+<span class="nc bnc" id="L391" title="All 2 branches missed.">    if (clob == null) {</span>
+<span class="nc" id="L392">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L393">      return;</span>
+    }
+
+<span class="nc" id="L396">    setParameter(parameterIndex,</span>
+<span class="nc" id="L397">        new ReaderParameter(clob.getCharacterStream(), clob.length(), noBackslashEscapes));</span>
+<span class="nc" id="L398">    hasLongData = true;</span>
+<span class="nc" id="L399">  }</span>
+
+  /**
+   * Sets the designated parameter to a &lt;code&gt;Reader&lt;/code&gt; object.  The reader must contain  the
+   * number of characters specified by length otherwise a &lt;code&gt;SQLException&lt;/code&gt; will be
+   * generated when the
+   * &lt;code&gt;PreparedStatement&lt;/code&gt; is executed. This method differs from the
+   * &lt;code&gt;setCharacterStream (int, Reader,
+   * int)&lt;/code&gt; method because it informs the driver that the parameter value should be sent to the
+   * server as a
+   * &lt;code&gt;CLOB&lt;/code&gt;.  When the &lt;code&gt;setCharacterStream&lt;/code&gt; method is used, the driver may
+   * have to do extra work to determine whether the parameter data should be sent to the server as
+   * a
+   * &lt;code&gt;LONGVARCHAR&lt;/code&gt; or a
+   * &lt;code&gt;CLOB&lt;/code&gt;
+   *
+   * @param parameterIndex index of the first parameter is 1, the second is 2, ...
+   * @param reader         An object that contains the data to set the parameter value to.
+   * @param length         the number of characters in the parameter data.
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs; this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt; or if the length
+   *                                         specified is less than zero.
+   */
+  public void setClob(final int parameterIndex, final Reader reader, final long length)
+      throws SQLException {
+<span class="nc" id="L426">    setCharacterStream(parameterIndex, reader, length);</span>
+<span class="nc" id="L427">  }</span>
+
+  /**
+   * Sets the designated parameter to a &lt;code&gt;Reader&lt;/code&gt; object. This method differs from the
+   * &lt;code&gt;setCharacterStream (int, Reader)&lt;/code&gt; method because it informs the driver that the
+   * parameter value should be sent to the server as a &lt;code&gt;CLOB&lt;/code&gt;.  When the
+   * &lt;code&gt;setCharacterStream&lt;/code&gt; method is used, the driver may have to do extra work to
+   * determine whether the parameter data should be sent to the server as a
+   * &lt;code&gt;LONGVARCHAR&lt;/code&gt; or a &lt;code&gt;CLOB&lt;/code&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; Consult your JDBC driver documentation to determine if it might be more
+   * efficient to use a version of &lt;code&gt;setClob&lt;/code&gt; which takes a length parameter.&lt;/P&gt;
+   *
+   * @param parameterIndex index of the first parameter is 1, the second is 2, ...
+   * @param reader         An object that contains the data to set the parameter value to.
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs; this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;or if parameterIndex
+   *                                         does not correspond to a parameter marker in the SQL
+   *                                         statement
+   */
+  public void setClob(final int parameterIndex, final Reader reader) throws SQLException {
+<span class="nc" id="L450">    setCharacterStream(parameterIndex, reader);</span>
+<span class="nc" id="L451">  }</span>
+
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.sql.Array&lt;/code&gt; object. The driver
+   * converts this to an SQL
+   * &lt;code&gt;ARRAY&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param array          an &lt;code&gt;Array&lt;/code&gt; object that maps an SQL &lt;code&gt;ARRAY&lt;/code&gt; value
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setArray(final int parameterIndex, final Array array) throws SQLException {
+<span class="nc" id="L467">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;Arrays not supported&quot;);</span>
+  }
+
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.sql.Date&lt;/code&gt; value, using the given
+   * &lt;code&gt;Calendar&lt;/code&gt; object.  The driver uses the &lt;code&gt;Calendar&lt;/code&gt; object to construct
+   * an SQL
+   * &lt;code&gt;DATE&lt;/code&gt; value, which the driver then sends to the database.  With a
+   * &lt;code&gt;Calendar&lt;/code&gt; object, the
+   * driver can calculate the date taking into account a custom timezone.  If no
+   * &lt;code&gt;Calendar&lt;/code&gt; object is specified, the driver uses the default timezone, which is that
+   * of the virtual machine running the application.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param date           the parameter value
+   * @param cal            the &lt;code&gt;Calendar&lt;/code&gt; object the driver will use to construct the
+   *                       date
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setDate(final int parameterIndex, final Date date, final Calendar cal)
+      throws SQLException {
+<span class="nc bnc" id="L492" title="All 2 branches missed.">    if (date == null) {</span>
+<span class="nc" id="L493">      setNull(parameterIndex, Types.DATE);</span>
+<span class="nc" id="L494">      return;</span>
+    }
+<span class="nc" id="L496">    setParameter(parameterIndex,</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">        new DateParameter(date, cal != null ? cal.getTimeZone() : TimeZone.getDefault(),</span>
+<span class="nc" id="L498">            protocol.getOptions()));</span>
+<span class="nc" id="L499">  }</span>
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.sql.Date&lt;/code&gt; value using the default
+   * time zone of the virtual machine that is running the application. The driver converts this to
+   * an SQL &lt;code&gt;DATE&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param date           the parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setDate(int parameterIndex, Date date) throws SQLException {
+<span class="nc bnc" id="L514" title="All 2 branches missed.">    if (date == null) {</span>
+<span class="nc" id="L515">      setNull(parameterIndex, Types.DATE);</span>
+<span class="nc" id="L516">      return;</span>
+    }
+<span class="nc" id="L518">    setParameter(parameterIndex,</span>
+<span class="nc" id="L519">        new DateParameter(date, TimeZone.getDefault(), protocol.getOptions()));</span>
+<span class="nc" id="L520">  }</span>
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.sql.Time&lt;/code&gt; value, using the given
+   * &lt;code&gt;Calendar&lt;/code&gt; object.  The driver uses the &lt;code&gt;Calendar&lt;/code&gt; object to construct
+   * an SQL
+   * &lt;code&gt;TIME&lt;/code&gt; value, which the driver then sends to the database.  With a
+   * &lt;code&gt;Calendar&lt;/code&gt; object, the
+   * driver can calculate the time taking into account a custom timezone.  If no
+   * &lt;code&gt;Calendar&lt;/code&gt; object is specified, the driver uses the default timezone, which is that
+   * of the virtual machine running the application.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param time           the parameter value
+   * @param cal            the &lt;code&gt;Calendar&lt;/code&gt; object the driver will use to construct the
+   *                       time
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setTime(final int parameterIndex, final Time time, final Calendar cal)
+      throws SQLException {
+<span class="nc bnc" id="L543" title="All 2 branches missed.">    if (time == null) {</span>
+<span class="nc" id="L544">      setNull(parameterIndex, ColumnType.TIME);</span>
+<span class="nc" id="L545">      return;</span>
+    }
+<span class="nc" id="L547">    setParameter(parameterIndex,</span>
+<span class="nc bnc" id="L548" title="All 2 branches missed.">        new TimeParameter(time, cal != null ? cal.getTimeZone() : TimeZone.getDefault(),</span>
+            useFractionalSeconds));
+<span class="nc" id="L550">  }</span>
+
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.sql.Time&lt;/code&gt; value. the driver uses
+   * the default timezone, which is that of the virtual machine running the application.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param time           the parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setTime(final int parameterIndex, final Time time) throws SQLException {
+<span class="nc bnc" id="L565" title="All 2 branches missed.">    if (time == null) {</span>
+<span class="nc" id="L566">      setNull(parameterIndex, ColumnType.TIME);</span>
+<span class="nc" id="L567">      return;</span>
+    }
+<span class="nc" id="L569">    setParameter(parameterIndex,</span>
+<span class="nc" id="L570">        new TimeParameter(time, TimeZone.getDefault(), useFractionalSeconds));</span>
+<span class="nc" id="L571">  }</span>
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.sql.Timestamp&lt;/code&gt; value, using the
+   * given
+   * &lt;code&gt;Calendar&lt;/code&gt; object.  The driver uses the &lt;code&gt;Calendar&lt;/code&gt; object to construct
+   * an SQL
+   * &lt;code&gt;TIMESTAMP&lt;/code&gt; value, which the driver then sends to the database.  With a
+   * &lt;code&gt;Calendar&lt;/code&gt; object,
+   * the driver can calculate the timestamp taking into account a custom timezone.  If no
+   * &lt;code&gt;Calendar&lt;/code&gt; object is specified, the driver uses the default timezone, which is that
+   * of the virtual machine running the application.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param timestamp      the parameter value
+   * @param cal            the &lt;code&gt;Calendar&lt;/code&gt; object the driver will use to construct the
+   *                       timestamp
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setTimestamp(final int parameterIndex, final Timestamp timestamp, final Calendar cal)
+      throws SQLException {
+<span class="nc bnc" id="L595" title="All 2 branches missed.">    if (timestamp == null) {</span>
+<span class="nc" id="L596">      setNull(parameterIndex, ColumnType.DATETIME);</span>
+<span class="nc" id="L597">      return;</span>
+    }
+<span class="nc bnc" id="L599" title="All 2 branches missed.">    TimeZone tz = cal != null ? cal.getTimeZone() : protocol.getTimeZone();</span>
+<span class="nc" id="L600">    setParameter(parameterIndex, new TimestampParameter(timestamp, tz, useFractionalSeconds));</span>
+<span class="nc" id="L601">  }</span>
+
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.sql.Timestamp&lt;/code&gt; value. The driver
+   * converts this to an SQL &lt;code&gt;TIMESTAMP&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param timestamp      the parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setTimestamp(final int parameterIndex, final Timestamp timestamp)
+      throws SQLException {
+<span class="nc bnc" id="L617" title="All 2 branches missed.">    if (timestamp == null) {</span>
+<span class="nc" id="L618">      setNull(parameterIndex, ColumnType.DATETIME);</span>
+<span class="nc" id="L619">      return;</span>
+    }
+<span class="nc" id="L621">    setParameter(parameterIndex,</span>
+<span class="nc" id="L622">        new TimestampParameter(timestamp, protocol.getTimeZone(), useFractionalSeconds));</span>
+
+<span class="nc" id="L624">  }</span>
+
+  /**
+   * Sets the designated parameter to SQL &lt;code&gt;NULL&lt;/code&gt;.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; You must specify the parameter's SQL type.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param sqlType        the SQL type code defined in &lt;code&gt;java.sql.Types&lt;/code&gt;
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setNull(final int parameterIndex, final int sqlType) throws SQLException {
+<span class="nc" id="L639">    setParameter(parameterIndex, new NullParameter());</span>
+<span class="nc" id="L640">  }</span>
+
+  /**
+   * Sets the designated parameter to SQL &lt;code&gt;NULL&lt;/code&gt;.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; You must specify the parameter's SQL type.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param mariadbType      the type code defined in &lt;code&gt; ColumnType&lt;/code&gt;
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setNull(final int parameterIndex, final ColumnType mariadbType) throws SQLException {
+<span class="nc" id="L655">    setParameter(parameterIndex, new NullParameter(mariadbType));</span>
+<span class="nc" id="L656">  }</span>
+
+  /**
+   * Sets the designated parameter to SQL &lt;code&gt;NULL&lt;/code&gt;. This version of the method
+   * &lt;code&gt;setNull&lt;/code&gt; should be used for user-defined types and REF type parameters.  Examples
+   * of user-defined types include: STRUCT, DISTINCT, JAVA_OBJECT, and named array types.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; To be portable, applications must give the SQL type code and the
+   * fully-qualified SQL type name when specifying a NULL user-defined or REF parameter.  In the
+   * case of a user-defined type the name is the type name of the parameter itself.  For a REF
+   * parameter, the name is the type name of the referenced type.  If a JDBC driver does not need
+   * the type code or type name information, it may ignore it.&lt;/P&gt;
+   *
+   * &lt;P&gt;Although it is intended for user-defined and Ref parameters, this method may be used to set
+   * a
+   * null parameter of any JDBC type. If the parameter does not have a user-defined or REF type, the
+   * given typeName is ignored.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param sqlType        a value from &lt;code&gt;java.sql.Types&lt;/code&gt;
+   * @param typeName       the fully-qualified name of an SQL user-defined type; ignored if the
+   *                       parameter is not a user-defined type or REF
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setNull(final int parameterIndex, final int sqlType, final String typeName)
+      throws SQLException {
+<span class="nc" id="L685">    setParameter(parameterIndex, new NullParameter());</span>
+<span class="nc" id="L686">  }</span>
+
+  public abstract void setParameter(final int parameterIndex, final ParameterHolder holder)
+      throws SQLException;
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.net.URL&lt;/code&gt; value. The driver converts
+   * this to an SQL
+   * &lt;code&gt;DATALINK&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param url            the &lt;code&gt;java.net.URL&lt;/code&gt; object to be set
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  @Override
+  public void setURL(final int parameterIndex, final URL url) throws SQLException {
+<span class="nc bnc" id="L705" title="All 2 branches missed.">    if (url == null) {</span>
+<span class="nc" id="L706">      setNull(parameterIndex, ColumnType.STRING);</span>
+<span class="nc" id="L707">      return;</span>
+    }
+<span class="nc" id="L709">    setParameter(parameterIndex, new StringParameter(url.toString(), noBackslashEscapes));</span>
+<span class="nc" id="L710">  }</span>
+
+  /**
+   * Retrieves the number, types and properties of this &lt;code&gt;PreparedStatement&lt;/code&gt; object's
+   * parameters.
+   *
+   * @return a &lt;code&gt;ParameterMetaData&lt;/code&gt; object that contains information about the number,
+   *     types and properties for each parameter marker of this &lt;code&gt;PreparedStatement&lt;/code&gt; object
+   * @throws SQLException if a database access error occurs or this method is called on a closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   * @see ParameterMetaData
+   */
+  public abstract ParameterMetaData getParameterMetaData() throws SQLException;
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.sql.RowId&lt;/code&gt; object. The driver
+   * converts this to a SQL
+   * &lt;code&gt;ROWID&lt;/code&gt; value when it sends it to the database
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param rowid          the parameter value
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setRowId(final int parameterIndex, final RowId rowid) throws SQLException {
+<span class="nc" id="L737">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;RowIDs not supported&quot;);</span>
+  }
+
+  /**
+   * Sets the designated paramter to the given &lt;code&gt;String&lt;/code&gt; object. The driver converts this
+   * to a SQL
+   * &lt;code&gt;NCHAR&lt;/code&gt; or &lt;code&gt;NVARCHAR&lt;/code&gt; or &lt;code&gt;LONGNVARCHAR&lt;/code&gt; value (depending on
+   * the argument's size relative to the driver's limits on &lt;code&gt;NVARCHAR&lt;/code&gt; values) when it
+   * sends it to the database.
+   *
+   * @param parameterIndex of the first parameter is 1, the second is 2, ...
+   * @param value          the parameter value
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if the driver does not
+   *                                         support national character sets;  if the driver can
+   *                                         detect that a data conversion error could occur; if a
+   *                                         database access error occurs; or this method is called
+   *                                         on a closed &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setNString(final int parameterIndex, final String value) throws SQLException {
+<span class="nc" id="L757">    setString(parameterIndex, value);</span>
+<span class="nc" id="L758">  }</span>
+
+  /**
+   * Sets the designated parameter to a &lt;code&gt;Reader&lt;/code&gt; object. The &lt;code&gt;Reader&lt;/code&gt; reads
+   * the data till end-of-file is reached. The driver does the necessary conversion from Java
+   * character format to the national character set in the database.
+   *
+   * @param parameterIndex of the first parameter is 1, the second is 2, ...
+   * @param value          the parameter value
+   * @param length         the number of characters in the parameter data.
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if the driver does not
+   *                                         support national character sets;  if the driver can
+   *                                         detect that a data conversion error could occur; if a
+   *                                         database access error occurs; or this method is called
+   *                                         on a closed &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setNCharacterStream(final int parameterIndex, final Reader value, final long length)
+      throws SQLException {
+<span class="nc" id="L777">    setCharacterStream(parameterIndex, value, length);</span>
+<span class="nc" id="L778">  }</span>
+
+
+  /**
+   * Sets the designated parameter to a &lt;code&gt;Reader&lt;/code&gt; object. The &lt;code&gt;Reader&lt;/code&gt; reads
+   * the data till end-of-file is reached. The driver does the necessary conversion from Java
+   * character format to the national character set in the database.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; This stream object can either be a standard Java stream object or your own
+   * subclass that implements the standard interface. &lt;/P&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; Consult your JDBC driver
+   * documentation to determine if it might be more efficient to use a version of
+   * &lt;code&gt;setNCharacterStream&lt;/code&gt; which takes a length parameter.&lt;/P&gt;
+   *
+   * @param parameterIndex of the first parameter is 1, the second is 2, ...
+   * @param value          the parameter value
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if the driver does not
+   *                                         support national character sets;  if the driver can
+   *                                         detect that a data conversion error could occur; if a
+   *                                         database access error occurs; or this method is called
+   *                                         on a closed &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setNCharacterStream(final int parameterIndex, final Reader value)
+      throws SQLException {
+<span class="nc" id="L804">    setCharacterStream(parameterIndex, value);</span>
+<span class="nc" id="L805">  }</span>
+
+  /**
+   * Sets the designated parameter to a &lt;code&gt;java.sql.NClob&lt;/code&gt; object. The driver converts this
+   * to a SQL
+   * &lt;code&gt;NCLOB&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex of the first parameter is 1, the second is 2, ...
+   * @param value          the parameter value
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if the driver does not
+   *                                         support national character sets;  if the driver can
+   *                                         detect that a data conversion error could occur; if a
+   *                                         database access error occurs; or this method is called
+   *                                         on a closed &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setNClob(final int parameterIndex, final NClob value) throws SQLException {
+<span class="nc" id="L822">    setClob(parameterIndex, value);</span>
+<span class="nc" id="L823">  }</span>
+
+  /**
+   * Sets the designated parameter to a &lt;code&gt;Reader&lt;/code&gt; object.  The reader must contain  the
+   * number of characters specified by length otherwise a &lt;code&gt;SQLException&lt;/code&gt; will be
+   * generated when the
+   * &lt;code&gt;PreparedStatement&lt;/code&gt; is executed. This method differs from the
+   * &lt;code&gt;setCharacterStream (int, Reader,
+   * int)&lt;/code&gt; method because it informs the driver that the parameter value should be sent to the
+   * server as a
+   * &lt;code&gt;NCLOB&lt;/code&gt;.  When the &lt;code&gt;setCharacterStream&lt;/code&gt; method is used, the driver may
+   * have to do extra work to determine whether the parameter data should be sent to the server as
+   * a
+   * &lt;code&gt;LONGNVARCHAR&lt;/code&gt; or a
+   * &lt;code&gt;NCLOB&lt;/code&gt;
+   *
+   * @param parameterIndex index of the first parameter is 1, the second is 2, ...
+   * @param reader         An object that contains the data to set the parameter value to.
+   * @param length         the number of characters in the parameter data.
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if the length specified is
+   *                                         less than zero; if the driver does not support national
+   *                                         character sets; if the driver can detect that a data
+   *                                         conversion error could occur; if a database access
+   *                                         error occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setNClob(final int parameterIndex, final Reader reader, final long length)
+      throws SQLException {
+<span class="nc" id="L852">    setClob(parameterIndex, reader, length);</span>
+<span class="nc" id="L853">  }</span>
+
+
+  /**
+   * Sets the designated parameter to a &lt;code&gt;Reader&lt;/code&gt; object. This method differs from the
+   * &lt;code&gt;setCharacterStream (int, Reader)&lt;/code&gt; method because it informs the driver that the
+   * parameter value should be sent to the server as a &lt;code&gt;NCLOB&lt;/code&gt;.  When the
+   * &lt;code&gt;setCharacterStream&lt;/code&gt; method is used, the driver may have to do extra work to
+   * determine whether the parameter data should be sent to the server as a
+   * &lt;code&gt;LONGNVARCHAR&lt;/code&gt; or a &lt;code&gt;NCLOB&lt;/code&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; Consult your JDBC driver
+   * documentation to determine if it might be more efficient to use a version of
+   * &lt;code&gt;setNClob&lt;/code&gt; which takes a length parameter.&lt;/P&gt;
+   *
+   * @param parameterIndex index of the first parameter is 1, the second is 2, ...
+   * @param reader         An object that contains the data to set the parameter value to.
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if the driver does not
+   *                                         support national character sets; if the driver can
+   *                                         detect that a data conversion error could occur;  if a
+   *                                         database access error occurs or this method is called
+   *                                         on a closed &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setNClob(final int parameterIndex, final Reader reader) throws SQLException {
+<span class="nc" id="L878">    setClob(parameterIndex, reader);</span>
+<span class="nc" id="L879">  }</span>
+
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.sql.SQLXML&lt;/code&gt; object. The driver
+   * converts this to an SQL &lt;code&gt;XML&lt;/code&gt; value when it sends it to the database.
+   * &lt;br&gt;
+   *
+   * @param parameterIndex index of the first parameter is 1, the second is 2, ...
+   * @param xmlObject      a &lt;code&gt;SQLXML&lt;/code&gt; object that maps an SQL &lt;code&gt;XML&lt;/code&gt; value
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs; this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt; or the
+   *                                         &lt;code&gt;java.xml.transform.Result&lt;/code&gt;,
+   *                                         &lt;code&gt;Writer&lt;/code&gt; or &lt;code&gt;OutputStream&lt;/code&gt; has
+   *                                         not been closed for the
+   *                                         &lt;code&gt;SQLXML&lt;/code&gt; object
+   */
+  @Override
+  public void setSQLXML(final int parameterIndex, final SQLXML xmlObject) throws SQLException {
+<span class="nc" id="L900">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;SQlXML not supported&quot;);</span>
+  }
+
+  /**
+   * &lt;p&gt;Sets the value of the designated parameter with the given object. The second argument must
+   * be an object type; for integral values, the &lt;code&gt;java.lang&lt;/code&gt; equivalent objects should be
+   * used.&lt;/P&gt;
+   *
+   * &lt;p&gt;If the second argument is an &lt;code&gt;InputStream&lt;/code&gt; then the stream must contain the number
+   * of bytes specified by scaleOrLength.  If the second argument is a &lt;code&gt;Reader&lt;/code&gt; then the
+   * reader must contain the number of characters specified by scaleOrLength. If these conditions
+   * are not true the driver will generate a
+   * &lt;code&gt;SQLException&lt;/code&gt; when the prepared statement is executed.&lt;/p&gt;
+   *
+   * &lt;P&gt;The given Java object will be converted to the given targetSqlType before being sent to the
+   * database.&lt;/P&gt;
+   *
+   * &lt;P&gt;If the object has a custom mapping (is of a class implementing the interface
+   * &lt;code&gt;SQLData&lt;/code&gt;), the JDBC driver should call the method &lt;code&gt;SQLData.writeSQL&lt;/code&gt; to
+   * write it to the SQL data stream. If, on the other hand, the object is of a class implementing
+   * &lt;code&gt;Ref&lt;/code&gt;, &lt;code&gt;Blob&lt;/code&gt;, &lt;code&gt;Clob&lt;/code&gt;,
+   * &lt;code&gt;NClob&lt;/code&gt;, &lt;code&gt;Struct&lt;/code&gt;, &lt;code&gt;java.net.URL&lt;/code&gt;, or &lt;code&gt;Array&lt;/code&gt;, the
+   * driver should pass it to the database as a value of the corresponding SQL type.&lt;/P&gt;
+   *
+   * &lt;P&gt;Note that this method may be used to pass database-specific abstract data types.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param obj            the object containing the input parameter value
+   * @param targetSqlType  the SQL type (as defined in java.sql.Types) to be sent to the database.
+   *                       The scale argument may further qualify this type.
+   * @param scaleOrLength  for &lt;code&gt;java.sql.Types.DECIMAL&lt;/code&gt; or &lt;code&gt;java.sql.Types.NUMERIC
+   *                       types&lt;/code&gt;, this is the number of digits after the decimal point. For
+   *                       Java Object types
+   *                       &lt;code&gt;InputStream&lt;/code&gt; and &lt;code&gt;Reader&lt;/code&gt;, this is the length of
+   *                       the data in the stream or reader.  For all other types, this value will
+   *                       be ignored.
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs; this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt; or if the Java Object
+   *                                         specified by x is an InputStream or Reader object and
+   *                                         the value of the scale parameter is less than zero
+   * @see Types
+   */
+  public void setObject(final int parameterIndex, final Object obj, final int targetSqlType,
+      final int scaleOrLength) throws SQLException {
+<span class="nc" id="L946">    setInternalObject(parameterIndex, obj, targetSqlType, scaleOrLength);</span>
+<span class="nc" id="L947">  }</span>
+
+  /**
+   * Sets the value of the designated parameter with the given object. This method is like the
+   * method
+   * &lt;code&gt;setObject&lt;/code&gt; above, except that it assumes a scale of zero.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param obj            the object containing the input parameter value
+   * @param targetSqlType  the SQL type (as defined in java.sql.Types) to be sent to the database
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;s
+   * @see Types
+   */
+  public void setObject(final int parameterIndex, final Object obj, final int targetSqlType)
+      throws SQLException {
+<span class="nc" id="L965">    setInternalObject(parameterIndex, obj, targetSqlType, Long.MAX_VALUE);</span>
+<span class="nc" id="L966">  }</span>
+
+  /**
+   * &lt;p&gt;Sets the value of the designated parameter using the given object. The second parameter
+   * must be of type
+   * &lt;code&gt;Object&lt;/code&gt;; therefore, the &lt;code&gt;java.lang&lt;/code&gt; equivalent objects should be used
+   * for built-in types.&lt;/P&gt;
+   *
+   * &lt;p&gt;The JDBC specification specifies a standard mapping from Java &lt;code&gt;Object&lt;/code&gt; types to
+   * SQL types.  The given argument will be converted to the corresponding SQL type before being
+   * sent to the database.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param obj            the object containing the input parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs; this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt; or the type of the given object is
+   *                      ambiguous
+   */
+  public void setObject(final int parameterIndex, final Object obj) throws SQLException {
+<span class="nc bnc" id="L987" title="All 2 branches missed.">    if (obj == null) {</span>
+<span class="nc" id="L988">      setNull(parameterIndex, Types.INTEGER);</span>
+<span class="nc bnc" id="L989" title="All 2 branches missed.">    } else if (obj instanceof String) {</span>
+<span class="nc" id="L990">      setString(parameterIndex, (String) obj);</span>
+<span class="nc bnc" id="L991" title="All 2 branches missed.">    } else if (obj instanceof Integer) {</span>
+<span class="nc" id="L992">      setInt(parameterIndex, (Integer) obj);</span>
+<span class="nc bnc" id="L993" title="All 2 branches missed.">    } else if (obj instanceof Long) {</span>
+<span class="nc" id="L994">      setLong(parameterIndex, (Long) obj);</span>
+<span class="nc bnc" id="L995" title="All 2 branches missed.">    } else if (obj instanceof Short) {</span>
+<span class="nc" id="L996">      setShort(parameterIndex, (Short) obj);</span>
+<span class="nc bnc" id="L997" title="All 2 branches missed.">    } else if (obj instanceof Double) {</span>
+<span class="nc" id="L998">      setDouble(parameterIndex, (Double) obj);</span>
+<span class="nc bnc" id="L999" title="All 2 branches missed.">    } else if (obj instanceof Float) {</span>
+<span class="nc" id="L1000">      setFloat(parameterIndex, (Float) obj);</span>
+<span class="nc bnc" id="L1001" title="All 2 branches missed.">    } else if (obj instanceof Byte) {</span>
+<span class="nc" id="L1002">      setByte(parameterIndex, (Byte) obj);</span>
+<span class="nc bnc" id="L1003" title="All 2 branches missed.">    } else if (obj instanceof byte[]) {</span>
+<span class="nc" id="L1004">      setBytes(parameterIndex, (byte[]) obj);</span>
+<span class="nc bnc" id="L1005" title="All 2 branches missed.">    } else if (obj instanceof Date) {</span>
+<span class="nc" id="L1006">      setDate(parameterIndex, (Date) obj);</span>
+<span class="nc bnc" id="L1007" title="All 2 branches missed.">    } else if (obj instanceof Time) {</span>
+<span class="nc" id="L1008">      setTime(parameterIndex, (Time) obj);</span>
+<span class="nc bnc" id="L1009" title="All 2 branches missed.">    } else if (obj instanceof Timestamp) {</span>
+<span class="nc" id="L1010">      setTimestamp(parameterIndex, (Timestamp) obj);</span>
+<span class="nc bnc" id="L1011" title="All 2 branches missed.">    } else if (obj instanceof java.util.Date) {</span>
+<span class="nc" id="L1012">      setTimestamp(parameterIndex, new Timestamp(((java.util.Date) obj).getTime()));</span>
+<span class="nc bnc" id="L1013" title="All 2 branches missed.">    } else if (obj instanceof Boolean) {</span>
+<span class="nc" id="L1014">      setBoolean(parameterIndex, (Boolean) obj);</span>
+<span class="nc bnc" id="L1015" title="All 2 branches missed.">    } else if (obj instanceof Blob) {</span>
+<span class="nc" id="L1016">      setBlob(parameterIndex, (Blob) obj);</span>
+<span class="nc bnc" id="L1017" title="All 2 branches missed.">    } else if (obj instanceof InputStream) {</span>
+<span class="nc" id="L1018">      setBinaryStream(parameterIndex, (InputStream) obj);</span>
+<span class="nc bnc" id="L1019" title="All 2 branches missed.">    } else if (obj instanceof Reader) {</span>
+<span class="nc" id="L1020">      setCharacterStream(parameterIndex, (Reader) obj);</span>
+<span class="nc bnc" id="L1021" title="All 2 branches missed.">    } else if (obj instanceof BigDecimal) {</span>
+<span class="nc" id="L1022">      setBigDecimal(parameterIndex, (BigDecimal) obj);</span>
+<span class="nc bnc" id="L1023" title="All 2 branches missed.">    } else if (obj instanceof BigInteger) {</span>
+<span class="nc" id="L1024">      setString(parameterIndex, obj.toString());</span>
+<span class="nc bnc" id="L1025" title="All 2 branches missed.">    } else if (obj instanceof Clob) {</span>
+<span class="nc" id="L1026">      setClob(parameterIndex, (Clob) obj);</span>
+<span class="nc bnc" id="L1027" title="All 2 branches missed.">    } else if (obj instanceof LocalDateTime) {</span>
+<span class="nc" id="L1028">      setTimestamp(parameterIndex, Timestamp.valueOf((LocalDateTime) obj));</span>
+<span class="nc bnc" id="L1029" title="All 2 branches missed.">    } else if (obj instanceof Instant) {</span>
+<span class="nc" id="L1030">      setTimestamp(parameterIndex, Timestamp.from((Instant) obj));</span>
+<span class="nc bnc" id="L1031" title="All 2 branches missed.">    } else if (obj instanceof LocalDate) {</span>
+<span class="nc" id="L1032">      setDate(parameterIndex, Date.valueOf((LocalDate) obj));</span>
+<span class="nc bnc" id="L1033" title="All 2 branches missed.">    } else if (obj instanceof OffsetDateTime) {</span>
+<span class="nc" id="L1034">      setParameter(parameterIndex,</span>
+          new ZonedDateTimeParameter(
+<span class="nc" id="L1036">              ((OffsetDateTime) obj).toZonedDateTime(),</span>
+<span class="nc" id="L1037">              protocol.getTimeZone().toZoneId(),</span>
+              useFractionalSeconds,
+              options));
+<span class="nc bnc" id="L1040" title="All 2 branches missed.">    } else if (obj instanceof OffsetTime) {</span>
+<span class="nc" id="L1041">      setParameter(parameterIndex,</span>
+          new OffsetTimeParameter(
+                  (OffsetTime) obj,
+<span class="nc" id="L1044">              protocol.getTimeZone().toZoneId(),</span>
+              useFractionalSeconds,
+              options));
+<span class="nc bnc" id="L1047" title="All 2 branches missed.">    } else if (obj instanceof ZonedDateTime) {</span>
+<span class="nc" id="L1048">      setParameter(parameterIndex,</span>
+          new ZonedDateTimeParameter(
+                  (ZonedDateTime) obj,
+<span class="nc" id="L1051">              protocol.getTimeZone().toZoneId(),</span>
+              useFractionalSeconds,
+              options));
+<span class="nc bnc" id="L1054" title="All 2 branches missed.">    } else if (obj instanceof LocalTime) {</span>
+<span class="nc" id="L1055">      setTime(parameterIndex, Time.valueOf((LocalTime) obj));</span>
+    } else {
+      //fallback to sending serialized object
+<span class="nc" id="L1058">      setParameter(parameterIndex, new SerializableParameter(obj, noBackslashEscapes));</span>
+<span class="nc" id="L1059">      hasLongData = true;</span>
+    }
+<span class="nc" id="L1061">  }</span>
+
+  @Override
+  public void setObject(int parameterIndex, Object obj, SQLType targetSqlType, int scaleOrLength)
+      throws SQLException {
+<span class="nc" id="L1066">    setObject(parameterIndex, obj, targetSqlType.getVendorTypeNumber(), scaleOrLength);</span>
+<span class="nc" id="L1067">  }</span>
+
+  @Override
+  public void setObject(int parameterIndex, Object obj, SQLType targetSqlType) throws SQLException {
+<span class="nc" id="L1071">    setObject(parameterIndex, obj, targetSqlType.getVendorTypeNumber());</span>
+<span class="nc" id="L1072">  }</span>
+
+  private void setInternalObject(final int parameterIndex, final Object obj,
+      final int targetSqlType,
+      final long scaleOrLength) throws SQLException {
+<span class="nc bnc" id="L1077" title="All 2 branches missed.">    switch (targetSqlType) {</span>
+      case Types.ARRAY:
+      case Types.DATALINK:
+      case Types.JAVA_OBJECT:
+      case Types.REF:
+      case Types.ROWID:
+      case Types.SQLXML:
+      case Types.STRUCT:
+<span class="nc" id="L1085">        throw ExceptionMapper.getFeatureNotSupportedException(&quot;Type not supported&quot;);</span>
+      default:
+        break;
+    }
+
+<span class="nc bnc" id="L1090" title="All 2 branches missed.">    if (obj == null) {</span>
+<span class="nc" id="L1091">      setNull(parameterIndex, Types.INTEGER);</span>
+<span class="nc bnc" id="L1092" title="All 2 branches missed.">    } else if (obj instanceof String) {</span>
+<span class="nc bnc" id="L1093" title="All 2 branches missed.">      if (targetSqlType == Types.BLOB) {</span>
+<span class="nc" id="L1094">        throw ExceptionMapper.getSqlException(&quot;Cannot convert a String to a Blob&quot;);</span>
+      }
+<span class="nc" id="L1096">      String str = (String) obj;</span>
+      try {
+<span class="nc bnc" id="L1098" title="All 14 branches missed.">        switch (targetSqlType) {</span>
+          case Types.BIT:
+          case Types.BOOLEAN:
+<span class="nc bnc" id="L1101" title="All 4 branches missed.">            setBoolean(parameterIndex, !(&quot;false&quot;.equalsIgnoreCase(str) || &quot;0&quot;.equals(str)));</span>
+<span class="nc" id="L1102">            break;</span>
+          case Types.TINYINT:
+<span class="nc" id="L1104">            setByte(parameterIndex, Byte.parseByte(str));</span>
+<span class="nc" id="L1105">            break;</span>
+          case Types.SMALLINT:
+<span class="nc" id="L1107">            setShort(parameterIndex, Short.parseShort(str));</span>
+<span class="nc" id="L1108">            break;</span>
+          case Types.INTEGER:
+<span class="nc" id="L1110">            setInt(parameterIndex, Integer.parseInt(str));</span>
+<span class="nc" id="L1111">            break;</span>
+          case Types.DOUBLE:
+          case Types.FLOAT:
+<span class="nc" id="L1114">            setDouble(parameterIndex, Double.valueOf(str));</span>
+<span class="nc" id="L1115">            break;</span>
+          case Types.REAL:
+<span class="nc" id="L1117">            setFloat(parameterIndex, Float.valueOf(str));</span>
+<span class="nc" id="L1118">            break;</span>
+          case Types.BIGINT:
+<span class="nc" id="L1120">            setLong(parameterIndex, Long.valueOf(str));</span>
+<span class="nc" id="L1121">            break;</span>
+          case Types.DECIMAL:
+          case Types.NUMERIC:
+<span class="nc" id="L1124">            setBigDecimal(parameterIndex, new BigDecimal(str));</span>
+<span class="nc" id="L1125">            break;</span>
+          case Types.CLOB:
+          case Types.NCLOB:
+          case Types.CHAR:
+          case Types.VARCHAR:
+          case Types.LONGVARCHAR:
+          case Types.NCHAR:
+          case Types.NVARCHAR:
+          case Types.LONGNVARCHAR:
+<span class="nc" id="L1134">            setString(parameterIndex, str);</span>
+<span class="nc" id="L1135">            break;</span>
+          case Types.TIMESTAMP:
+<span class="nc bnc" id="L1137" title="All 2 branches missed.">            if (str.startsWith(&quot;0000-00-00&quot;)) {</span>
+<span class="nc" id="L1138">              setTimestamp(parameterIndex, null);</span>
+            } else {
+<span class="nc" id="L1140">              setTimestamp(parameterIndex, Timestamp.valueOf(str));</span>
+            }
+<span class="nc" id="L1142">            break;</span>
+          case Types.TIME:
+<span class="nc" id="L1144">            setTime(parameterIndex, Time.valueOf((String) obj));</span>
+<span class="nc" id="L1145">            break;</span>
+          case Types.TIME_WITH_TIMEZONE:
+<span class="nc" id="L1147">            setParameter(parameterIndex,</span>
+                new OffsetTimeParameter(
+<span class="nc" id="L1149">                    OffsetTime.parse(str),</span>
+<span class="nc" id="L1150">                    protocol.getTimeZone().toZoneId(),</span>
+                    useFractionalSeconds,
+                    options));
+<span class="nc" id="L1153">            break;</span>
+          case Types.TIMESTAMP_WITH_TIMEZONE:
+
+<span class="nc" id="L1156">            setParameter(parameterIndex,</span>
+                new ZonedDateTimeParameter(
+<span class="nc" id="L1158">                    ZonedDateTime.parse(str, SPEC_ISO_ZONED_DATE_TIME),</span>
+<span class="nc" id="L1159">                    protocol.getTimeZone().toZoneId(),</span>
+                    useFractionalSeconds,
+                    options));
+<span class="nc" id="L1162">            break;</span>
+          default:
+<span class="nc" id="L1164">            throw ExceptionMapper</span>
+<span class="nc" id="L1165">                .getSqlException(&quot;Could not convert [&quot; + str + &quot;] to &quot; + targetSqlType);</span>
+        }
+<span class="nc" id="L1167">      } catch (IllegalArgumentException e) {</span>
+<span class="nc" id="L1168">        throw ExceptionMapper</span>
+<span class="nc" id="L1169">            .getSqlException(&quot;Could not convert [&quot; + str + &quot;] to &quot; + targetSqlType, e);</span>
+<span class="nc" id="L1170">      }</span>
+<span class="nc bnc" id="L1171" title="All 2 branches missed.">    } else if (obj instanceof Number) {</span>
+<span class="nc" id="L1172">      Number bd = (Number) obj;</span>
+<span class="nc bnc" id="L1173" title="All 10 branches missed.">      switch (targetSqlType) {</span>
+        case Types.TINYINT:
+<span class="nc" id="L1175">          setByte(parameterIndex, bd.byteValue());</span>
+<span class="nc" id="L1176">          break;</span>
+        case Types.SMALLINT:
+<span class="nc" id="L1178">          setShort(parameterIndex, bd.shortValue());</span>
+<span class="nc" id="L1179">          break;</span>
+        case Types.INTEGER:
+<span class="nc" id="L1181">          setInt(parameterIndex, bd.intValue());</span>
+<span class="nc" id="L1182">          break;</span>
+        case Types.BIGINT:
+<span class="nc" id="L1184">          setLong(parameterIndex, bd.longValue());</span>
+<span class="nc" id="L1185">          break;</span>
+        case Types.FLOAT:
+        case Types.DOUBLE:
+<span class="nc" id="L1188">          setDouble(parameterIndex, bd.doubleValue());</span>
+<span class="nc" id="L1189">          break;</span>
+        case Types.REAL:
+<span class="nc" id="L1191">          setFloat(parameterIndex, bd.floatValue());</span>
+<span class="nc" id="L1192">          break;</span>
+        case Types.DECIMAL:
+        case Types.NUMERIC:
+<span class="nc bnc" id="L1195" title="All 2 branches missed.">          if (obj instanceof BigDecimal) {</span>
+<span class="nc" id="L1196">            setBigDecimal(parameterIndex, (BigDecimal) obj);</span>
+<span class="nc bnc" id="L1197" title="All 4 branches missed.">          } else if (obj instanceof Double || obj instanceof Float) {</span>
+<span class="nc" id="L1198">            setDouble(parameterIndex, bd.doubleValue());</span>
+          } else {
+<span class="nc" id="L1200">            setLong(parameterIndex, bd.longValue());</span>
+          }
+<span class="nc" id="L1202">          break;</span>
+        case Types.BIT:
+<span class="nc bnc" id="L1204" title="All 2 branches missed.">          setBoolean(parameterIndex, bd.shortValue() != 0);</span>
+<span class="nc" id="L1205">          break;</span>
+        case Types.CHAR:
+        case Types.VARCHAR:
+<span class="nc" id="L1208">          setString(parameterIndex, bd.toString());</span>
+<span class="nc" id="L1209">          break;</span>
+        default:
+<span class="nc" id="L1211">          throw ExceptionMapper</span>
+<span class="nc" id="L1212">              .getSqlException(&quot;Could not convert [&quot; + bd + &quot;] to &quot; + targetSqlType);</span>
+
+      }
+<span class="nc bnc" id="L1215" title="All 2 branches missed.">    } else if (obj instanceof byte[]) {</span>
+<span class="nc bnc" id="L1216" title="All 6 branches missed.">      if (targetSqlType == Types.BINARY || targetSqlType == Types.VARBINARY</span>
+          || targetSqlType == Types.LONGVARBINARY) {
+<span class="nc" id="L1218">        setBytes(parameterIndex, (byte[]) obj);</span>
+      } else {
+<span class="nc" id="L1220">        throw ExceptionMapper</span>
+<span class="nc" id="L1221">            .getSqlException(&quot;Can only convert a byte[] to BINARY, VARBINARY or LONGVARBINARY&quot;);</span>
+      }
+
+<span class="nc bnc" id="L1224" title="All 2 branches missed.">    } else if (obj instanceof Time) {</span>
+<span class="nc" id="L1225">      setTime(parameterIndex, (Time) obj);      // it is just a string anyway</span>
+<span class="nc bnc" id="L1226" title="All 2 branches missed.">    } else if (obj instanceof Timestamp) {</span>
+<span class="nc" id="L1227">      setTimestamp(parameterIndex, (Timestamp) obj);</span>
+<span class="nc bnc" id="L1228" title="All 2 branches missed.">    } else if (obj instanceof Date) {</span>
+<span class="nc" id="L1229">      setDate(parameterIndex, (Date) obj);</span>
+<span class="nc bnc" id="L1230" title="All 2 branches missed.">    } else if (obj instanceof java.util.Date) {</span>
+<span class="nc" id="L1231">      long timemillis = ((java.util.Date) obj).getTime();</span>
+<span class="nc bnc" id="L1232" title="All 2 branches missed.">      if (targetSqlType == Types.DATE) {</span>
+<span class="nc" id="L1233">        setDate(parameterIndex, new Date(timemillis));</span>
+<span class="nc bnc" id="L1234" title="All 2 branches missed.">      } else if (targetSqlType == Types.TIME) {</span>
+<span class="nc" id="L1235">        setTime(parameterIndex, new Time(timemillis));</span>
+<span class="nc bnc" id="L1236" title="All 2 branches missed.">      } else if (targetSqlType == Types.TIMESTAMP) {</span>
+<span class="nc" id="L1237">        setTimestamp(parameterIndex, new Timestamp(timemillis));</span>
+      }
+<span class="nc bnc" id="L1239" title="All 2 branches missed.">    } else if (obj instanceof Boolean) {</span>
+<span class="nc" id="L1240">      setBoolean(parameterIndex, (Boolean) obj);</span>
+<span class="nc bnc" id="L1241" title="All 2 branches missed.">    } else if (obj instanceof Blob) {</span>
+<span class="nc" id="L1242">      setBlob(parameterIndex, (Blob) obj);</span>
+<span class="nc bnc" id="L1243" title="All 2 branches missed.">    } else if (obj instanceof Clob) {</span>
+<span class="nc" id="L1244">      setClob(parameterIndex, (Clob) obj);</span>
+<span class="nc bnc" id="L1245" title="All 2 branches missed.">    } else if (obj instanceof InputStream) {</span>
+<span class="nc" id="L1246">      setBinaryStream(parameterIndex, (InputStream) obj, scaleOrLength);</span>
+<span class="nc bnc" id="L1247" title="All 2 branches missed.">    } else if (obj instanceof Reader) {</span>
+<span class="nc" id="L1248">      setCharacterStream(parameterIndex, (Reader) obj, scaleOrLength);</span>
+<span class="nc bnc" id="L1249" title="All 2 branches missed.">    } else if (obj instanceof LocalDateTime) {</span>
+<span class="nc" id="L1250">      setTimestamp(parameterIndex, Timestamp.valueOf((LocalDateTime) obj));</span>
+<span class="nc bnc" id="L1251" title="All 2 branches missed.">    } else if (obj instanceof Instant) {</span>
+<span class="nc" id="L1252">      setTimestamp(parameterIndex, Timestamp.from((Instant) obj));</span>
+<span class="nc bnc" id="L1253" title="All 2 branches missed.">    } else if (obj instanceof LocalDate) {</span>
+<span class="nc" id="L1254">      setDate(parameterIndex, Date.valueOf((LocalDate) obj));</span>
+<span class="nc bnc" id="L1255" title="All 2 branches missed.">    } else if (obj instanceof OffsetDateTime) {</span>
+<span class="nc" id="L1256">      setParameter(parameterIndex,</span>
+          new ZonedDateTimeParameter(
+<span class="nc" id="L1258">              ((OffsetDateTime) obj).toZonedDateTime(),</span>
+<span class="nc" id="L1259">              protocol.getTimeZone().toZoneId(),</span>
+              useFractionalSeconds,
+              options));
+<span class="nc bnc" id="L1262" title="All 2 branches missed.">    } else if (obj instanceof OffsetTime) {</span>
+<span class="nc" id="L1263">      setParameter(parameterIndex,</span>
+          new OffsetTimeParameter(
+                  (OffsetTime) obj,
+<span class="nc" id="L1266">              protocol.getTimeZone().toZoneId(),</span>
+              useFractionalSeconds,
+              options));
+<span class="nc bnc" id="L1269" title="All 2 branches missed.">    } else if (obj instanceof ZonedDateTime) {</span>
+<span class="nc" id="L1270">      setParameter(parameterIndex,</span>
+          new ZonedDateTimeParameter(
+                  (ZonedDateTime) obj,
+<span class="nc" id="L1273">              protocol.getTimeZone().toZoneId(),</span>
+              useFractionalSeconds,
+              options));
+<span class="nc bnc" id="L1276" title="All 2 branches missed.">    } else if (obj instanceof LocalTime) {</span>
+<span class="nc" id="L1277">      setTime(parameterIndex, Time.valueOf((LocalTime) obj));</span>
+    } else {
+<span class="nc" id="L1279">      throw ExceptionMapper.getSqlException(</span>
+<span class="nc" id="L1280">          &quot;Could not set parameter in setObject, could not convert: &quot; + obj.getClass() + &quot; to &quot;</span>
+              + targetSqlType);
+    }
+<span class="nc" id="L1283">  }</span>
+
+  /**
+   * Sets the designated parameter to the given input stream, which will have the specified number
+   * of bytes. When a very large ASCII value is input to a &lt;code&gt;LONGVARCHAR&lt;/code&gt; parameter, it
+   * may be more practical to send it via a &lt;code&gt;java.io.InputStream&lt;/code&gt;. Data will be read from
+   * the stream as needed until end-of-file is reached. The JDBC driver will do any necessary
+   * conversion from ASCII to the database char format.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; This stream object can either be a standard Java stream object or your own
+   * subclass that implements the standard interface.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param stream         the Java input stream that contains the ASCII parameter value
+   * @param length         the number of bytes in the stream
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setAsciiStream(final int parameterIndex, final InputStream stream, final long length)
+      throws SQLException {
+<span class="nc bnc" id="L1305" title="All 2 branches missed.">    if (stream == null) {</span>
+<span class="nc" id="L1306">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L1307">      return;</span>
+    }
+<span class="nc" id="L1309">    setParameter(parameterIndex, new StreamParameter(stream, length, noBackslashEscapes));</span>
+<span class="nc" id="L1310">    hasLongData = true;</span>
+<span class="nc" id="L1311">  }</span>
+
+  /**
+   * This function reads up the entire stream and stores it in memory since we need to know the
+   * length when sending it to the server use the corresponding method with a length parameter if
+   * memory is an issue
+   * &lt;br&gt;
+   * Sets the designated parameter to the given input stream. When a very large ASCII value is input
+   * to a
+   * &lt;code&gt;LONGVARCHAR&lt;/code&gt; parameter, it may be more practical to send it via a
+   * &lt;code&gt;java.io.InputStream&lt;/code&gt;.
+   * Data will be read from the stream as needed until end-of-file is reached.  The JDBC driver will
+   * do any necessary conversion from ASCII to the database char format.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; This stream object can either be a standard Java stream object or your own
+   * subclass that implements the standard interface. &lt;/P&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; Consult your JDBC driver
+   * documentation to determine if it might be more efficient to use a version of
+   * &lt;code&gt;setAsciiStream&lt;/code&gt; which takes a length parameter.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param stream         the Java input stream that contains the ASCII parameter value
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setAsciiStream(final int parameterIndex, final InputStream stream)
+      throws SQLException {
+<span class="nc bnc" id="L1341" title="All 2 branches missed.">    if (stream == null) {</span>
+<span class="nc" id="L1342">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L1343">      return;</span>
+    }
+<span class="nc" id="L1345">    setParameter(parameterIndex, new StreamParameter(stream, noBackslashEscapes));</span>
+<span class="nc" id="L1346">    hasLongData = true;</span>
+<span class="nc" id="L1347">  }</span>
+
+  /**
+   * Sets the designated parameter to the given input stream, which will have the specified number
+   * of bytes. When a very large ASCII value is input to a &lt;code&gt;LONGVARCHAR&lt;/code&gt; parameter, it
+   * may be more practical to send it via a &lt;code&gt;java.io.InputStream&lt;/code&gt;. Data will be read from
+   * the stream as needed until end-of-file is reached. The JDBC driver will do any necessary
+   * conversion from ASCII to the database char format.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; This stream object can either be a standard Java stream object or your own
+   * subclass that implements the standard interface.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param stream         the Java input stream that contains the ASCII parameter value
+   * @param length         the number of bytes in the stream
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setAsciiStream(final int parameterIndex, final InputStream stream, final int length)
+      throws SQLException {
+<span class="nc bnc" id="L1369" title="All 2 branches missed.">    if (stream == null) {</span>
+<span class="nc" id="L1370">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L1371">      return;</span>
+    }
+<span class="nc" id="L1373">    setParameter(parameterIndex, new StreamParameter(stream, length, noBackslashEscapes));</span>
+<span class="nc" id="L1374">    hasLongData = true;</span>
+<span class="nc" id="L1375">  }</span>
+
+  /**
+   * Sets the designated parameter to the given input stream, which will have the specified number
+   * of bytes. When a very large binary value is input to a &lt;code&gt;LONGVARBINARY&lt;/code&gt; parameter, it
+   * may be more practical to send it via a &lt;code&gt;java.io.InputStream&lt;/code&gt; object. The data will
+   * be read from the stream as needed until end-of-file is reached.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; This stream object can either be a standard Java stream object or your own
+   * subclass that implements the standard interface.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param stream         the java input stream which contains the binary parameter value
+   * @param length         the number of bytes in the stream
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setBinaryStream(final int parameterIndex, final InputStream stream, final long length)
+      throws SQLException {
+<span class="nc bnc" id="L1396" title="All 2 branches missed.">    if (stream == null) {</span>
+<span class="nc" id="L1397">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L1398">      return;</span>
+    }
+<span class="nc" id="L1400">    setParameter(parameterIndex, new StreamParameter(stream, length, noBackslashEscapes));</span>
+<span class="nc" id="L1401">    hasLongData = true;</span>
+<span class="nc" id="L1402">  }</span>
+
+  /**
+   * This function reads up the entire stream and stores it in memory since we need to know the
+   * length when sending it to the server
+   * &lt;br&gt;
+   * Sets the designated parameter to the given input stream. When a very large binary value is
+   * input to a
+   * &lt;code&gt;LONGVARBINARY&lt;/code&gt; parameter, it may be more practical to send it via a
+   * &lt;code&gt;java.io.InputStream&lt;/code&gt;
+   * object. The data will be read from the stream as needed until end-of-file is reached.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; This stream object can either be a standard Java stream object or your own
+   * subclass that implements the standard interface. &lt;/P&gt;
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; Consult your JDBC driver
+   * documentation to determine if it might be more efficient to use a version of
+   * &lt;code&gt;setBinaryStream&lt;/code&gt; which takes a length parameter.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param stream         the java input stream which contains the binary parameter value
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setBinaryStream(final int parameterIndex, final InputStream stream)
+      throws SQLException {
+<span class="nc bnc" id="L1430" title="All 2 branches missed.">    if (stream == null) {</span>
+<span class="nc" id="L1431">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L1432">      return;</span>
+    }
+<span class="nc" id="L1434">    setParameter(parameterIndex, new StreamParameter(stream, noBackslashEscapes));</span>
+<span class="nc" id="L1435">    hasLongData = true;</span>
+<span class="nc" id="L1436">  }</span>
+
+
+  /**
+   * Sets the designated parameter to the given input stream, which will have the specified number
+   * of bytes. When a very large binary value is input to a &lt;code&gt;LONGVARBINARY&lt;/code&gt; parameter, it
+   * may be more practical to send it via a &lt;code&gt;java.io.InputStream&lt;/code&gt; object. The data will
+   * be read from the stream as needed until end-of-file is reached.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; This stream object can either be a standard Java stream object or your own
+   * subclass that implements the standard interface.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param stream         the java input stream which contains the binary parameter value
+   * @param length         the number of bytes in the stream
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setBinaryStream(final int parameterIndex, final InputStream stream, final int length)
+      throws SQLException {
+<span class="nc bnc" id="L1458" title="All 2 branches missed.">    if (stream == null) {</span>
+<span class="nc" id="L1459">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L1460">      return;</span>
+    }
+<span class="nc" id="L1462">    setParameter(parameterIndex, new StreamParameter(stream, length, noBackslashEscapes));</span>
+<span class="nc" id="L1463">    hasLongData = true;</span>
+<span class="nc" id="L1464">  }</span>
+
+
+  /**
+   * Sets the designated parameter to the given Java &lt;code&gt;boolean&lt;/code&gt; value. The driver converts
+   * this to an SQL &lt;code&gt;BIT&lt;/code&gt; or &lt;code&gt;BOOLEAN&lt;/code&gt; value when it sends it to the
+   * database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param value          the parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setBoolean(final int parameterIndex, final boolean value) throws SQLException {
+<span class="nc bnc" id="L1480" title="All 2 branches missed.">    setParameter(parameterIndex, new ByteParameter(value ? (byte) 1 : (byte) 0));</span>
+<span class="nc" id="L1481">  }</span>
+
+  /**
+   * Sets the designated parameter to the given Java &lt;code&gt;byte&lt;/code&gt; value. The driver converts
+   * this to an SQL
+   * &lt;code&gt;TINYINT&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param bit            the parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setByte(final int parameterIndex, final byte bit) throws SQLException {
+<span class="nc" id="L1496">    setParameter(parameterIndex, new ByteParameter(bit));</span>
+<span class="nc" id="L1497">  }</span>
+
+  /**
+   * Sets the designated parameter to the given Java &lt;code&gt;short&lt;/code&gt; value. The driver converts
+   * this to an SQL
+   * &lt;code&gt;SMALLINT&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param value          the parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setShort(final int parameterIndex, final short value) throws SQLException {
+<span class="nc" id="L1512">    setParameter(parameterIndex, new ShortParameter(value));</span>
+<span class="nc" id="L1513">  }</span>
+
+  /**
+   * Set string parameter.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param str            String
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setString(final int parameterIndex, final String str) throws SQLException {
+<span class="nc bnc" id="L1526" title="All 2 branches missed.">    if (str == null) {</span>
+<span class="nc" id="L1527">      setNull(parameterIndex, ColumnType.VARCHAR);</span>
+<span class="nc" id="L1528">      return;</span>
+    }
+
+<span class="nc" id="L1531">    setParameter(parameterIndex, new StringParameter(str, noBackslashEscapes));</span>
+<span class="nc" id="L1532">  }</span>
+
+  /**
+   * Sets the designated parameter to the given Java array of bytes.  The driver converts this to an
+   * SQL
+   * &lt;code&gt;VARBINARY&lt;/code&gt; or &lt;code&gt;LONGVARBINARY&lt;/code&gt; (depending on the argument's size
+   * relative to the driver's limits on &lt;code&gt;VARBINARY&lt;/code&gt; values) when it sends it to the
+   * database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param bytes          the parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setBytes(final int parameterIndex, final byte[] bytes) throws SQLException {
+<span class="nc bnc" id="L1549" title="All 2 branches missed.">    if (bytes == null) {</span>
+<span class="nc" id="L1550">      setNull(parameterIndex, ColumnType.BLOB);</span>
+<span class="nc" id="L1551">      return;</span>
+    }
+
+<span class="nc" id="L1554">    setParameter(parameterIndex, new ByteArrayParameter(bytes, noBackslashEscapes));</span>
+<span class="nc" id="L1555">  }</span>
+
+
+  /**
+   * Sets the designated parameter to the given input stream, which will have the specified number
+   * of bytes.
+   * &lt;br&gt;
+   * When a very large Unicode value is input to a &lt;code&gt;LONGVARCHAR&lt;/code&gt; parameter, it may be
+   * more practical to send it via a &lt;code&gt;java.io.InputStream&lt;/code&gt; object. The data will be read
+   * from the stream as needed until end-of-file is reached.  The JDBC driver will do any necessary
+   * conversion from Unicode to the database char format.
+   * &lt;br&gt;
+   * The byte format of the Unicode stream must be a Java UTF-8, as defined in the Java Virtual
+   * Machine Specification.
+   *
+   * &lt;P&gt;&lt;B&gt;Note:&lt;/B&gt; This stream object can either be a standard Java stream object or your own
+   * subclass that implements the standard interface.&lt;/P&gt;
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param x              a &lt;code&gt;java.io.InputStream&lt;/code&gt; object that contains the Unicode
+   *                       parameter value
+   * @param length         the number of bytes in the stream
+   * @throws SQLException                    if parameterIndex does not correspond to a parameter
+   *                                         marker in the SQL statement; if a database access error
+   *                                         occurs or this method is called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   * @deprecated deprecated
+   */
+  public void setUnicodeStream(final int parameterIndex, final InputStream x, final int length)
+      throws SQLException {
+<span class="nc bnc" id="L1585" title="All 2 branches missed.">    if (x == null) {</span>
+<span class="nc" id="L1586">      setNull(parameterIndex, Types.BLOB);</span>
+<span class="nc" id="L1587">      return;</span>
+    }
+<span class="nc" id="L1589">    setParameter(parameterIndex, new StreamParameter(x, length, noBackslashEscapes));</span>
+<span class="nc" id="L1590">    hasLongData = true;</span>
+<span class="nc" id="L1591">  }</span>
+
+  public void setInt(final int column, final int value) throws SQLException {
+<span class="nc" id="L1594">    setParameter(column, new IntParameter(value));</span>
+<span class="nc" id="L1595">  }</span>
+
+  /**
+   * Sets the designated parameter to the given Java &lt;code&gt;long&lt;/code&gt; value. The driver converts
+   * this to an SQL
+   * &lt;code&gt;BIGINT&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param value          the parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setLong(final int parameterIndex, final long value) throws SQLException {
+<span class="nc" id="L1610">    setParameter(parameterIndex, new LongParameter(value));</span>
+<span class="nc" id="L1611">  }</span>
+
+  /**
+   * Sets the designated parameter to the given Java &lt;code&gt;float&lt;/code&gt; value. The driver converts
+   * this to an SQL
+   * &lt;code&gt;REAL&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param value          the parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setFloat(final int parameterIndex, final float value) throws SQLException {
+<span class="nc" id="L1626">    setParameter(parameterIndex, new FloatParameter(value));</span>
+<span class="nc" id="L1627">  }</span>
+
+  /**
+   * Sets the designated parameter to the given Java &lt;code&gt;double&lt;/code&gt; value. The driver converts
+   * this to an SQL
+   * &lt;code&gt;DOUBLE&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param value          the parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setDouble(final int parameterIndex, final double value) throws SQLException {
+<span class="nc" id="L1642">    setParameter(parameterIndex, new DoubleParameter(value));</span>
+<span class="nc" id="L1643">  }</span>
+
+  /**
+   * Sets the designated parameter to the given &lt;code&gt;java.math.BigDecimal&lt;/code&gt; value. The driver
+   * converts this to an SQL &lt;code&gt;NUMERIC&lt;/code&gt; value when it sends it to the database.
+   *
+   * @param parameterIndex the first parameter is 1, the second is 2, ...
+   * @param bigDecimal     the parameter value
+   * @throws SQLException if parameterIndex does not correspond to a parameter marker in the SQL
+   *                      statement; if a database access error occurs or this method is called on a
+   *                      closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public void setBigDecimal(final int parameterIndex, final BigDecimal bigDecimal)
+      throws SQLException {
+<span class="nc bnc" id="L1658" title="All 2 branches missed.">    if (bigDecimal == null) {</span>
+<span class="nc" id="L1659">      setNull(parameterIndex, ColumnType.DECIMAL);</span>
+<span class="nc" id="L1660">      return;</span>
+    }
+
+<span class="nc" id="L1663">    setParameter(parameterIndex, new BigDecimalParameter(bigDecimal));</span>
+<span class="nc" id="L1664">  }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

@@ -1,0 +1,2427 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SelectResultSet.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.read.resultset</a> &gt; <span class="el_source">SelectResultSet.java</span></div><h1>SelectResultSet.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+
+package org.mariadb.jdbc.internal.com.read.resultset;
+
+import static org.mariadb.jdbc.internal.com.Packet.EOF;
+import static org.mariadb.jdbc.internal.com.Packet.ERROR;
+import static org.mariadb.jdbc.internal.util.SqlStates.CONNECTION_EXCEPTION;
+import static org.mariadb.jdbc.internal.util.constant.ServerStatus.MORE_RESULTS_EXISTS;
+import static org.mariadb.jdbc.internal.util.constant.ServerStatus.PS_OUT_PARAMETERS;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
+import java.io.StringReader;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.sql.Array;
+import java.sql.Blob;
+import java.sql.Clob;
+import java.sql.Date;
+import java.sql.NClob;
+import java.sql.Ref;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.RowId;
+import java.sql.SQLDataException;
+import java.sql.SQLException;
+import java.sql.SQLWarning;
+import java.sql.SQLXML;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.List;
+import java.util.Map;
+import java.util.TimeZone;
+import java.util.concurrent.locks.ReentrantLock;
+import org.mariadb.jdbc.MariaDbBlob;
+import org.mariadb.jdbc.MariaDbClob;
+import org.mariadb.jdbc.MariaDbResultSetMetaData;
+import org.mariadb.jdbc.MariaDbStatement;
+import org.mariadb.jdbc.internal.ColumnType;
+import org.mariadb.jdbc.internal.com.read.Buffer;
+import org.mariadb.jdbc.internal.com.read.ErrorPacket;
+import org.mariadb.jdbc.internal.com.read.dao.ColumnNameMap;
+import org.mariadb.jdbc.internal.com.read.dao.Results;
+import org.mariadb.jdbc.internal.com.read.resultset.rowprotocol.BinaryRowProtocol;
+import org.mariadb.jdbc.internal.com.read.resultset.rowprotocol.RowProtocol;
+import org.mariadb.jdbc.internal.com.read.resultset.rowprotocol.TextRowProtocol;
+import org.mariadb.jdbc.internal.io.input.PacketInputStream;
+import org.mariadb.jdbc.internal.io.input.StandardPacketInputStream;
+import org.mariadb.jdbc.internal.protocol.Protocol;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+<span class="nc bnc" id="L119" title="All 2 branches missed.">@SuppressWarnings({&quot;deprecation&quot;, &quot;BigDecimalMethodWithoutRoundingCalled&quot;,</span>
+    &quot;StatementWithEmptyBody&quot;, &quot;SynchronizationOnLocalVariableOrMethodParameter&quot;})
+public class SelectResultSet implements ResultSet {
+
+  public static final int TINYINT1_IS_BIT = 1;
+  public static final int YEAR_IS_DATE_TYPE = 2;
+  private static final String NOT_UPDATABLE_ERROR = &quot;Updates are not supported when using ResultSet.CONCUR_READ_ONLY&quot;;
+  private static final ColumnInformation[] INSERT_ID_COLUMNS;
+
+  private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+
+  static {
+<span class="nc" id="L131">    INSERT_ID_COLUMNS = new ColumnInformation[1];</span>
+<span class="nc" id="L132">    INSERT_ID_COLUMNS[0] = ColumnInformation.create(&quot;insert_id&quot;, ColumnType.BIGINT);</span>
+<span class="nc" id="L133">  }</span>
+
+  protected TimeZone timeZone;
+  protected Options options;
+  protected ColumnInformation[] columnsInformation;
+  protected int columnInformationLength;
+  protected boolean noBackslashEscapes;
+  private Protocol protocol;
+  private PacketInputStream reader;
+  private boolean isEof;
+  private boolean callableResult;
+  private MariaDbStatement statement;
+  private RowProtocol row;
+  private int dataFetchTime;
+  private boolean streaming;
+  private byte[][] data;
+  private int dataSize;
+  private int fetchSize;
+  private int resultSetScrollType;
+  private int rowPointer;
+  private ColumnNameMap columnNameMap;
+<span class="nc" id="L154">  private int lastRowPointer = -1;</span>
+  private int dataTypeMappingFlags;
+  private boolean returnTableAlias;
+  private boolean isClosed;
+  private boolean eofDeprecated;
+  private ReentrantLock lock;
+
+  /**
+   * Create Streaming resultSet.
+   *
+   * @param columnInformation column information
+   * @param results           results
+   * @param protocol          current protocol
+   * @param reader            stream fetcher
+   * @param callableResult    is it from a callableStatement ?
+   * @param eofDeprecated     is EOF deprecated
+   * @throws IOException  if any connection error occur
+   * @throws SQLException if any connection error occur
+   */
+  public SelectResultSet(ColumnInformation[] columnInformation, Results results, Protocol protocol,
+      PacketInputStream reader, boolean callableResult, boolean eofDeprecated)
+<span class="nc" id="L175">      throws IOException, SQLException {</span>
+<span class="nc" id="L176">    this.statement = results.getStatement();</span>
+<span class="nc" id="L177">    this.isClosed = false;</span>
+<span class="nc" id="L178">    this.protocol = protocol;</span>
+<span class="nc" id="L179">    this.options = protocol.getOptions();</span>
+<span class="nc" id="L180">    this.noBackslashEscapes = protocol.noBackslashEscapes();</span>
+<span class="nc" id="L181">    this.returnTableAlias = this.options.useOldAliasMetadataBehavior;</span>
+<span class="nc" id="L182">    this.columnsInformation = columnInformation;</span>
+<span class="nc" id="L183">    this.columnNameMap = new ColumnNameMap(columnsInformation);</span>
+
+<span class="nc" id="L185">    this.columnInformationLength = columnInformation.length;</span>
+<span class="nc" id="L186">    this.reader = reader;</span>
+<span class="nc" id="L187">    this.isEof = false;</span>
+<span class="nc" id="L188">    timeZone = protocol.getTimeZone();</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">    if (results.isBinaryFormat()) {</span>
+<span class="nc" id="L190">      row = new BinaryRowProtocol(columnsInformation, columnInformationLength,</span>
+<span class="nc" id="L191">          results.getMaxFieldSize(), options);</span>
+    } else {
+<span class="nc" id="L193">      row = new TextRowProtocol(results.getMaxFieldSize(), options);</span>
+    }
+<span class="nc" id="L195">    this.fetchSize = results.getFetchSize();</span>
+<span class="nc" id="L196">    this.resultSetScrollType = results.getResultSetScrollType();</span>
+<span class="nc" id="L197">    this.dataSize = 0;</span>
+<span class="nc" id="L198">    this.dataFetchTime = 0;</span>
+<span class="nc" id="L199">    this.rowPointer = -1;</span>
+<span class="nc" id="L200">    this.callableResult = callableResult;</span>
+<span class="nc" id="L201">    this.eofDeprecated = eofDeprecated;</span>
+
+<span class="nc bnc" id="L203" title="All 4 branches missed.">    if (fetchSize == 0 || callableResult) {</span>
+<span class="nc" id="L204">      this.data = new byte[10][];</span>
+<span class="nc" id="L205">      fetchAllResults();</span>
+<span class="nc" id="L206">      streaming = false;</span>
+    } else {
+<span class="nc" id="L208">      this.lock = protocol.getLock();</span>
+<span class="nc" id="L209">      protocol.setActiveStreamingResult(results);</span>
+<span class="nc" id="L210">      protocol.removeHasMoreResults();</span>
+<span class="nc" id="L211">      data = new byte[Math.max(10, fetchSize)][];</span>
+<span class="nc" id="L212">      nextStreamingValue();</span>
+<span class="nc" id="L213">      streaming = true;</span>
+    }
+
+<span class="nc" id="L216">  }</span>
+
+  /**
+   * Create filled result-set.
+   *
+   * @param columnInformation   column information
+   * @param resultSet           result-set data
+   * @param protocol            current protocol
+   * @param resultSetScrollType one of the following &lt;code&gt;ResultSet&lt;/code&gt; constants:
+   *                            &lt;code&gt;ResultSet.TYPE_FORWARD_ONLY&lt;/code&gt;,
+   *                            &lt;code&gt;ResultSet.TYPE_SCROLL_INSENSITIVE&lt;/code&gt;, or
+   *                            &lt;code&gt;ResultSet.TYPE_SCROLL_SENSITIVE&lt;/code&gt;
+   */
+  public SelectResultSet(ColumnInformation[] columnInformation, List&lt;byte[]&gt; resultSet,
+      Protocol protocol,
+<span class="nc" id="L231">      int resultSetScrollType) {</span>
+<span class="nc" id="L232">    this.statement = null;</span>
+<span class="nc" id="L233">    this.isClosed = false;</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">    if (protocol != null) {</span>
+<span class="nc" id="L235">      this.options = protocol.getOptions();</span>
+<span class="nc" id="L236">      this.timeZone = protocol.getTimeZone();</span>
+<span class="nc" id="L237">      this.returnTableAlias = this.options.useOldAliasMetadataBehavior;</span>
+    } else {
+<span class="nc" id="L239">      this.options = new Options();</span>
+<span class="nc" id="L240">      this.timeZone = TimeZone.getDefault();</span>
+<span class="nc" id="L241">      this.returnTableAlias = false;</span>
+    }
+<span class="nc" id="L243">    this.row = new TextRowProtocol(0, this.options);</span>
+<span class="nc" id="L244">    this.protocol = null;</span>
+<span class="nc" id="L245">    this.columnsInformation = columnInformation;</span>
+<span class="nc" id="L246">    this.columnNameMap = new ColumnNameMap(columnsInformation);</span>
+<span class="nc" id="L247">    this.columnInformationLength = columnInformation.length;</span>
+<span class="nc" id="L248">    this.isEof = true;</span>
+<span class="nc" id="L249">    this.fetchSize = 0;</span>
+<span class="nc" id="L250">    this.resultSetScrollType = resultSetScrollType;</span>
+<span class="nc" id="L251">    this.data = resultSet.toArray(new byte[10][]);</span>
+<span class="nc" id="L252">    this.dataSize = resultSet.size();</span>
+<span class="nc" id="L253">    this.dataFetchTime = 0;</span>
+<span class="nc" id="L254">    this.rowPointer = -1;</span>
+<span class="nc" id="L255">    this.callableResult = false;</span>
+<span class="nc" id="L256">    this.streaming = false;</span>
+<span class="nc" id="L257">  }</span>
+
+  /**
+   * Create a result set from given data. Useful for creating &quot;fake&quot; resultsets for
+   * DatabaseMetaData, (one example is MariaDbDatabaseMetaData.getTypeInfo())
+   *
+   * @param data                 - each element of this array represents a complete row in the
+   *                             ResultSet. Each value is given in its string representation, as in
+   *                             MariaDB text protocol, except boolean (BIT(1)) values that are
+   *                             represented as &quot;1&quot; or &quot;0&quot; strings
+   * @param protocol             protocol
+   * @param findColumnReturnsOne - special parameter, used only in generated key result sets
+   * @return resultset
+   */
+  public static ResultSet createGeneratedData(long[] data, Protocol protocol,
+      boolean findColumnReturnsOne) {
+<span class="nc" id="L273">    ColumnInformation[] columns = new ColumnInformation[1];</span>
+<span class="nc" id="L274">    columns[0] = ColumnInformation.create(&quot;insert_id&quot;, ColumnType.BIGINT);</span>
+
+<span class="nc" id="L276">    List&lt;byte[]&gt; rows = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L277" title="All 2 branches missed.">    for (long rowData : data) {</span>
+<span class="nc bnc" id="L278" title="All 2 branches missed.">      if (rowData != 0) {</span>
+<span class="nc" id="L279">        rows.add(StandardPacketInputStream.create(String.valueOf(rowData).getBytes()));</span>
+      }
+    }
+<span class="nc bnc" id="L282" title="All 2 branches missed.">    if (findColumnReturnsOne) {</span>
+<span class="nc" id="L283">      return new SelectResultSet(columns, rows, protocol, TYPE_SCROLL_SENSITIVE) {</span>
+        @Override
+        public int findColumn(String name) {
+<span class="nc" id="L286">          return 1;</span>
+        }
+      };
+    }
+<span class="nc" id="L290">    return new SelectResultSet(columns, rows, protocol, TYPE_SCROLL_SENSITIVE);</span>
+  }
+
+  /**
+   * Create a result set from given data. Useful for creating &quot;fake&quot; resultSets for
+   * DatabaseMetaData, (one example is MariaDbDatabaseMetaData.getTypeInfo())
+   *
+   * @param columnNames - string array of column names
+   * @param columnTypes - column types
+   * @param data        - each element of this array represents a complete row in the ResultSet.
+   *                    Each value is given in its string representation, as in MariaDB text protocol,
+   *                    except boolean (BIT(1)) values that are represented as &quot;1&quot; or &quot;0&quot; strings
+   * @param protocol    protocol
+   * @return resultset
+   */
+  public static ResultSet createResultSet(String[] columnNames, ColumnType[] columnTypes,
+      String[][] data,
+      Protocol protocol) {
+<span class="nc" id="L308">    int columnNameLength = columnNames.length;</span>
+<span class="nc" id="L309">    ColumnInformation[] columns = new ColumnInformation[columnNameLength];</span>
+
+<span class="nc bnc" id="L311" title="All 2 branches missed.">    for (int i = 0; i &lt; columnNameLength; i++) {</span>
+<span class="nc" id="L312">      columns[i] = ColumnInformation.create(columnNames[i], columnTypes[i]);</span>
+    }
+
+<span class="nc" id="L315">    List&lt;byte[]&gt; rows = new ArrayList&lt;&gt;();</span>
+
+<span class="nc bnc" id="L317" title="All 2 branches missed.">    for (String[] rowData : data) {</span>
+<span class="nc bnc" id="L318" title="All 4 branches missed.">      assert rowData.length == columnNameLength;</span>
+<span class="nc" id="L319">      byte[][] rowBytes = new byte[rowData.length][];</span>
+<span class="nc bnc" id="L320" title="All 2 branches missed.">      for (int i = 0; i &lt; rowData.length; i++) {</span>
+<span class="nc bnc" id="L321" title="All 2 branches missed.">        if (rowData[i] != null) {</span>
+<span class="nc" id="L322">          rowBytes[i] = rowData[i].getBytes();</span>
+        }
+      }
+<span class="nc" id="L325">      rows.add(StandardPacketInputStream.create(rowBytes, columnTypes));</span>
+    }
+<span class="nc" id="L327">    return new SelectResultSet(columns, rows, protocol, TYPE_SCROLL_SENSITIVE);</span>
+  }
+
+  public static SelectResultSet createEmptyResultSet() {
+<span class="nc" id="L331">    return new SelectResultSet(INSERT_ID_COLUMNS, new ArrayList&lt;&gt;(), null,</span>
+        TYPE_SCROLL_SENSITIVE);
+  }
+
+  /**
+   * Indicate if result-set is still streaming results from server.
+   *
+   * @return true if streaming is finished
+   */
+  public boolean isFullyLoaded() {
+    //result-set is fully loaded when reaching EOF packet.
+<span class="nc" id="L342">    return isEof;</span>
+  }
+
+  private void fetchAllResults() throws IOException, SQLException {
+
+<span class="nc" id="L347">    dataSize = 0;</span>
+<span class="nc bnc" id="L348" title="All 2 branches missed.">    while (readNextValue()) {</span>
+      //fetch all results
+    }
+<span class="nc" id="L351">    dataFetchTime++;</span>
+<span class="nc" id="L352">  }</span>
+
+  /**
+   * When protocol has a current Streaming result (this) fetch all to permit another query is
+   * executing.
+   *
+   * @throws SQLException if any error occur
+   */
+  public void fetchRemaining() throws SQLException {
+<span class="nc bnc" id="L361" title="All 2 branches missed.">    if (!isEof) {</span>
+<span class="nc" id="L362">      lock.lock();</span>
+      try {
+<span class="nc" id="L364">        lastRowPointer = -1;</span>
+<span class="nc bnc" id="L365" title="All 2 branches missed.">        while (!isEof) {</span>
+<span class="nc" id="L366">          addStreamingValue();</span>
+        }
+
+<span class="nc" id="L369">      } catch (SQLException queryException) {</span>
+<span class="nc" id="L370">        throw ExceptionMapper.getException(queryException, null, statement, false);</span>
+<span class="nc" id="L371">      } catch (IOException ioe) {</span>
+<span class="nc" id="L372">        throw handleIoException(ioe);</span>
+      } finally {
+<span class="nc" id="L374">        lock.unlock();</span>
+      }
+<span class="nc" id="L376">      dataFetchTime++;</span>
+    }
+<span class="nc" id="L378">  }</span>
+
+  private SQLException handleIoException(IOException ioe) {
+<span class="nc" id="L381">    return ExceptionMapper.getException(new SQLException(&quot;Server has closed the connection. &quot;</span>
+        + &quot;If result set contain huge amount of data, Server expects client to&quot;
+        + &quot; read off the result set relatively fast. &quot;
+        + &quot;In this case, please consider increasing net_wait_timeout session variable&quot;
+        + &quot; / processing your result set faster (check Streaming result sets documentation for more information)&quot;,
+<span class="nc" id="L386">        CONNECTION_EXCEPTION.getSqlState(), ioe), null, statement, false);</span>
+  }
+
+  /**
+   * This permit to replace current stream results by next ones.
+   *
+   * @throws IOException  if socket exception occur
+   * @throws SQLException if server return an unexpected error
+   */
+  private void nextStreamingValue() throws IOException, SQLException {
+<span class="nc" id="L396">    lastRowPointer = -1;</span>
+
+    //if resultSet can be back to some previous value
+<span class="nc bnc" id="L399" title="All 2 branches missed.">    if (resultSetScrollType == TYPE_FORWARD_ONLY) {</span>
+<span class="nc" id="L400">      dataSize = 0;</span>
+    }
+
+<span class="nc" id="L403">    addStreamingValue();</span>
+
+<span class="nc" id="L405">  }</span>
+
+  /**
+   * This permit to add next streaming values to existing resultSet.
+   *
+   * @throws IOException  if socket exception occur
+   * @throws SQLException if server return an unexpected error
+   */
+  private void addStreamingValue() throws IOException, SQLException {
+    //read only fetchSize values
+<span class="nc" id="L415">    int fetchSizeTmp = fetchSize;</span>
+<span class="nc bnc" id="L416" title="All 4 branches missed.">    while (fetchSizeTmp &gt; 0 &amp;&amp; readNextValue()) {</span>
+<span class="nc" id="L417">      fetchSizeTmp--;</span>
+    }
+<span class="nc" id="L419">    dataFetchTime++;</span>
+
+<span class="nc" id="L421">  }</span>
+
+  /**
+   * Read next value.
+   *
+   * @return true if have a new value
+   * @throws IOException  exception
+   * @throws SQLException exception
+   */
+  private boolean readNextValue() throws IOException, SQLException {
+<span class="nc" id="L431">    byte[] buf = reader.getPacketArray(false);</span>
+
+    //is error Packet
+<span class="nc bnc" id="L434" title="All 2 branches missed.">    if (buf[0] == ERROR) {</span>
+<span class="nc" id="L435">      protocol.removeActiveStreamingResult();</span>
+<span class="nc" id="L436">      protocol.removeHasMoreResults();</span>
+<span class="nc" id="L437">      protocol.setHasWarnings(false);</span>
+<span class="nc" id="L438">      ErrorPacket errorPacket = new ErrorPacket(new Buffer(buf));</span>
+<span class="nc" id="L439">      resetVariables();</span>
+<span class="nc" id="L440">      throw ExceptionMapper.get(errorPacket.getMessage(), errorPacket.getSqlState(),</span>
+<span class="nc" id="L441">          errorPacket.getErrorNumber(), null, false);</span>
+    }
+
+    //is end of stream
+<span class="nc bnc" id="L445" title="All 10 branches missed.">    if (buf[0] == EOF &amp;&amp; ((eofDeprecated &amp;&amp; buf.length &lt; 0xffffff)</span>
+        || (!eofDeprecated &amp;&amp; buf.length &lt; 8))) {
+      int serverStatus;
+      int warnings;
+
+<span class="nc bnc" id="L450" title="All 2 branches missed.">      if (!eofDeprecated) {</span>
+        //EOF_Packet
+<span class="nc" id="L452">        warnings = (buf[1] &amp; 0xff) + ((buf[2] &amp; 0xff) &lt;&lt; 8);</span>
+<span class="nc" id="L453">        serverStatus = ((buf[3] &amp; 0xff) + ((buf[4] &amp; 0xff) &lt;&lt; 8));</span>
+
+        //CallableResult has been read from intermediate EOF server_status
+        //and is mandatory because :
+        //
+        // - Call query will have an callable resultSet for OUT parameters
+        //   this resultSet must be identified and not listed in JDBC statement.getResultSet()
+        //
+        // - after a callable resultSet, a OK packet is send,
+        //   but mysql before 5.7.4 doesn't send MORE_RESULTS_EXISTS flag
+<span class="nc bnc" id="L463" title="All 2 branches missed.">        if (callableResult) {</span>
+<span class="nc" id="L464">          serverStatus |= MORE_RESULTS_EXISTS;</span>
+        }
+
+      } else {
+
+        //OK_Packet with a 0xFE header
+<span class="nc" id="L470">        int pos = skipLengthEncodedValue(buf, 1); //skip update count</span>
+<span class="nc" id="L471">        pos = skipLengthEncodedValue(buf, pos); //skip insert id</span>
+<span class="nc" id="L472">        serverStatus = ((buf[pos++] &amp; 0xff) + ((buf[pos++] &amp; 0xff) &lt;&lt; 8));</span>
+<span class="nc" id="L473">        warnings = (buf[pos++] &amp; 0xff) + ((buf[pos] &amp; 0xff) &lt;&lt; 8);</span>
+<span class="nc bnc" id="L474" title="All 2 branches missed.">        callableResult = (serverStatus &amp; PS_OUT_PARAMETERS) != 0;</span>
+      }
+<span class="nc" id="L476">      protocol.setServerStatus((short) serverStatus);</span>
+<span class="nc bnc" id="L477" title="All 2 branches missed.">      protocol.setHasWarnings(warnings &gt; 0);</span>
+<span class="nc bnc" id="L478" title="All 2 branches missed.">      if ((serverStatus &amp; MORE_RESULTS_EXISTS) == 0) {</span>
+<span class="nc" id="L479">        protocol.removeActiveStreamingResult();</span>
+      }
+
+<span class="nc" id="L482">      resetVariables();</span>
+<span class="nc" id="L483">      return false;</span>
+    }
+
+    //this is a result-set row, save it
+<span class="nc bnc" id="L487" title="All 2 branches missed.">    if (dataSize + 1 &gt;= data.length) {</span>
+<span class="nc" id="L488">      growDataArray();</span>
+    }
+<span class="nc" id="L490">    data[dataSize++] = buf;</span>
+<span class="nc" id="L491">    return true;</span>
+  }
+
+  /**
+   * Get current row's raw bytes.
+   *
+   * @return row's raw bytes
+   */
+  protected byte[] getCurrentRowData() {
+<span class="nc" id="L500">    return data[rowPointer];</span>
+  }
+
+  /**
+   * Update row's raw bytes. in case of row update, refresh the data. (format must correspond to
+   * current resultset binary/text row encryption)
+   *
+   * @param rawData new row's raw data.
+   */
+  protected void updateRowData(byte[] rawData) {
+<span class="nc" id="L510">    data[rowPointer] = rawData;</span>
+<span class="nc" id="L511">    row.resetRow(data[rowPointer]);</span>
+<span class="nc" id="L512">  }</span>
+
+  /**
+   * Delete current data. Position cursor to the previous row.
+   *
+   * @throws SQLException if previous() fail.
+   */
+  protected void deleteCurrentRowData() throws SQLException {
+    //move data
+<span class="nc" id="L521">    System.arraycopy(data, rowPointer + 1, data, rowPointer, dataSize - 1 - rowPointer);</span>
+<span class="nc" id="L522">    data[dataSize - 1] = null;</span>
+<span class="nc" id="L523">    dataSize--;</span>
+<span class="nc" id="L524">    lastRowPointer = -1;</span>
+<span class="nc" id="L525">    previous();</span>
+<span class="nc" id="L526">  }</span>
+
+  protected void addRowData(byte[] rawData) {
+<span class="nc bnc" id="L529" title="All 2 branches missed.">    if (dataSize + 1 &gt;= data.length) {</span>
+<span class="nc" id="L530">      growDataArray();</span>
+    }
+<span class="nc" id="L532">    data[dataSize] = rawData;</span>
+<span class="nc" id="L533">    rowPointer = dataSize;</span>
+<span class="nc" id="L534">    dataSize++;</span>
+<span class="nc" id="L535">  }</span>
+
+  private int skipLengthEncodedValue(byte[] buf, int pos) {
+<span class="nc" id="L538">    int type = buf[pos++] &amp; 0xff;</span>
+<span class="nc bnc" id="L539" title="All 5 branches missed.">    switch (type) {</span>
+      case 251:
+<span class="nc" id="L541">        return pos;</span>
+      case 252:
+<span class="nc" id="L543">        return pos + 2 + (0xffff &amp; (((buf[pos] &amp; 0xff) + ((buf[pos + 1] &amp; 0xff) &lt;&lt; 8))));</span>
+      case 253:
+<span class="nc" id="L545">        return pos + 3 + (0xffffff &amp; ((buf[pos] &amp; 0xff)</span>
+            + ((buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+            + ((buf[pos + 2] &amp; 0xff) &lt;&lt; 16)));
+      case 254:
+<span class="nc" id="L549">        return (int) (pos + 8 + ((buf[pos] &amp; 0xff)</span>
+            + ((long) (buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+            + ((long) (buf[pos + 2] &amp; 0xff) &lt;&lt; 16)
+            + ((long) (buf[pos + 3] &amp; 0xff) &lt;&lt; 24)
+            + ((long) (buf[pos + 4] &amp; 0xff) &lt;&lt; 32)
+            + ((long) (buf[pos + 5] &amp; 0xff) &lt;&lt; 40)
+            + ((long) (buf[pos + 6] &amp; 0xff) &lt;&lt; 48)
+            + ((long) (buf[pos + 7] &amp; 0xff) &lt;&lt; 56)));
+      default:
+<span class="nc" id="L558">        return pos + type;</span>
+    }
+  }
+
+  /**
+   * Grow data array.
+   */
+  private void growDataArray() {
+<span class="nc" id="L566">    int newCapacity = data.length + (data.length &gt;&gt; 1);</span>
+<span class="nc bnc" id="L567" title="All 2 branches missed.">    if (newCapacity - MAX_ARRAY_SIZE &gt; 0) {</span>
+<span class="nc" id="L568">      newCapacity = MAX_ARRAY_SIZE;</span>
+    }
+<span class="nc" id="L570">    data = Arrays.copyOf(data, newCapacity);</span>
+<span class="nc" id="L571">  }</span>
+
+  /**
+   * Connection.abort() has been called, abort result-set.
+   *
+   * @throws SQLException exception
+   */
+  public void abort() throws SQLException {
+<span class="nc" id="L579">    isClosed = true;</span>
+<span class="nc" id="L580">    resetVariables();</span>
+
+    //keep garbage easy
+<span class="nc bnc" id="L583" title="All 2 branches missed.">    for (int i = 0; i &lt; data.length; i++) {</span>
+<span class="nc" id="L584">      data[i] = null;</span>
+    }
+
+<span class="nc bnc" id="L587" title="All 2 branches missed.">    if (statement != null) {</span>
+<span class="nc" id="L588">      statement.checkCloseOnCompletion(this);</span>
+<span class="nc" id="L589">      statement = null;</span>
+    }
+<span class="nc" id="L591">  }</span>
+
+  /**
+   * Close resultSet.
+   */
+  public void close() throws SQLException {
+<span class="nc" id="L597">    isClosed = true;</span>
+<span class="nc bnc" id="L598" title="All 2 branches missed.">    if (!isEof) {</span>
+<span class="nc" id="L599">      lock.lock();</span>
+      try {
+<span class="nc bnc" id="L601" title="All 2 branches missed.">        while (!isEof) {</span>
+<span class="nc" id="L602">          dataSize = 0; //to avoid storing data</span>
+<span class="nc" id="L603">          readNextValue();</span>
+        }
+
+<span class="nc" id="L606">      } catch (SQLException queryException) {</span>
+<span class="nc" id="L607">        throw ExceptionMapper.getException(queryException, null, this.statement, false);</span>
+<span class="nc" id="L608">      } catch (IOException ioe) {</span>
+<span class="nc" id="L609">        throw handleIoException(ioe);</span>
+      } finally {
+<span class="nc" id="L611">        resetVariables();</span>
+<span class="nc" id="L612">        lock.unlock();</span>
+      }
+    }
+<span class="nc" id="L615">    resetVariables();</span>
+
+    //keep garbage easy
+<span class="nc bnc" id="L618" title="All 2 branches missed.">    for (int i = 0; i &lt; data.length; i++) {</span>
+<span class="nc" id="L619">      data[i] = null;</span>
+    }
+
+<span class="nc bnc" id="L622" title="All 2 branches missed.">    if (statement != null) {</span>
+<span class="nc" id="L623">      statement.checkCloseOnCompletion(this);</span>
+<span class="nc" id="L624">      statement = null;</span>
+    }
+<span class="nc" id="L626">  }</span>
+
+  private void resetVariables() {
+<span class="nc" id="L629">    protocol = null;</span>
+<span class="nc" id="L630">    reader = null;</span>
+<span class="nc" id="L631">    isEof = true;</span>
+<span class="nc" id="L632">  }</span>
+
+  @Override
+  public boolean next() throws SQLException {
+<span class="nc bnc" id="L636" title="All 2 branches missed.">    if (isClosed) {</span>
+<span class="nc" id="L637">      throw new SQLException(&quot;Operation not permit on a closed resultSet&quot;, &quot;HY000&quot;);</span>
+    }
+<span class="nc bnc" id="L639" title="All 2 branches missed.">    if (rowPointer &lt; dataSize - 1) {</span>
+<span class="nc" id="L640">      rowPointer++;</span>
+<span class="nc" id="L641">      return true;</span>
+    } else {
+<span class="nc bnc" id="L643" title="All 4 branches missed.">      if (streaming &amp;&amp; !isEof) {</span>
+<span class="nc" id="L644">        lock.lock();</span>
+        try {
+<span class="nc bnc" id="L646" title="All 2 branches missed.">          if (!isEof) {</span>
+<span class="nc" id="L647">            nextStreamingValue();</span>
+          }
+<span class="nc" id="L649">        } catch (IOException ioe) {</span>
+<span class="nc" id="L650">          throw handleIoException(ioe);</span>
+        } finally {
+<span class="nc" id="L652">          lock.unlock();</span>
+        }
+
+<span class="nc bnc" id="L655" title="All 2 branches missed.">        if (resultSetScrollType == TYPE_FORWARD_ONLY) {</span>
+          //resultSet has been cleared. next value is pointer 0.
+<span class="nc" id="L657">          rowPointer = 0;</span>
+<span class="nc bnc" id="L658" title="All 2 branches missed.">          return dataSize &gt; 0;</span>
+        } else {
+          // cursor can move backward, so driver must keep the results.
+          // results have been added to current resultSet
+<span class="nc" id="L662">          rowPointer++;</span>
+<span class="nc bnc" id="L663" title="All 2 branches missed.">          return dataSize &gt; rowPointer;</span>
+        }
+      }
+
+      //all data are reads and pointer is after last
+<span class="nc" id="L668">      rowPointer = dataSize;</span>
+<span class="nc" id="L669">      return false;</span>
+    }
+  }
+
+  private void checkObjectRange(int position) throws SQLException {
+<span class="nc bnc" id="L674" title="All 2 branches missed.">    if (rowPointer &lt; 0) {</span>
+<span class="nc" id="L675">      throw new SQLDataException(&quot;Current position is before the first row&quot;, &quot;22023&quot;);</span>
+    }
+
+<span class="nc bnc" id="L678" title="All 2 branches missed.">    if (rowPointer &gt;= dataSize) {</span>
+<span class="nc" id="L679">      throw new SQLDataException(&quot;Current position is after the last row&quot;, &quot;22023&quot;);</span>
+    }
+
+<span class="nc bnc" id="L682" title="All 4 branches missed.">    if (position &lt;= 0 || position &gt; columnInformationLength) {</span>
+<span class="nc" id="L683">      throw new SQLDataException(&quot;No such column: &quot; + position, &quot;22023&quot;);</span>
+    }
+
+<span class="nc bnc" id="L686" title="All 2 branches missed.">    if (lastRowPointer != rowPointer) {</span>
+<span class="nc" id="L687">      row.resetRow(data[rowPointer]);</span>
+<span class="nc" id="L688">      lastRowPointer = rowPointer;</span>
+    }
+<span class="nc" id="L690">    row.setPosition(position - 1);</span>
+<span class="nc" id="L691">  }</span>
+
+
+  @Override
+  public SQLWarning getWarnings() throws SQLException {
+<span class="nc bnc" id="L696" title="All 2 branches missed.">    if (this.statement == null) {</span>
+<span class="nc" id="L697">      return null;</span>
+    }
+<span class="nc" id="L699">    return this.statement.getWarnings();</span>
+  }
+
+  @Override
+  public void clearWarnings() {
+<span class="nc bnc" id="L704" title="All 2 branches missed.">    if (this.statement != null) {</span>
+<span class="nc" id="L705">      this.statement.clearWarnings();</span>
+    }
+<span class="nc" id="L707">  }</span>
+
+  @Override
+  public boolean isBeforeFirst() throws SQLException {
+<span class="nc" id="L711">    checkClose();</span>
+<span class="nc bnc" id="L712" title="All 8 branches missed.">    return (dataFetchTime &gt; 0) ? rowPointer == -1 &amp;&amp; dataSize &gt; 0 : rowPointer == -1;</span>
+  }
+
+  @Override
+  public boolean isAfterLast() throws SQLException {
+<span class="nc" id="L717">    checkClose();</span>
+<span class="nc bnc" id="L718" title="All 2 branches missed.">    if (rowPointer &lt; dataSize) {</span>
+
+      //has remaining results
+<span class="nc" id="L721">      return false;</span>
+
+    } else {
+
+<span class="nc bnc" id="L725" title="All 4 branches missed.">      if (streaming &amp;&amp; !isEof) {</span>
+
+        //has to read more result to know if it's finished or not
+        //(next packet may be new data or an EOF packet indicating that there is no more data)
+<span class="nc" id="L729">        lock.lock();</span>
+        try {
+          //this time, fetch is added even for streaming forward type only to keep current pointer row.
+<span class="nc bnc" id="L732" title="All 2 branches missed.">          if (!isEof) {</span>
+<span class="nc" id="L733">            addStreamingValue();</span>
+          }
+<span class="nc" id="L735">        } catch (IOException ioe) {</span>
+<span class="nc" id="L736">          throw handleIoException(ioe);</span>
+        } finally {
+<span class="nc" id="L738">          lock.unlock();</span>
+        }
+
+<span class="nc bnc" id="L741" title="All 2 branches missed.">        return dataSize == rowPointer;</span>
+      }
+
+      //has read all data and pointer is after last result
+      //so result would have to always to be true,
+      //but when result contain no row at all jdbc say that must return false
+<span class="nc bnc" id="L747" title="All 4 branches missed.">      return dataSize &gt; 0 || dataFetchTime &gt; 1;</span>
+    }
+  }
+
+  @Override
+  public boolean isFirst() throws SQLException {
+<span class="nc" id="L753">    checkClose();</span>
+<span class="nc bnc" id="L754" title="All 6 branches missed.">    return dataFetchTime == 1 &amp;&amp; rowPointer == 0 &amp;&amp; dataSize &gt; 0;</span>
+  }
+
+  @Override
+  public boolean isLast() throws SQLException {
+<span class="nc" id="L759">    checkClose();</span>
+<span class="nc bnc" id="L760" title="All 2 branches missed.">    if (rowPointer &lt; dataSize - 1) {</span>
+<span class="nc" id="L761">      return false;</span>
+<span class="nc bnc" id="L762" title="All 2 branches missed.">    } else if (isEof) {</span>
+<span class="nc bnc" id="L763" title="All 4 branches missed.">      return rowPointer == dataSize - 1 &amp;&amp; dataSize &gt; 0;</span>
+    } else {
+      //when streaming and not having read all results,
+      //must read next packet to know if next packet is an EOF packet or some additional data
+<span class="nc" id="L767">      lock.lock();</span>
+      try {
+<span class="nc bnc" id="L769" title="All 2 branches missed.">        if (!isEof) {</span>
+<span class="nc" id="L770">          addStreamingValue();</span>
+        }
+<span class="nc" id="L772">      } catch (IOException ioe) {</span>
+<span class="nc" id="L773">        throw handleIoException(ioe);</span>
+      } finally {
+<span class="nc" id="L775">        lock.unlock();</span>
+      }
+
+<span class="nc bnc" id="L778" title="All 2 branches missed.">      if (isEof) {</span>
+        //now driver is sure when data ends.
+<span class="nc bnc" id="L780" title="All 4 branches missed.">        return rowPointer == dataSize - 1 &amp;&amp; dataSize &gt; 0;</span>
+      }
+
+      //There is data remaining
+<span class="nc" id="L784">      return false;</span>
+    }
+  }
+
+  @Override
+  public void beforeFirst() throws SQLException {
+<span class="nc" id="L790">    checkClose();</span>
+
+<span class="nc bnc" id="L792" title="All 4 branches missed.">    if (streaming &amp;&amp; resultSetScrollType == TYPE_FORWARD_ONLY) {</span>
+<span class="nc" id="L793">      throw new SQLException(&quot;Invalid operation for result set type TYPE_FORWARD_ONLY&quot;);</span>
+    }
+<span class="nc" id="L795">    rowPointer = -1;</span>
+<span class="nc" id="L796">  }</span>
+
+  @Override
+  public void afterLast() throws SQLException {
+<span class="nc" id="L800">    checkClose();</span>
+<span class="nc" id="L801">    fetchRemaining();</span>
+<span class="nc" id="L802">    rowPointer = dataSize;</span>
+<span class="nc" id="L803">  }</span>
+
+  @Override
+  public boolean first() throws SQLException {
+<span class="nc" id="L807">    checkClose();</span>
+
+<span class="nc bnc" id="L809" title="All 4 branches missed.">    if (streaming &amp;&amp; resultSetScrollType == TYPE_FORWARD_ONLY) {</span>
+<span class="nc" id="L810">      throw new SQLException(&quot;Invalid operation for result set type TYPE_FORWARD_ONLY&quot;);</span>
+    }
+
+<span class="nc" id="L813">    rowPointer = 0;</span>
+<span class="nc bnc" id="L814" title="All 2 branches missed.">    return dataSize &gt; 0;</span>
+  }
+
+  @Override
+  public boolean last() throws SQLException {
+<span class="nc" id="L819">    checkClose();</span>
+<span class="nc" id="L820">    fetchRemaining();</span>
+<span class="nc" id="L821">    rowPointer = dataSize - 1;</span>
+<span class="nc bnc" id="L822" title="All 2 branches missed.">    return dataSize &gt; 0;</span>
+  }
+
+  @Override
+  public int getRow() throws SQLException {
+<span class="nc" id="L827">    checkClose();</span>
+<span class="nc bnc" id="L828" title="All 4 branches missed.">    if (streaming &amp;&amp; resultSetScrollType == TYPE_FORWARD_ONLY) {</span>
+<span class="nc" id="L829">      return 0;</span>
+    }
+<span class="nc" id="L831">    return rowPointer + 1;</span>
+  }
+
+  @Override
+  public boolean absolute(int row) throws SQLException {
+<span class="nc" id="L836">    checkClose();</span>
+
+<span class="nc bnc" id="L838" title="All 4 branches missed.">    if (streaming &amp;&amp; resultSetScrollType == TYPE_FORWARD_ONLY) {</span>
+<span class="nc" id="L839">      throw new SQLException(&quot;Invalid operation for result set type TYPE_FORWARD_ONLY&quot;);</span>
+    }
+
+<span class="nc bnc" id="L842" title="All 4 branches missed.">    if (row &gt;= 0 &amp;&amp; row &lt;= dataSize) {</span>
+<span class="nc" id="L843">      rowPointer = row - 1;</span>
+<span class="nc" id="L844">      return true;</span>
+    }
+
+    //if streaming, must read additional results.
+<span class="nc" id="L848">    fetchRemaining();</span>
+
+<span class="nc bnc" id="L850" title="All 2 branches missed.">    if (row &gt;= 0) {</span>
+
+<span class="nc bnc" id="L852" title="All 2 branches missed.">      if (row &lt;= dataSize) {</span>
+<span class="nc" id="L853">        rowPointer = row - 1;</span>
+<span class="nc" id="L854">        return true;</span>
+      }
+
+<span class="nc" id="L857">      rowPointer = dataSize; //go to afterLast() position</span>
+<span class="nc" id="L858">      return false;</span>
+
+    } else {
+
+<span class="nc bnc" id="L862" title="All 2 branches missed.">      if (dataSize + row &gt;= 0) {</span>
+        //absolute position reverse from ending resultSet
+<span class="nc" id="L864">        rowPointer = dataSize + row;</span>
+<span class="nc" id="L865">        return true;</span>
+      }
+
+<span class="nc" id="L868">      rowPointer = -1; // go to before first position</span>
+<span class="nc" id="L869">      return false;</span>
+
+    }
+
+  }
+
+  @Override
+  public boolean relative(int rows) throws SQLException {
+<span class="nc" id="L877">    checkClose();</span>
+<span class="nc bnc" id="L878" title="All 4 branches missed.">    if (streaming &amp;&amp; resultSetScrollType == TYPE_FORWARD_ONLY) {</span>
+<span class="nc" id="L879">      throw new SQLException(&quot;Invalid operation for result set type TYPE_FORWARD_ONLY&quot;);</span>
+    }
+<span class="nc" id="L881">    int newPos = rowPointer + rows;</span>
+<span class="nc bnc" id="L882" title="All 2 branches missed.">    if (newPos &lt;= -1) {</span>
+<span class="nc" id="L883">      rowPointer = -1;</span>
+<span class="nc" id="L884">      return false;</span>
+<span class="nc bnc" id="L885" title="All 2 branches missed.">    } else if (newPos &gt;= dataSize) {</span>
+<span class="nc" id="L886">      rowPointer = dataSize;</span>
+<span class="nc" id="L887">      return false;</span>
+    } else {
+<span class="nc" id="L889">      rowPointer = newPos;</span>
+<span class="nc" id="L890">      return true;</span>
+    }
+  }
+
+  @Override
+  public boolean previous() throws SQLException {
+<span class="nc" id="L896">    checkClose();</span>
+<span class="nc bnc" id="L897" title="All 4 branches missed.">    if (streaming &amp;&amp; resultSetScrollType == TYPE_FORWARD_ONLY) {</span>
+<span class="nc" id="L898">      throw new SQLException(&quot;Invalid operation for result set type TYPE_FORWARD_ONLY&quot;);</span>
+    }
+<span class="nc bnc" id="L900" title="All 2 branches missed.">    if (rowPointer &gt; -1) {</span>
+<span class="nc" id="L901">      rowPointer--;</span>
+<span class="nc bnc" id="L902" title="All 2 branches missed.">      return rowPointer != -1;</span>
+    }
+<span class="nc" id="L904">    return false;</span>
+  }
+
+  @Override
+  public int getFetchDirection() {
+<span class="nc" id="L909">    return FETCH_UNKNOWN;</span>
+  }
+
+  @Override
+  public void setFetchDirection(int direction) throws SQLException {
+<span class="nc bnc" id="L914" title="All 2 branches missed.">    if (direction == FETCH_REVERSE) {</span>
+<span class="nc" id="L915">      throw new SQLException(</span>
+          &quot;Invalid operation. Allowed direction are ResultSet.FETCH_FORWARD and ResultSet.FETCH_UNKNOWN&quot;);
+    }
+<span class="nc" id="L918">  }</span>
+
+  @Override
+  public int getFetchSize() {
+<span class="nc" id="L922">    return this.fetchSize;</span>
+  }
+
+  @Override
+  public void setFetchSize(int fetchSize) throws SQLException {
+<span class="nc bnc" id="L927" title="All 4 branches missed.">    if (streaming &amp;&amp; fetchSize == 0) {</span>
+<span class="nc" id="L928">      lock.lock();</span>
+      try {
+        //fetch all results
+<span class="nc bnc" id="L931" title="All 2 branches missed.">        while (!isEof) {</span>
+<span class="nc" id="L932">          addStreamingValue();</span>
+        }
+<span class="nc" id="L934">      } catch (IOException ioe) {</span>
+<span class="nc" id="L935">        throw handleIoException(ioe);</span>
+      } finally {
+<span class="nc" id="L937">        lock.unlock();</span>
+      }
+
+<span class="nc bnc" id="L940" title="All 2 branches missed.">      streaming = dataFetchTime == 1;</span>
+    }
+<span class="nc" id="L942">    this.fetchSize = fetchSize;</span>
+<span class="nc" id="L943">  }</span>
+
+  @Override
+  public int getType() {
+<span class="nc" id="L947">    return resultSetScrollType;</span>
+  }
+
+  @Override
+  public int getConcurrency() {
+<span class="nc" id="L952">    return CONCUR_READ_ONLY;</span>
+  }
+
+  private void checkClose() throws SQLException {
+<span class="nc bnc" id="L956" title="All 2 branches missed.">    if (isClosed) {</span>
+<span class="nc" id="L957">      throw new SQLException(&quot;Operation not permit on a closed resultSet&quot;, &quot;HY000&quot;);</span>
+    }
+<span class="nc" id="L959">  }</span>
+
+  public boolean isCallableResult() {
+<span class="nc" id="L962">    return callableResult;</span>
+  }
+
+  public boolean isClosed() {
+<span class="nc" id="L966">    return isClosed;</span>
+  }
+
+  public MariaDbStatement getStatement() {
+<span class="nc" id="L970">    return statement;</span>
+  }
+
+  public void setStatement(MariaDbStatement statement) {
+<span class="nc" id="L974">    this.statement = statement;</span>
+<span class="nc" id="L975">  }</span>
+
+  /**
+   * {inheritDoc}.
+   */
+  public boolean wasNull() {
+<span class="nc" id="L981">    return row.wasNull();</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public InputStream getAsciiStream(String columnLabel) throws SQLException {
+<span class="nc" id="L988">    return getAsciiStream(findColumn(columnLabel));</span>
+
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public InputStream getAsciiStream(int columnIndex) throws SQLException {
+<span class="nc" id="L996">    checkObjectRange(columnIndex);</span>
+<span class="nc bnc" id="L997" title="All 2 branches missed.">    if (row.lastValueWasNull()) {</span>
+<span class="nc" id="L998">      return null;</span>
+    }
+<span class="nc" id="L1000">    return new ByteArrayInputStream(</span>
+<span class="nc" id="L1001">        new String(row.buf, row.pos, row.getLengthMaxFieldSize(), StandardCharsets.UTF_8)</span>
+<span class="nc" id="L1002">            .getBytes());</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public String getString(int columnIndex) throws SQLException {
+<span class="nc" id="L1009">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1010">    return row.getInternalString(columnsInformation[columnIndex - 1], null, timeZone);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public String getString(String columnLabel) throws SQLException {
+<span class="nc" id="L1017">    return getString(findColumn(columnLabel));</span>
+  }
+
+  private String zeroFillingIfNeeded(String value, ColumnInformation columnInformation) {
+<span class="nc bnc" id="L1021" title="All 2 branches missed.">    if (columnInformation.isZeroFill()) {</span>
+<span class="nc" id="L1022">      StringBuilder zeroAppendStr = new StringBuilder();</span>
+<span class="nc" id="L1023">      long zeroToAdd = columnInformation.getDisplaySize() - value.length();</span>
+<span class="nc bnc" id="L1024" title="All 2 branches missed.">      while (zeroToAdd-- &gt; 0) {</span>
+<span class="nc" id="L1025">        zeroAppendStr.append(&quot;0&quot;);</span>
+      }
+<span class="nc" id="L1027">      return zeroAppendStr.append(value).toString();</span>
+    }
+<span class="nc" id="L1029">    return value;</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public InputStream getBinaryStream(int columnIndex) throws SQLException {
+<span class="nc" id="L1036">    checkObjectRange(columnIndex);</span>
+<span class="nc bnc" id="L1037" title="All 2 branches missed.">    if (row.lastValueWasNull()) {</span>
+<span class="nc" id="L1038">      return null;</span>
+    }
+<span class="nc" id="L1040">    return new ByteArrayInputStream(row.buf, row.pos, row.getLengthMaxFieldSize());</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public InputStream getBinaryStream(String columnLabel) throws SQLException {
+<span class="nc" id="L1047">    return getBinaryStream(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public int getInt(int columnIndex) throws SQLException {
+<span class="nc" id="L1054">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1055">    return row.getInternalInt(columnsInformation[columnIndex - 1]);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public int getInt(String columnLabel) throws SQLException {
+<span class="nc" id="L1062">    return getInt(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public long getLong(String columnLabel) throws SQLException {
+<span class="nc" id="L1069">    return getLong(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public long getLong(int columnIndex) throws SQLException {
+<span class="nc" id="L1076">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1077">    return row.getInternalLong(columnsInformation[columnIndex - 1]);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public float getFloat(String columnLabel) throws SQLException {
+<span class="nc" id="L1084">    return getFloat(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public float getFloat(int columnIndex) throws SQLException {
+<span class="nc" id="L1091">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1092">    return row.getInternalFloat(columnsInformation[columnIndex - 1]);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public double getDouble(String columnLabel) throws SQLException {
+<span class="nc" id="L1099">    return getDouble(findColumn(columnLabel));</span>
+  }
+
+
+  /**
+   * {inheritDoc}.
+   */
+  public double getDouble(int columnIndex) throws SQLException {
+<span class="nc" id="L1107">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1108">    return row.getInternalDouble(columnsInformation[columnIndex - 1]);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public BigDecimal getBigDecimal(String columnLabel, int scale) throws SQLException {
+<span class="nc" id="L1115">    return getBigDecimal(findColumn(columnLabel), scale);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public BigDecimal getBigDecimal(int columnIndex, int scale) throws SQLException {
+<span class="nc" id="L1122">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1123">    return row.getInternalBigDecimal(columnsInformation[columnIndex - 1]);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public BigDecimal getBigDecimal(int columnIndex) throws SQLException {
+<span class="nc" id="L1130">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1131">    return row.getInternalBigDecimal(columnsInformation[columnIndex - 1]);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public BigDecimal getBigDecimal(String columnLabel) throws SQLException {
+<span class="nc" id="L1138">    return getBigDecimal(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public byte[] getBytes(String columnLabel) throws SQLException {
+<span class="nc" id="L1145">    return getBytes(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public byte[] getBytes(int columnIndex) throws SQLException {
+<span class="nc" id="L1152">    checkObjectRange(columnIndex);</span>
+<span class="nc bnc" id="L1153" title="All 2 branches missed.">    if (row.lastValueWasNull()) {</span>
+<span class="nc" id="L1154">      return null;</span>
+    }
+<span class="nc" id="L1156">    byte[] data = new byte[row.getLengthMaxFieldSize()];</span>
+<span class="nc" id="L1157">    System.arraycopy(row.buf, row.pos, data, 0, row.getLengthMaxFieldSize());</span>
+<span class="nc" id="L1158">    return data;</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Date getDate(int columnIndex) throws SQLException {
+<span class="nc" id="L1165">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1166">    return row.getInternalDate(columnsInformation[columnIndex - 1], null, timeZone);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Date getDate(String columnLabel) throws SQLException {
+<span class="nc" id="L1173">    return getDate(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Date getDate(int columnIndex, Calendar cal) throws SQLException {
+<span class="nc" id="L1180">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1181">    return row.getInternalDate(columnsInformation[columnIndex - 1], cal, timeZone);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Date getDate(String columnLabel, Calendar cal) throws SQLException {
+<span class="nc" id="L1188">    return getDate(findColumn(columnLabel), cal);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Time getTime(int columnIndex) throws SQLException {
+<span class="nc" id="L1195">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1196">    return row.getInternalTime(columnsInformation[columnIndex - 1], null, timeZone);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Time getTime(String columnLabel) throws SQLException {
+<span class="nc" id="L1203">    return getTime(findColumn(columnLabel));</span>
+  }
+
+
+  /**
+   * {inheritDoc}.
+   */
+  public Time getTime(int columnIndex, Calendar cal) throws SQLException {
+<span class="nc" id="L1211">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1212">    return row.getInternalTime(columnsInformation[columnIndex - 1], cal, timeZone);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Time getTime(String columnLabel, Calendar cal) throws SQLException {
+<span class="nc" id="L1219">    return getTime(findColumn(columnLabel), cal);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Timestamp getTimestamp(String columnLabel) throws SQLException {
+<span class="nc" id="L1226">    return getTimestamp(findColumn(columnLabel));</span>
+  }
+
+
+  /**
+   * {inheritDoc}.
+   */
+  public Timestamp getTimestamp(int columnIndex, Calendar cal) throws SQLException {
+<span class="nc" id="L1234">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1235">    return row.getInternalTimestamp(columnsInformation[columnIndex - 1], cal, timeZone);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Timestamp getTimestamp(String columnLabel, Calendar cal) throws SQLException {
+<span class="nc" id="L1242">    return getTimestamp(findColumn(columnLabel), cal);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Timestamp getTimestamp(int columnIndex) throws SQLException {
+<span class="nc" id="L1249">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1250">    return row.getInternalTimestamp(columnsInformation[columnIndex - 1], null, timeZone);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public InputStream getUnicodeStream(String columnLabel) throws SQLException {
+<span class="nc" id="L1257">    return getUnicodeStream(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public InputStream getUnicodeStream(int columnIndex) throws SQLException {
+<span class="nc" id="L1264">    checkObjectRange(columnIndex);</span>
+<span class="nc bnc" id="L1265" title="All 2 branches missed.">    if (row.lastValueWasNull()) {</span>
+<span class="nc" id="L1266">      return null;</span>
+    }
+<span class="nc" id="L1268">    return new ByteArrayInputStream(</span>
+<span class="nc" id="L1269">        new String(row.buf, row.pos, row.getLengthMaxFieldSize(), StandardCharsets.UTF_8)</span>
+<span class="nc" id="L1270">            .getBytes());</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public String getCursorName() throws SQLException {
+<span class="nc" id="L1277">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;Cursors not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public ResultSetMetaData getMetaData() {
+<span class="nc" id="L1284">    return new MariaDbResultSetMetaData(columnsInformation, options, returnTableAlias);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Object getObject(int columnIndex) throws SQLException {
+<span class="nc" id="L1291">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1292">    return row.getInternalObject(columnsInformation[columnIndex - 1], timeZone);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Object getObject(String columnLabel) throws SQLException {
+<span class="nc" id="L1299">    return getObject(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Object getObject(int columnIndex, Map&lt;String, Class&lt;?&gt;&gt; map) throws SQLException {
+<span class="nc" id="L1306">    throw ExceptionMapper.getFeatureNotSupportedException(</span>
+        &quot;Method ResultSet.getObject(int columnIndex, Map&lt;String, Class&lt;?&gt;&gt; map) not supported&quot;);
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Object getObject(String columnLabel, Map&lt;String, Class&lt;?&gt;&gt; map) throws SQLException {
+<span class="nc" id="L1314">    throw ExceptionMapper.getFeatureNotSupportedException(</span>
+        &quot;Method ResultSet.getObject(String columnLabel, Map&lt;String, Class&lt;?&gt;&gt; map) not supported&quot;);
+  }
+
+
+  /**
+   * {inheritDoc}.
+   */
+  @SuppressWarnings(&quot;unchecked&quot;)
+  public &lt;T&gt; T getObject(int columnIndex, Class&lt;T&gt; type) throws SQLException {
+<span class="nc bnc" id="L1324" title="All 2 branches missed.">    if (type == null) {</span>
+<span class="nc" id="L1325">      throw new SQLException(&quot;Class type cannot be null&quot;);</span>
+    }
+<span class="nc" id="L1327">    checkObjectRange(columnIndex);</span>
+<span class="nc bnc" id="L1328" title="All 2 branches missed.">    if (row.lastValueWasNull()) {</span>
+<span class="nc" id="L1329">      return null;</span>
+    }
+<span class="nc" id="L1331">    ColumnInformation col = columnsInformation[columnIndex - 1];</span>
+
+<span class="nc bnc" id="L1333" title="All 2 branches missed.">    if (type.equals(String.class)) {</span>
+<span class="nc" id="L1334">      return (T) row.getInternalString(col, null, timeZone);</span>
+
+<span class="nc bnc" id="L1336" title="All 2 branches missed.">    } else if (type.equals(Integer.class)) {</span>
+<span class="nc" id="L1337">      return (T) (Integer) row.getInternalInt(col);</span>
+
+<span class="nc bnc" id="L1339" title="All 2 branches missed.">    } else if (type.equals(Long.class)) {</span>
+<span class="nc" id="L1340">      return (T) (Long) row.getInternalLong(col);</span>
+
+<span class="nc bnc" id="L1342" title="All 2 branches missed.">    } else if (type.equals(Short.class)) {</span>
+<span class="nc" id="L1343">      return (T) (Short) row.getInternalShort(col);</span>
+
+<span class="nc bnc" id="L1345" title="All 2 branches missed.">    } else if (type.equals(Double.class)) {</span>
+<span class="nc" id="L1346">      return (T) (Double) row.getInternalDouble(col);</span>
+
+<span class="nc bnc" id="L1348" title="All 2 branches missed.">    } else if (type.equals(Float.class)) {</span>
+<span class="nc" id="L1349">      return (T) (Float) row.getInternalFloat(col);</span>
+
+<span class="nc bnc" id="L1351" title="All 2 branches missed.">    } else if (type.equals(Byte.class)) {</span>
+<span class="nc" id="L1352">      return (T) (Byte) row.getInternalByte(col);</span>
+
+<span class="nc bnc" id="L1354" title="All 2 branches missed.">    } else if (type.equals(byte[].class)) {</span>
+<span class="nc" id="L1355">      byte[] data = new byte[row.getLengthMaxFieldSize()];</span>
+<span class="nc" id="L1356">      System.arraycopy(row.buf, row.pos, data, 0, row.getLengthMaxFieldSize());</span>
+<span class="nc" id="L1357">      return (T) data;</span>
+
+<span class="nc bnc" id="L1359" title="All 2 branches missed.">    } else if (type.equals(Date.class)) {</span>
+<span class="nc" id="L1360">      return (T) row.getInternalDate(col, null, timeZone);</span>
+
+<span class="nc bnc" id="L1362" title="All 2 branches missed.">    } else if (type.equals(Time.class)) {</span>
+<span class="nc" id="L1363">      return (T) row.getInternalTime(col, null, timeZone);</span>
+
+<span class="nc bnc" id="L1365" title="All 4 branches missed.">    } else if (type.equals(Timestamp.class) || type.equals(java.util.Date.class)) {</span>
+<span class="nc" id="L1366">      return (T) row.getInternalTimestamp(col, null, timeZone);</span>
+
+<span class="nc bnc" id="L1368" title="All 2 branches missed.">    } else if (type.equals(Boolean.class)) {</span>
+<span class="nc" id="L1369">      return (T) (Boolean) row.getInternalBoolean(col);</span>
+
+<span class="nc bnc" id="L1371" title="All 2 branches missed.">    } else if (type.equals(Calendar.class)) {</span>
+<span class="nc" id="L1372">      Calendar calendar = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L1373">      Timestamp timestamp = row.getInternalTimestamp(col, null, timeZone);</span>
+<span class="nc bnc" id="L1374" title="All 2 branches missed.">      if (timestamp == null) {</span>
+<span class="nc" id="L1375">        return null;</span>
+      }
+<span class="nc" id="L1377">      calendar.setTimeInMillis(timestamp.getTime());</span>
+<span class="nc" id="L1378">      return type.cast(calendar);</span>
+
+<span class="nc bnc" id="L1380" title="All 4 branches missed.">    } else if (type.equals(Clob.class) || type.equals(NClob.class)) {</span>
+<span class="nc" id="L1381">      return (T) new MariaDbClob(row.buf, row.pos, row.getLengthMaxFieldSize());</span>
+
+<span class="nc bnc" id="L1383" title="All 2 branches missed.">    } else if (type.equals(InputStream.class)) {</span>
+<span class="nc" id="L1384">      return (T) new ByteArrayInputStream(row.buf, row.pos, row.getLengthMaxFieldSize());</span>
+
+<span class="nc bnc" id="L1386" title="All 2 branches missed.">    } else if (type.equals(Reader.class)) {</span>
+<span class="nc" id="L1387">      String value = row.getInternalString(col, null, timeZone);</span>
+<span class="nc bnc" id="L1388" title="All 2 branches missed.">      if (value == null) {</span>
+<span class="nc" id="L1389">        return null;</span>
+      }
+<span class="nc" id="L1391">      return (T) new StringReader(value);</span>
+
+<span class="nc bnc" id="L1393" title="All 2 branches missed.">    } else if (type.equals(BigDecimal.class)) {</span>
+<span class="nc" id="L1394">      return (T) row.getInternalBigDecimal(col);</span>
+
+<span class="nc bnc" id="L1396" title="All 2 branches missed.">    } else if (type.equals(BigInteger.class)) {</span>
+<span class="nc" id="L1397">      return (T) row.getInternalBigInteger(col);</span>
+<span class="nc bnc" id="L1398" title="All 2 branches missed.">    } else if (type.equals(BigDecimal.class)) {</span>
+<span class="nc" id="L1399">      return (T) row.getInternalBigDecimal(col);</span>
+
+<span class="nc bnc" id="L1401" title="All 2 branches missed.">    } else if (type.equals(LocalDateTime.class)) {</span>
+<span class="nc" id="L1402">      ZonedDateTime zonedDateTime = row</span>
+<span class="nc" id="L1403">          .getInternalZonedDateTime(col, LocalDateTime.class, timeZone);</span>
+<span class="nc bnc" id="L1404" title="All 2 branches missed.">      return zonedDateTime == null ? null</span>
+<span class="nc" id="L1405">          : type.cast(zonedDateTime.withZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime());</span>
+
+<span class="nc bnc" id="L1407" title="All 2 branches missed.">    } else if (type.equals(ZonedDateTime.class)) {</span>
+<span class="nc" id="L1408">      ZonedDateTime zonedDateTime = row</span>
+<span class="nc" id="L1409">          .getInternalZonedDateTime(col, ZonedDateTime.class, timeZone);</span>
+<span class="nc bnc" id="L1410" title="All 2 branches missed.">      if (zonedDateTime == null) {</span>
+<span class="nc" id="L1411">        return null;</span>
+      }
+<span class="nc" id="L1413">      return type.cast(row.getInternalZonedDateTime(col, ZonedDateTime.class, timeZone));</span>
+
+<span class="nc bnc" id="L1415" title="All 2 branches missed.">    } else if (type.equals(OffsetDateTime.class)) {</span>
+<span class="nc" id="L1416">      ZonedDateTime tmpZonedDateTime = row</span>
+<span class="nc" id="L1417">          .getInternalZonedDateTime(col, OffsetDateTime.class, timeZone);</span>
+<span class="nc bnc" id="L1418" title="All 2 branches missed.">      return tmpZonedDateTime == null ? null : type.cast(tmpZonedDateTime.toOffsetDateTime());</span>
+
+<span class="nc bnc" id="L1420" title="All 2 branches missed.">    } else if (type.equals(OffsetDateTime.class)) {</span>
+<span class="nc" id="L1421">      LocalDate localDate = row.getInternalLocalDate(col, timeZone);</span>
+<span class="nc bnc" id="L1422" title="All 2 branches missed.">      if (localDate == null) {</span>
+<span class="nc" id="L1423">        return null;</span>
+      }
+<span class="nc" id="L1425">      return type.cast(localDate);</span>
+
+<span class="nc bnc" id="L1427" title="All 2 branches missed.">    } else if (type.equals(LocalDate.class)) {</span>
+<span class="nc" id="L1428">      LocalDate localDate = row.getInternalLocalDate(col, timeZone);</span>
+<span class="nc bnc" id="L1429" title="All 2 branches missed.">      if (localDate == null) {</span>
+<span class="nc" id="L1430">        return null;</span>
+      }
+<span class="nc" id="L1432">      return type.cast(localDate);</span>
+
+<span class="nc bnc" id="L1434" title="All 2 branches missed.">    } else if (type.equals(LocalTime.class)) {</span>
+<span class="nc" id="L1435">      LocalTime localTime = row.getInternalLocalTime(col, timeZone);</span>
+<span class="nc bnc" id="L1436" title="All 2 branches missed.">      if (localTime == null) {</span>
+<span class="nc" id="L1437">        return null;</span>
+      }
+<span class="nc" id="L1439">      return type.cast(localTime);</span>
+
+<span class="nc bnc" id="L1441" title="All 2 branches missed.">    } else if (type.equals(OffsetTime.class)) {</span>
+<span class="nc" id="L1442">      OffsetTime offsetTime = row.getInternalOffsetTime(col, timeZone);</span>
+<span class="nc bnc" id="L1443" title="All 2 branches missed.">      if (offsetTime == null) {</span>
+<span class="nc" id="L1444">        return null;</span>
+      }
+<span class="nc" id="L1446">      return type.cast(offsetTime);</span>
+
+    }
+<span class="nc" id="L1449">    throw ExceptionMapper</span>
+<span class="nc" id="L1450">        .getFeatureNotSupportedException(&quot;Type class '&quot; + type.getName() + &quot;' is not supported&quot;);</span>
+
+  }
+
+  @SuppressWarnings(&quot;unchecked&quot;)
+  public &lt;T&gt; T getObject(String columnLabel, Class&lt;T&gt; type) throws SQLException {
+<span class="nc" id="L1456">    return type.cast(getObject(findColumn(columnLabel), type));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public int findColumn(String columnLabel) throws SQLException {
+<span class="nc" id="L1463">    return columnNameMap.getIndex(columnLabel) + 1;</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Reader getCharacterStream(String columnLabel) throws SQLException {
+<span class="nc" id="L1470">    return getCharacterStream(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Reader getCharacterStream(int columnIndex) throws SQLException {
+<span class="nc" id="L1477">    checkObjectRange(columnIndex);</span>
+<span class="nc" id="L1478">    String value = row.getInternalString(columnsInformation[columnIndex - 1], null, timeZone);</span>
+<span class="nc bnc" id="L1479" title="All 2 branches missed.">    if (value == null) {</span>
+<span class="nc" id="L1480">      return null;</span>
+    }
+<span class="nc" id="L1482">    return new StringReader(value);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Reader getNCharacterStream(int columnIndex) throws SQLException {
+<span class="nc" id="L1489">    return getCharacterStream(columnIndex);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Reader getNCharacterStream(String columnLabel) throws SQLException {
+<span class="nc" id="L1496">    return getCharacterStream(findColumn(columnLabel));</span>
+  }
+
+
+  /**
+   * {inheritDoc}.
+   */
+  public Ref getRef(int columnIndex) throws SQLException {
+    // TODO: figure out what REF's are and implement this method
+<span class="nc" id="L1505">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Ref getRef(String columnLabel) throws SQLException {
+    // TODO see getRef(int)
+<span class="nc" id="L1513">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;Getting REFs not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Blob getBlob(int columnIndex) throws SQLException {
+<span class="nc" id="L1520">    checkObjectRange(columnIndex);</span>
+<span class="nc bnc" id="L1521" title="All 2 branches missed.">    if (row.lastValueWasNull()) {</span>
+<span class="nc" id="L1522">      return null;</span>
+    }
+<span class="nc" id="L1524">    return new MariaDbBlob(row.buf, row.pos, row.length);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Blob getBlob(String columnLabel) throws SQLException {
+<span class="nc" id="L1531">    return getBlob(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Clob getClob(int columnIndex) throws SQLException {
+<span class="nc" id="L1538">    checkObjectRange(columnIndex);</span>
+<span class="nc bnc" id="L1539" title="All 2 branches missed.">    if (row.lastValueWasNull()) {</span>
+<span class="nc" id="L1540">      return null;</span>
+    }
+<span class="nc" id="L1542">    return new MariaDbClob(row.buf, row.pos, row.length);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Clob getClob(String columnLabel) throws SQLException {
+<span class="nc" id="L1549">    return getClob(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Array getArray(int columnIndex) throws SQLException {
+<span class="nc" id="L1556">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;Arrays are not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public Array getArray(String columnLabel) throws SQLException {
+<span class="nc" id="L1563">    return getArray(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  @Override
+  public URL getURL(int columnIndex) throws SQLException {
+<span class="nc" id="L1571">    checkObjectRange(columnIndex);</span>
+<span class="nc bnc" id="L1572" title="All 2 branches missed.">    if (row.lastValueWasNull()) {</span>
+<span class="nc" id="L1573">      return null;</span>
+    }
+    try {
+<span class="nc" id="L1576">      return new URL(row.getInternalString(columnsInformation[columnIndex - 1], null, timeZone));</span>
+<span class="nc" id="L1577">    } catch (MalformedURLException e) {</span>
+<span class="nc" id="L1578">      throw ExceptionMapper.getSqlException(&quot;Could not parse as URL&quot;);</span>
+    }
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  @Override
+  public URL getURL(String columnLabel) throws SQLException {
+<span class="nc" id="L1587">    return getURL(findColumn(columnLabel));</span>
+  }
+
+
+  /**
+   * {inheritDoc}.
+   */
+  public RowId getRowId(int columnIndex) throws SQLException {
+<span class="nc" id="L1595">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;RowIDs not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public RowId getRowId(String columnLabel) throws SQLException {
+<span class="nc" id="L1602">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;RowIDs not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public NClob getNClob(int columnIndex) throws SQLException {
+<span class="nc" id="L1609">    checkObjectRange(columnIndex);</span>
+<span class="nc bnc" id="L1610" title="All 2 branches missed.">    if (row.lastValueWasNull()) {</span>
+<span class="nc" id="L1611">      return null;</span>
+    }
+<span class="nc" id="L1613">    return new MariaDbClob(row.buf, row.pos, row.length);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public NClob getNClob(String columnLabel) throws SQLException {
+<span class="nc" id="L1620">    return getNClob(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  @Override
+  public SQLXML getSQLXML(int columnIndex) throws SQLException {
+<span class="nc" id="L1628">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;SQLXML not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  @Override
+  public SQLXML getSQLXML(String columnLabel) throws SQLException {
+<span class="nc" id="L1636">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;SQLXML not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public String getNString(int columnIndex) throws SQLException {
+<span class="nc" id="L1643">    return getString(columnIndex);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public String getNString(String columnLabel) throws SQLException {
+<span class="nc" id="L1650">    return getString(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public boolean getBoolean(int index) throws SQLException {
+<span class="nc" id="L1657">    checkObjectRange(index);</span>
+<span class="nc" id="L1658">    return row.getInternalBoolean(columnsInformation[index - 1]);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public boolean getBoolean(String columnLabel) throws SQLException {
+<span class="nc" id="L1665">    return getBoolean(findColumn(columnLabel));</span>
+  }
+
+
+  /**
+   * {inheritDoc}.
+   */
+  public byte getByte(int index) throws SQLException {
+<span class="nc" id="L1673">    checkObjectRange(index);</span>
+<span class="nc" id="L1674">    return row.getInternalByte(columnsInformation[index - 1]);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public byte getByte(String columnLabel) throws SQLException {
+<span class="nc" id="L1681">    return getByte(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public short getShort(int index) throws SQLException {
+<span class="nc" id="L1688">    checkObjectRange(index);</span>
+<span class="nc" id="L1689">    return row.getInternalShort(columnsInformation[index - 1]);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public short getShort(String columnLabel) throws SQLException {
+<span class="nc" id="L1696">    return getShort(findColumn(columnLabel));</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public boolean rowUpdated() throws SQLException {
+<span class="nc" id="L1703">    throw ExceptionMapper</span>
+<span class="nc" id="L1704">        .getFeatureNotSupportedException(&quot;Detecting row updates are not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public boolean rowInserted() throws SQLException {
+<span class="nc" id="L1711">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;Detecting inserts are not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public boolean rowDeleted() throws SQLException {
+<span class="nc" id="L1718">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;Row deletes are not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void insertRow() throws SQLException {
+<span class="nc" id="L1725">    throw ExceptionMapper.getFeatureNotSupportedException(</span>
+        &quot;insertRow are not supported when using ResultSet.CONCUR_READ_ONLY&quot;);
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void deleteRow() throws SQLException {
+<span class="nc" id="L1733">    throw ExceptionMapper.getFeatureNotSupportedException(</span>
+        &quot;deleteRow are not supported when using ResultSet.CONCUR_READ_ONLY&quot;);
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void refreshRow() throws SQLException {
+<span class="nc" id="L1741">    throw ExceptionMapper.getFeatureNotSupportedException(</span>
+        &quot;refreshRow are not supported when using ResultSet.CONCUR_READ_ONLY&quot;);
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void cancelRowUpdates() throws SQLException {
+<span class="nc" id="L1749">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void moveToInsertRow() throws SQLException {
+<span class="nc" id="L1756">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void moveToCurrentRow() throws SQLException {
+<span class="nc" id="L1763">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNull(int columnIndex) throws SQLException {
+<span class="nc" id="L1770">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNull(String columnLabel) throws SQLException {
+<span class="nc" id="L1777">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBoolean(int columnIndex, boolean bool) throws SQLException {
+<span class="nc" id="L1784">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBoolean(String columnLabel, boolean value) throws SQLException {
+<span class="nc" id="L1791">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateByte(int columnIndex, byte value) throws SQLException {
+<span class="nc" id="L1798">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateByte(String columnLabel, byte value) throws SQLException {
+<span class="nc" id="L1805">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateShort(int columnIndex, short value) throws SQLException {
+<span class="nc" id="L1812">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateShort(String columnLabel, short value) throws SQLException {
+<span class="nc" id="L1819">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateInt(int columnIndex, int value) throws SQLException {
+<span class="nc" id="L1826">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateInt(String columnLabel, int value) throws SQLException {
+<span class="nc" id="L1833">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateFloat(int columnIndex, float value) throws SQLException {
+<span class="nc" id="L1840">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateFloat(String columnLabel, float value) throws SQLException {
+<span class="nc" id="L1847">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateDouble(int columnIndex, double value) throws SQLException {
+<span class="nc" id="L1854">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateDouble(String columnLabel, double value) throws SQLException {
+<span class="nc" id="L1861">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBigDecimal(int columnIndex, BigDecimal value) throws SQLException {
+<span class="nc" id="L1868">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBigDecimal(String columnLabel, BigDecimal value) throws SQLException {
+<span class="nc" id="L1875">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateString(int columnIndex, String value) throws SQLException {
+<span class="nc" id="L1882">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateString(String columnLabel, String value) throws SQLException {
+<span class="nc" id="L1889">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBytes(int columnIndex, byte[] value) throws SQLException {
+<span class="nc" id="L1896">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBytes(String columnLabel, byte[] value) throws SQLException {
+<span class="nc" id="L1903">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateDate(int columnIndex, Date date) throws SQLException {
+<span class="nc" id="L1910">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateDate(String columnLabel, Date value) throws SQLException {
+<span class="nc" id="L1917">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateTime(int columnIndex, Time time) throws SQLException {
+<span class="nc" id="L1924">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateTime(String columnLabel, Time value) throws SQLException {
+<span class="nc" id="L1931">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateTimestamp(int columnIndex, Timestamp timeStamp) throws SQLException {
+<span class="nc" id="L1938">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateTimestamp(String columnLabel, Timestamp value) throws SQLException {
+<span class="nc" id="L1945">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(int columnIndex, InputStream inputStream, int length)
+      throws SQLException {
+<span class="nc" id="L1953">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(String columnLabel, InputStream inputStream) throws SQLException {
+<span class="nc" id="L1960">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(String columnLabel, InputStream value, int length)
+      throws SQLException {
+<span class="nc" id="L1968">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(int columnIndex, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L1976">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(String columnLabel, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L1984">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateAsciiStream(int columnIndex, InputStream inputStream) throws SQLException {
+<span class="nc" id="L1991">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(int columnIndex, InputStream inputStream, int length)
+      throws SQLException {
+<span class="nc" id="L1999">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(int columnIndex, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L2007">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(String columnLabel, InputStream value, int length)
+      throws SQLException {
+<span class="nc" id="L2015">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(String columnLabel, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L2023">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(int columnIndex, InputStream inputStream) throws SQLException {
+<span class="nc" id="L2030">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBinaryStream(String columnLabel, InputStream inputStream) throws SQLException {
+<span class="nc" id="L2037">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(int columnIndex, Reader value, int length) throws SQLException {
+<span class="nc" id="L2044">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(int columnIndex, Reader value) throws SQLException {
+<span class="nc" id="L2051">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(String columnLabel, Reader reader, int length)
+      throws SQLException {
+<span class="nc" id="L2059">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(int columnIndex, Reader value, long length)
+      throws SQLException {
+<span class="nc" id="L2067">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(String columnLabel, Reader reader, long length)
+      throws SQLException {
+<span class="nc" id="L2075">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateCharacterStream(String columnLabel, Reader reader) throws SQLException {
+<span class="nc" id="L2082">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateObject(int columnIndex, Object value, int scaleOrLength) throws SQLException {
+<span class="nc" id="L2089">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateObject(int columnIndex, Object value) throws SQLException {
+<span class="nc" id="L2096">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateObject(String columnLabel, Object value, int scaleOrLength)
+      throws SQLException {
+<span class="nc" id="L2104">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateObject(String columnLabel, Object value) throws SQLException {
+<span class="nc" id="L2111">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateLong(String columnLabel, long value) throws SQLException {
+<span class="nc" id="L2118">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateLong(int columnIndex, long value) throws SQLException {
+<span class="nc" id="L2125">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateRow() throws SQLException {
+<span class="nc" id="L2132">    throw ExceptionMapper.getFeatureNotSupportedException(</span>
+        &quot;updateRow are not supported when using ResultSet.CONCUR_READ_ONLY&quot;);
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateRef(int columnIndex, Ref ref) throws SQLException {
+<span class="nc" id="L2140">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateRef(String columnLabel, Ref ref) throws SQLException {
+<span class="nc" id="L2147">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(int columnIndex, Blob blob) throws SQLException {
+<span class="nc" id="L2154">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(String columnLabel, Blob blob) throws SQLException {
+<span class="nc" id="L2161">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(int columnIndex, InputStream inputStream) throws SQLException {
+<span class="nc" id="L2168">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(String columnLabel, InputStream inputStream) throws SQLException {
+<span class="nc" id="L2175">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(int columnIndex, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L2183">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateBlob(String columnLabel, InputStream inputStream, long length)
+      throws SQLException {
+<span class="nc" id="L2191">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(int columnIndex, Clob clob) throws SQLException {
+<span class="nc" id="L2198">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(String columnLabel, Clob clob) throws SQLException {
+<span class="nc" id="L2205">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(int columnIndex, Reader reader, long length) throws SQLException {
+<span class="nc" id="L2212">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(String columnLabel, Reader reader, long length) throws SQLException {
+<span class="nc" id="L2219">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(int columnIndex, Reader reader) throws SQLException {
+<span class="nc" id="L2226">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateClob(String columnLabel, Reader reader) throws SQLException {
+<span class="nc" id="L2233">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateArray(int columnIndex, Array array) throws SQLException {
+<span class="nc" id="L2240">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateArray(String columnLabel, Array array) throws SQLException {
+<span class="nc" id="L2247">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateRowId(int columnIndex, RowId rowId) throws SQLException {
+<span class="nc" id="L2254">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateRowId(String columnLabel, RowId rowId) throws SQLException {
+<span class="nc" id="L2262">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNString(int columnIndex, String nstring) throws SQLException {
+<span class="nc" id="L2270">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNString(String columnLabel, String nstring) throws SQLException {
+<span class="nc" id="L2277">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(int columnIndex, NClob nclob) throws SQLException {
+<span class="nc" id="L2284">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(String columnLabel, NClob nclob) throws SQLException {
+<span class="nc" id="L2291">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(int columnIndex, Reader reader) throws SQLException {
+<span class="nc" id="L2298">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(String columnLabel, Reader reader) throws SQLException {
+<span class="nc" id="L2305">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(int columnIndex, Reader reader, long length) throws SQLException {
+<span class="nc" id="L2312">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNClob(String columnLabel, Reader reader, long length) throws SQLException {
+<span class="nc" id="L2319">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  @Override
+  public void updateSQLXML(int columnIndex, SQLXML xmlObject) throws SQLException {
+<span class="nc" id="L2327">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;SQLXML not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  @Override
+  public void updateSQLXML(String columnLabel, SQLXML xmlObject) throws SQLException {
+<span class="nc" id="L2335">    throw ExceptionMapper.getFeatureNotSupportedException(&quot;SQLXML not supported&quot;);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNCharacterStream(int columnIndex, Reader value, long length)
+      throws SQLException {
+<span class="nc" id="L2343">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNCharacterStream(String columnLabel, Reader reader, long length)
+      throws SQLException {
+<span class="nc" id="L2351">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNCharacterStream(int columnIndex, Reader reader) throws SQLException {
+<span class="nc" id="L2358">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public void updateNCharacterStream(String columnLabel, Reader reader) throws SQLException {
+<span class="nc" id="L2365">    throw ExceptionMapper.getFeatureNotSupportedException(NOT_UPDATABLE_ERROR);</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public int getHoldability() {
+<span class="nc" id="L2372">    return ResultSet.HOLD_CURSORS_OVER_COMMIT;</span>
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public &lt;T&gt; T unwrap(final Class&lt;T&gt; iface) throws SQLException {
+    try {
+<span class="nc bnc" id="L2380" title="All 2 branches missed.">      if (isWrapperFor(iface)) {</span>
+<span class="nc" id="L2381">        return iface.cast(this);</span>
+      } else {
+<span class="nc" id="L2383">        throw new SQLException(&quot;The receiver is not a wrapper for &quot; + iface.getName());</span>
+      }
+<span class="nc" id="L2385">    } catch (Exception e) {</span>
+<span class="nc" id="L2386">      throw new SQLException(&quot;The receiver is not a wrapper and does not implement the interface&quot;);</span>
+    }
+  }
+
+  /**
+   * {inheritDoc}.
+   */
+  public boolean isWrapperFor(final Class&lt;?&gt; iface) throws SQLException {
+<span class="nc" id="L2394">    return iface.isInstance(this);</span>
+  }
+
+  public void setReturnTableAlias(boolean returnTableAlias) {
+<span class="nc" id="L2398">    this.returnTableAlias = returnTableAlias;</span>
+<span class="nc" id="L2399">  }</span>
+
+  private void rangeCheck(Object className, long minValue, long maxValue, long value,
+      ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L2403" title="All 4 branches missed.">    if (value &lt; minValue || value &gt; maxValue) {</span>
+<span class="nc" id="L2404">      throw new SQLException(</span>
+<span class="nc" id="L2405">          &quot;Out of range value for column '&quot; + columnInfo.getName() + &quot;' : value &quot; + value</span>
+              + &quot; is not in &quot;
+              + className + &quot; range&quot;, &quot;22003&quot;, 1264);
+    }
+<span class="nc" id="L2409">  }</span>
+
+  public int getRowPointer() {
+<span class="nc" id="L2412">    return rowPointer;</span>
+  }
+
+  protected void setRowPointer(int pointer) {
+<span class="nc" id="L2416">    rowPointer = pointer;</span>
+<span class="nc" id="L2417">  }</span>
+
+  public int getDataSize() {
+<span class="nc" id="L2420">    return dataSize;</span>
+  }
+
+  public boolean isBinaryEncoded() {
+<span class="nc" id="L2424">    return row.isBinaryEncoded();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

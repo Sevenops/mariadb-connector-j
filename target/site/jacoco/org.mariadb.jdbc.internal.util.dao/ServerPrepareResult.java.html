@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ServerPrepareResult.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.util.dao</a> &gt; <span class="el_source">ServerPrepareResult.java</span></div><h1>ServerPrepareResult.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.util.dao;
+
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.mariadb.jdbc.internal.ColumnType;
+import org.mariadb.jdbc.internal.com.read.resultset.ColumnInformation;
+import org.mariadb.jdbc.internal.protocol.Protocol;
+
+public class ServerPrepareResult implements PrepareResult {
+
+  private final ColumnInformation[] columns;
+  private final ColumnInformation[] parameters;
+  private final String sql;
+<span class="nc" id="L65">  private final AtomicBoolean inCache = new AtomicBoolean();</span>
+  private int statementId;
+  private ColumnType[] parameterTypeHeader;
+  private Protocol unProxiedProtocol;
+  //share indicator
+<span class="nc" id="L70">  private volatile int shareCounter = 1;</span>
+  private volatile boolean isBeingDeallocate;
+
+  /**
+   * PrepareStatement Result object.
+   *
+   * @param sql               query
+   * @param statementId       server statement Id.
+   * @param columns           columns information
+   * @param parameters        parameters information
+   * @param unProxiedProtocol indicate the protocol on which the prepare has been done
+   */
+  public ServerPrepareResult(String sql, int statementId, ColumnInformation[] columns,
+      ColumnInformation[] parameters,
+<span class="nc" id="L84">      Protocol unProxiedProtocol) {</span>
+<span class="nc" id="L85">    this.sql = sql;</span>
+<span class="nc" id="L86">    this.statementId = statementId;</span>
+<span class="nc" id="L87">    this.columns = columns;</span>
+<span class="nc" id="L88">    this.parameters = parameters;</span>
+<span class="nc" id="L89">    this.unProxiedProtocol = unProxiedProtocol;</span>
+<span class="nc" id="L90">    this.parameterTypeHeader = new ColumnType[parameters.length];</span>
+<span class="nc" id="L91">  }</span>
+
+  public void resetParameterTypeHeader() {
+<span class="nc" id="L94">    this.parameterTypeHeader = new ColumnType[parameters.length];</span>
+<span class="nc" id="L95">  }</span>
+
+  /**
+   * Update information after a failover.
+   *
+   * @param statementId       new statement Id
+   * @param unProxiedProtocol the protocol on which the prepare has been done
+   */
+  public void failover(int statementId, Protocol unProxiedProtocol) {
+<span class="nc" id="L104">    this.statementId = statementId;</span>
+<span class="nc" id="L105">    this.unProxiedProtocol = unProxiedProtocol;</span>
+<span class="nc" id="L106">    this.parameterTypeHeader = new ColumnType[parameters.length];</span>
+<span class="nc" id="L107">    this.shareCounter = 1;</span>
+<span class="nc" id="L108">    this.isBeingDeallocate = false;</span>
+
+<span class="nc" id="L110">  }</span>
+
+  public void setAddToCache() {
+<span class="nc" id="L113">    inCache.set(true);</span>
+<span class="nc" id="L114">  }</span>
+
+  public void setRemoveFromCache() {
+<span class="nc" id="L117">    inCache.set(false);</span>
+<span class="nc" id="L118">  }</span>
+
+  /**
+   * Increment share counter.
+   *
+   * @return true if can be used (is not been deallocate).
+   */
+  public synchronized boolean incrementShareCounter() {
+
+<span class="nc bnc" id="L127" title="All 2 branches missed.">    if (isBeingDeallocate) {</span>
+<span class="nc" id="L128">      return false;</span>
+    }
+
+<span class="nc" id="L131">    shareCounter++;</span>
+<span class="nc" id="L132">    return true;</span>
+  }
+
+  public synchronized void decrementShareCounter() {
+<span class="nc" id="L136">    shareCounter--;</span>
+<span class="nc" id="L137">  }</span>
+
+  /**
+   * Asked if can be deallocate (is not shared in other statement and not in cache) Set deallocate
+   * flag to true if so.
+   *
+   * @return true if can be deallocate
+   */
+  public synchronized boolean canBeDeallocate() {
+<span class="nc bnc" id="L146" title="All 4 branches missed.">    if (shareCounter &gt; 0 || isBeingDeallocate) {</span>
+<span class="nc" id="L147">      return false;</span>
+    }
+<span class="nc bnc" id="L149" title="All 2 branches missed.">    if (!inCache.get()) {</span>
+<span class="nc" id="L150">      isBeingDeallocate = true;</span>
+<span class="nc" id="L151">      return true;</span>
+    }
+<span class="nc" id="L153">    return false;</span>
+  }
+
+  public int getParamCount() {
+<span class="nc" id="L157">    return parameters.length;</span>
+  }
+
+  //for unit test
+  public synchronized int getShareCounter() {
+<span class="nc" id="L162">    return shareCounter;</span>
+  }
+
+  public int getStatementId() {
+<span class="nc" id="L166">    return statementId;</span>
+  }
+
+  public ColumnInformation[] getColumns() {
+<span class="nc" id="L170">    return columns;</span>
+  }
+
+  public ColumnInformation[] getParameters() {
+<span class="nc" id="L174">    return parameters;</span>
+  }
+
+  public Protocol getUnProxiedProtocol() {
+<span class="nc" id="L178">    return unProxiedProtocol;</span>
+  }
+
+  public String getSql() {
+<span class="nc" id="L182">    return sql;</span>
+  }
+
+  public ColumnType[] getParameterTypeHeader() {
+<span class="nc" id="L186">    return parameterTypeHeader;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

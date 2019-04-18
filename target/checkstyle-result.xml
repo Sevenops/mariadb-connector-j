@@ -1,0 +1,602 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="8.18">
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/LocalInfileInterceptor.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/ServerSidePreparedStatement.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/BasePrepareStatement.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaXaResource.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaXaConnection.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbConnection.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/CallParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbParameterMetaData.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/ClientSidePreparedStatement.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbDataSource.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/CallableFunctionStatement.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/Driver.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbResultSetMetaData.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/CallableStatementCache.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/BulkStatus.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/dao/Identifier.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/dao/CloneableCallableStatement.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/dao/ServerPrepareResult.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/dao/CallableStatementCacheKey.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/dao/PrepareResult.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/dao/ClientPrepareResult.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/dao/ReconnectDuringTransactionException.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/scheduler/DynamicSizedSchedulerInterface.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/scheduler/MariaDbThreadFactory.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/scheduler/SchedulerServiceProviderHolder.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/scheduler/DynamicSizedSchedulerImpl.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/scheduler/FixedSizedSchedulerImpl.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/Utils.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/SqlStates.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/exceptions/MaxAllowedPacketException.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/exceptions/ExceptionMapper.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/pid/PidFactory.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/pid/JnaPidFactory.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/constant/ParameterConstant.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/constant/ServerStatus.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/constant/HaMode.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/constant/ColumnFlags.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/constant/StateChange.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/constant/Version.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/LogQueryTool.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/ConnectionState.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/Options.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/ServerPrepareStatementCache.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/DefaultOptions.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/OptionUtils.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/pool/GlobalStateInfo.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/pool/Pool.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/pool/Pools.java">
+<error line="64" column="7" severity="warning" message="&apos;}&apos; 7 multi-blok deyiminin sonraki parçası olarak aynı satırda olmalıdır sütunda (doğrudan çoklu blokları içeren tek bir: if/else-if/else, do/while veya başka bir try/catch/finally)." source="RightCurlySame"/>
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/util/pool/PoolMBean.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/input/DecompressPacketInputStream.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/input/ReadAheadBufferedStream.java">
+<error line="46" severity="warning" message="member def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="47" severity="warning" message="member def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="48" severity="warning" message="member def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="49" severity="warning" message="member def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="50" severity="warning" message="member def type ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="52" severity="warning" message="ctor def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="53" severity="warning" message="ctor def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="54" severity="warning" message="ctor def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="55" severity="warning" message="ctor def rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="63" severity="warning" message="method def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="64" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="65" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 12, olması gereken sütun 6." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="66" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 12, olması gereken sütun 6." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="67" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 16, olması gereken sütun 8." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="68" severity="warning" message="if rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 12, olması gereken sütun 6." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="69" severity="warning" message="if rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="70" severity="warning" message="method def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="71" severity="warning" message="method def rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="82" severity="warning" message="method def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="83" severity="warning" message="method def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="84" severity="warning" message="try ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="85" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 12, olması gereken sütun 6." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="86" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 16, olması gereken sütun 8." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="87" severity="warning" message="if rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 12, olması gereken sütun 6." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="89" severity="warning" message="try ifadesi doğru hizalanmamış. Bulunduğu sütun 12, olması gereken sütun 6." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="90" severity="warning" message="while ifadesi doğru hizalanmamış. Bulunduğu sütun 12, olması gereken sütun 6." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="93" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 16, olması gereken sütun 8." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="94" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 20, olması gereken sütun 10." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="97" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 24, olması gereken sütun 12." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="98" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 24, olması gereken sütun 12." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="99" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 28, olması gereken sütun 14." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="100" severity="warning" message="if rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 24, olması gereken sütun 12." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="101" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 24, olması gereken sütun 12." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="103" severity="warning" message="if rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 20, olması gereken sütun 10." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="106" severity="warning" message="else ifadesi doğru hizalanmamış. Bulunduğu sütun 24, olması gereken sütun 12." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="107" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 24, olması gereken sütun 12." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="108" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 28, olması gereken sütun 14." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="109" severity="warning" message="if rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 24, olması gereken sütun 12." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="110" severity="warning" message="else rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 20, olması gereken sütun 10." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="111" severity="warning" message="if rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 16, olması gereken sütun 8." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="114" severity="warning" message="while ifadesi doğru hizalanmamış. Bulunduğu sütun 16, olması gereken sütun 8." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="115" severity="warning" message="while ifadesi doğru hizalanmamış. Bulunduğu sütun 16, olması gereken sütun 8." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="116" severity="warning" message="while ifadesi doğru hizalanmamış. Bulunduğu sütun 16, olması gereken sütun 8." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="117" severity="warning" message="while ifadesi doğru hizalanmamış. Bulunduğu sütun 16, olması gereken sütun 8." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="119" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 16, olması gereken sütun 8." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="120" severity="warning" message="if ifadesi doğru hizalanmamış. Bulunduğu sütun 20, olması gereken sütun 10." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="121" severity="warning" message="if rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 16, olması gereken sütun 8." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="122" severity="warning" message="while rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 12, olması gereken sütun 6." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="123" severity="warning" message="Boş catch bloğu." source="com.puppycrawl.tools.checkstyle.checks.blocks.EmptyCatchBlockCheck"/>
+<error line="123" severity="warning" message="try rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="124" severity="warning" message="catch rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="125" severity="warning" message="finally ifadesi doğru hizalanmamış. Bulunduğu sütun 12, olması gereken sütun 6." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="126" severity="warning" message="finally rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="127" severity="warning" message="method def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="128" severity="warning" message="method def rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="136" severity="warning" message="method def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="137" severity="warning" message="method def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="138" severity="warning" message="method def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="139" severity="warning" message="method def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="140" severity="warning" message="method def rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="143" severity="warning" message="method def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="144" severity="warning" message="method def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="145" severity="warning" message="method def rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="147" severity="warning" message="method def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="148" severity="warning" message="method def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="149" severity="warning" message="method def rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="151" severity="warning" message="method def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="152" severity="warning" message="method def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="153" severity="warning" message="method def rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="155" severity="warning" message="method def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="156" severity="warning" message="method def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="157" severity="warning" message="method def rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="159" severity="warning" message="method def modifier ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="160" severity="warning" message="method def ifadesi doğru hizalanmamış. Bulunduğu sütun 8, olması gereken sütun 4." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+<error line="161" severity="warning" message="method def rcurly ifadesi doğru hizalanmamış. Bulunduğu sütun 4, olması gereken sütun 2." source="com.puppycrawl.tools.checkstyle.checks.indentation.IndentationCheck"/>
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/input/PacketInputStream.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/input/StandardPacketInputStream.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/LruTraceCache.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/output/AbstractPacketOutputStream.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/output/CompressPacketOutputStream.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/output/StandardPacketOutputStream.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/output/PacketOutputStream.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/TraceObject.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/socket/SocketHandlerFunction.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/socket/NamedPipeSocket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/io/socket/SocketUtility.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/MariaDbServerCapabilities.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/AsyncMultiReadResult.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/AuroraProtocol.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/Protocol.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/AbstractQueryProtocol.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/AsyncMultiRead.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/MastersSlavesProtocol.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/tls/MariaDbX509TrustManager.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/tls/SslFactory.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/tls/MariaDbX509KeyManager.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/tls/HostnameVerifierImpl.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/AbstractMultiSend.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/MasterProtocol.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/AbstractConnectProtocol.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/authentication/AuthenticationProviderHolder.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/protocol/authentication/DefaultAuthenticationProvider.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/impl/MastersSlavesListener.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/impl/MastersFailoverListener.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/impl/AuroraListener.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/tools/SearchFilter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/FailoverProxy.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/AbstractMastersListener.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/HandleErrorResult.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/Listener.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/thread/FailoverLoop.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/thread/TerminableRunnable.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/thread/ConnectionValidator.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/failover/AbstractMastersSlavesListener.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/logging/Slf4JLogger.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/logging/Logger.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/logging/LoggerFactory.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/logging/NoLogger.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/logging/ProtocolLoggingProxy.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/ColumnType.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/OkPacket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/ReadInitialHandShakePacket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/resultset/rowprotocol/BinaryRowProtocol.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/resultset/rowprotocol/RowProtocol.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/resultset/rowprotocol/TextRowProtocol.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/resultset/UpdatableResultSet.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/resultset/UpdatableColumnInformation.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/resultset/ColumnInformation.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/resultset/SelectResultSet.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/ErrorPacket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/dao/CmdInformationMultiple.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/dao/ColumnNameMap.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/dao/CmdInformation.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/dao/CmdInformationSingle.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/dao/CmdInformationBatch.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/dao/Results.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/Buffer.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/read/EndOfFilePacket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/Packet.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/ComQuery.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/SendHandshakeResponsePacket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/SendClosePacket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/SendChangeDbPacket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/ByteArrayParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/IntParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/DateParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/DefaultParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/DoubleParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/StreamParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/ByteParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/SerializableParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/LongParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/ShortParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/TimeParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/OffsetTimeParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/TimestampParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/ZonedDateTimeParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/BigDecimalParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/StringParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/ReaderParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/ParameterHolder.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/NullParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/parameters/FloatParameter.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/ComStmtPrepare.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/ComStmtExecute.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/authentication/ClearPasswordPlugin.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/authentication/OldPasswordPlugin.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/authentication/SendPamAuthPacket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/authentication/NativePasswordPlugin.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/authentication/AuthenticationPlugin.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/authentication/Ed25519PasswordPlugin.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/authentication/gssapi/StandardGssapiAuthentication.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/authentication/gssapi/GssUtility.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/authentication/gssapi/WindowsNativeSspiAuthentication.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/authentication/gssapi/GssapiAuth.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/authentication/SendGssApiAuthPacket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/internal/com/send/SendSslConnectionRequestPacket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbProcedureStatement.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbPooledConnection.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbXid.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/HostAddress.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/CallableProcedureStatement.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/UrlParser.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbFunctionStatement.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/CallableParameterMetaData.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbClob.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/BlobOutputStream.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbDatabaseMetaData.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbStatement.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbSavepoint.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbPoolDataSource.java">
+<error line="625" column="5" severity="warning" message="WhitespaceAround: &apos;try&apos; is not followed by whitespace. Empty blocks may only be represented as {} when not part of a multi-block statement (4.1.3)" source="com.puppycrawl.tools.checkstyle.checks.whitespace.WhitespaceAroundCheck"/>
+<error line="625" column="8" severity="warning" message="WhitespaceAround: &apos;{&apos; is not preceded with whitespace." source="com.puppycrawl.tools.checkstyle.checks.whitespace.WhitespaceAroundCheck"/>
+<error line="630" column="5" severity="warning" message="&apos;}&apos; 5 multi-blok deyiminin sonraki parçası olarak aynı satırda olmalıdır sütunda (doğrudan çoklu blokları içeren tek bir: if/else-if/else, do/while veya başka bir try/catch/finally)." source="RightCurlySame"/>
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/main/java/org/mariadb/jdbc/MariaDbBlob.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/MultiTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/CollationTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/BaseTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ClientPreparedStatementParsingTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/GiganticLoadDataInfileTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/JdbcParserTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/DatatypeTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/BasicFailover.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/LocalInfileInputStreamTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/DatatypeCompatibilityTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/MariaDbDatabaseMetaDataTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/MariaDbBlobTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/TimeoutTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/SslTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/DateTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/StoredProcedureTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/GeometryTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/DriverTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ParserTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ConnectionPoolTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/SerializableClass.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/BufferTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/GeneratedTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/CancelTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/UtilTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/DataSourcePoolTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/PasswordEncodingTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/DatabaseMetadataTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/RePrepareTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ResultSetUnsupportedMethodsTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/internal/util/DefaultOptionsTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/internal/util/dao/ClientPrepareResultTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/internal/util/SchedulerServiceProviderHolderTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/internal/util/UtilsTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/internal/util/buffer/BufferTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/internal/protocol/tls/HostnameVerifierImplTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ClientPreparedStatementTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/TimezoneDaylightSavingTimeTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/DataSourceTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ReconnectionStateMaxAllowedStatement.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/PreparedStatementTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/TransactionTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/BooleanTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/StateChangeTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/DataNTypeTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/CatalogTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/CheckDataTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/PooledConnectionTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/GeneratedKeysTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ScrollTypeTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/TruncateExceptionTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/MariaDbCompatibilityTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/DataTypeSignedTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/MariaDbClobTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/LocalInfileDisableTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/AllowMultiQueriesTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/MariaDbPoolDataSourceTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/DataTypeUnsignedTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/CallStatementTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/BlobTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ErrorMessageTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ResultSetMetaDataTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/UnicodeTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ComMultiPrepareStatementTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ExecuteBatchTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/MyEventListener.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/BasicBatchTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/UpdateResultSetTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ServerPrepareStatementTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/DistributedTransactionTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/GaleraFailoverTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/MonoServerFailoverTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/SequentialFailoverTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/CancelTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/BaseMultiHostTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/AllowMasterDownTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/AuroraFailoverTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/ReplicationFailoverTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/LoadBalanceFailoverTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/TcpProxySocket.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/TcpProxy.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/BaseMonoServer.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/OldFailoverTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/BaseReplication.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/failover/AuroraAutoDiscoveryTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/StatementTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ResultSetTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/ConnectionTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/LocalInfileInterceptorImpl.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/UpdateResultSetMethodsTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/FetchSizeTest.java">
+</file>
+<file name="/Users/altanozlu/Downloads/mariadb-connector-j-master/src/test/java/org/mariadb/jdbc/BigQueryTest.java">
+</file>
+</checkstyle>

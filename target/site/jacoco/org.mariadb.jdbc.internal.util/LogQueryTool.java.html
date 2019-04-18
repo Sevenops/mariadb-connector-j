@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LogQueryTool.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.util</a> &gt; <span class="el_source">LogQueryTool.java</span></div><h1>LogQueryTool.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.util;
+
+import static org.mariadb.jdbc.internal.util.SqlStates.CONNECTION_EXCEPTION;
+
+import java.net.SocketTimeoutException;
+import java.nio.ByteBuffer;
+import java.sql.SQLException;
+import org.mariadb.jdbc.internal.com.send.parameters.ParameterHolder;
+import org.mariadb.jdbc.internal.util.dao.PrepareResult;
+
+public class LogQueryTool {
+
+  private final Options options;
+
+<span class="nc" id="L67">  public LogQueryTool(Options options) {</span>
+<span class="nc" id="L68">    this.options = options;</span>
+<span class="nc" id="L69">  }</span>
+
+  /**
+   * Get query, truncated if to big.
+   *
+   * @param sql current query
+   * @return possibly truncated query if too big
+   */
+  public String subQuery(String sql) {
+<span class="nc bnc" id="L78" title="All 4 branches missed.">    if (options.maxQuerySizeToLog &gt; 0 &amp;&amp; sql.length() &gt; options.maxQuerySizeToLog - 3) {</span>
+<span class="nc" id="L79">      return sql.substring(0, options.maxQuerySizeToLog - 3) + &quot;...&quot;;</span>
+    }
+<span class="nc" id="L81">    return sql;</span>
+  }
+
+  /**
+   * Get query, truncated if to big.
+   *
+   * @param buffer current query buffer
+   * @return possibly truncated query if too big
+   */
+  private String subQuery(ByteBuffer buffer) {
+    String queryString;
+<span class="nc bnc" id="L92" title="All 2 branches missed.">    if (options.maxQuerySizeToLog == 0) {</span>
+<span class="nc" id="L93">      queryString = new String(buffer.array(), 5, buffer.limit());</span>
+    } else {
+<span class="nc" id="L95">      queryString = new String(buffer.array(), 5,</span>
+<span class="nc" id="L96">          Math.min(buffer.limit() - 5, (options.maxQuerySizeToLog * 3)));</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">      if (queryString.length() &gt; options.maxQuerySizeToLog - 3) {</span>
+<span class="nc" id="L98">        queryString = queryString.substring(0, options.maxQuerySizeToLog - 3) + &quot;...&quot;;</span>
+      }
+    }
+<span class="nc" id="L101">    return queryString;</span>
+  }
+
+  /**
+   * Return exception with query information's.
+   *
+   * @param sql            current sql command
+   * @param sqlException   current exception
+   * @param explicitClosed has connection been explicitly closed
+   * @return exception with query information
+   */
+  public SQLException exceptionWithQuery(String sql, SQLException sqlException,
+      boolean explicitClosed) {
+<span class="nc bnc" id="L114" title="All 2 branches missed.">    if (explicitClosed) {</span>
+<span class="nc" id="L115">      return new SQLException(</span>
+<span class="nc" id="L116">          &quot;Connection has explicitly been closed/aborted.\nQuery is: &quot; + subQuery(sql),</span>
+<span class="nc" id="L117">          sqlException.getSQLState(),</span>
+<span class="nc" id="L118">          sqlException.getErrorCode(), sqlException.getCause());</span>
+    }
+
+<span class="nc bnc" id="L121" title="All 4 branches missed.">    if (options.dumpQueriesOnException || sqlException.getErrorCode() == 1064) {</span>
+<span class="nc" id="L122">      return new SQLException(sqlException.getMessage()</span>
+<span class="nc" id="L123">          + &quot;\nQuery is: &quot; + subQuery(sql)</span>
+<span class="nc" id="L124">          + &quot;\njava thread: &quot; + Thread.currentThread().getName(),</span>
+<span class="nc" id="L125">          sqlException.getSQLState(),</span>
+<span class="nc" id="L126">          sqlException.getErrorCode(), sqlException.getCause());</span>
+    }
+<span class="nc" id="L128">    return sqlException;</span>
+  }
+
+  /**
+   * Return exception with query information's.
+   *
+   * @param buffer         query buffer
+   * @param sqlEx          current exception
+   * @param explicitClosed has connection been explicitly closed
+   * @return exception with query information
+   */
+  public SQLException exceptionWithQuery(ByteBuffer buffer, SQLException sqlEx,
+      boolean explicitClosed) {
+<span class="nc bnc" id="L141" title="All 6 branches missed.">    if (options.dumpQueriesOnException || sqlEx.getErrorCode() == 1064 || explicitClosed) {</span>
+<span class="nc" id="L142">      return exceptionWithQuery(subQuery(buffer), sqlEx, explicitClosed);</span>
+    }
+<span class="nc" id="L144">    return sqlEx;</span>
+  }
+
+  /**
+   * Return exception with query information's.
+   *
+   * @param parameters          query parameters
+   * @param sqlEx               current exception
+   * @param serverPrepareResult prepare results
+   * @return exception with query information
+   */
+  public SQLException exceptionWithQuery(ParameterHolder[] parameters, SQLException sqlEx,
+      PrepareResult serverPrepareResult) {
+<span class="nc bnc" id="L157" title="All 2 branches missed.">    if (sqlEx.getCause() instanceof SocketTimeoutException) {</span>
+<span class="nc" id="L158">      return new SQLException(&quot;Connection timed out&quot;, CONNECTION_EXCEPTION.getSqlState(), sqlEx);</span>
+    }
+<span class="nc bnc" id="L160" title="All 2 branches missed.">    if (options.dumpQueriesOnException) {</span>
+<span class="nc" id="L161">      return new SQLException(exWithQuery(sqlEx.getMessage(), serverPrepareResult, parameters),</span>
+<span class="nc" id="L162">          sqlEx.getSQLState(),</span>
+<span class="nc" id="L163">          sqlEx.getErrorCode(), sqlEx.getCause());</span>
+    }
+<span class="nc" id="L165">    return sqlEx;</span>
+  }
+
+  /**
+   * Return exception with query information's.
+   *
+   * @param sqlEx         current exception
+   * @param prepareResult prepare results
+   * @return exception with query information
+   */
+  public SQLException exceptionWithQuery(SQLException sqlEx, PrepareResult prepareResult) {
+<span class="nc bnc" id="L176" title="All 4 branches missed.">    if (options.dumpQueriesOnException || sqlEx.getErrorCode() == 1064) {</span>
+<span class="nc" id="L177">      String querySql = prepareResult.getSql();</span>
+<span class="nc" id="L178">      String message = sqlEx.getMessage();</span>
+<span class="nc bnc" id="L179" title="All 4 branches missed.">      if (options.maxQuerySizeToLog != 0 &amp;&amp; querySql.length() &gt; options.maxQuerySizeToLog - 3) {</span>
+<span class="nc" id="L180">        message += &quot;\nQuery is: &quot; + querySql.substring(0, options.maxQuerySizeToLog - 3) + &quot;...&quot;;</span>
+      } else {
+<span class="nc" id="L182">        message += &quot;\nQuery is: &quot; + querySql;</span>
+      }
+<span class="nc" id="L184">      message += &quot;\njava thread: &quot; + Thread.currentThread().getName();</span>
+<span class="nc" id="L185">      return new SQLException(message, sqlEx.getSQLState(), sqlEx.getErrorCode(), sqlEx.getCause());</span>
+    }
+<span class="nc" id="L187">    return sqlEx;</span>
+  }
+
+  /**
+   * Return exception message with query.
+   *
+   * @param message             current exception message
+   * @param serverPrepareResult prepare result
+   * @param parameters          query parameters
+   * @return exception message with query
+   */
+  private String exWithQuery(String message, PrepareResult serverPrepareResult,
+      ParameterHolder[] parameters) {
+<span class="nc bnc" id="L200" title="All 2 branches missed.">    if (options.dumpQueriesOnException) {</span>
+<span class="nc" id="L201">      StringBuilder sql = new StringBuilder(serverPrepareResult.getSql());</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">      if (serverPrepareResult.getParamCount() &gt; 0) {</span>
+<span class="nc" id="L203">        sql.append(&quot;, parameters [&quot;);</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">        if (parameters.length &gt; 0) {</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">          for (int i = 0; i &lt; Math.min(parameters.length, serverPrepareResult.getParamCount());</span>
+<span class="nc" id="L206">              i++) {</span>
+<span class="nc" id="L207">            sql.append(parameters[i].toString()).append(&quot;,&quot;);</span>
+          }
+<span class="nc" id="L209">          sql = new StringBuilder(sql.substring(0, sql.length() - 1));</span>
+        }
+<span class="nc" id="L211">        sql.append(&quot;]&quot;);</span>
+      }
+
+<span class="nc bnc" id="L214" title="All 4 branches missed.">      if (options.maxQuerySizeToLog != 0 &amp;&amp; sql.length() &gt; options.maxQuerySizeToLog - 3) {</span>
+<span class="nc" id="L215">        return message</span>
+<span class="nc" id="L216">            + &quot;\nQuery is: &quot; + sql.substring(0, options.maxQuerySizeToLog - 3) + &quot;...&quot;</span>
+<span class="nc" id="L217">            + &quot;\njava thread: &quot; + Thread.currentThread().getName();</span>
+      } else {
+<span class="nc" id="L219">        return message</span>
+            + &quot;\nQuery is: &quot; + sql
+<span class="nc" id="L221">            + &quot;\njava thread: &quot; + Thread.currentThread().getName();</span>
+      }
+    }
+<span class="nc" id="L224">    return message;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

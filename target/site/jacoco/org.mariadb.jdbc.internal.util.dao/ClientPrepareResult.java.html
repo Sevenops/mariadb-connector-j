@@ -1,0 +1,690 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClientPrepareResult.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.util.dao</a> &gt; <span class="el_source">ClientPrepareResult.java</span></div><h1>ClientPrepareResult.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.util.dao;
+
+import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class ClientPrepareResult implements PrepareResult {
+
+  private final String sql;
+  private final List&lt;byte[]&gt; queryParts;
+  private final boolean rewriteType;
+  private final int paramCount;
+<span class="nc" id="L65">  private boolean isQueryMultiValuesRewritable = true;</span>
+<span class="nc" id="L66">  private boolean isQueryMultipleRewritable = true;</span>
+
+  private ClientPrepareResult(String sql, List&lt;byte[]&gt; queryParts,
+      boolean isQueryMultiValuesRewritable,
+<span class="nc" id="L70">      boolean isQueryMultipleRewritable, boolean rewriteType) {</span>
+<span class="nc" id="L71">    this.sql = sql;</span>
+<span class="nc" id="L72">    this.queryParts = queryParts;</span>
+<span class="nc" id="L73">    this.isQueryMultiValuesRewritable = isQueryMultiValuesRewritable;</span>
+<span class="nc" id="L74">    this.isQueryMultipleRewritable = isQueryMultipleRewritable;</span>
+<span class="nc bnc" id="L75" title="All 2 branches missed.">    this.paramCount = queryParts.size() - (rewriteType ? 3 : 1);</span>
+<span class="nc" id="L76">    this.rewriteType = rewriteType;</span>
+<span class="nc" id="L77">  }</span>
+
+  /**
+   * Separate query in a String list and set flag isQueryMultipleRewritable. The resulting string
+   * list is separed by ? that are not in comments. isQueryMultipleRewritable flag is set if query
+   * can be rewrite in one query (all case but if using &quot;-- comment&quot;). example for query : &quot;INSERT
+   * INTO tableName(id, name) VALUES (?, ?)&quot; result list will be : {&quot;INSERT INTO tableName(id, name)
+   * VALUES (&quot;, &quot;, &quot;, &quot;)&quot;}
+   *
+   * @param queryString        query
+   * @param noBackslashEscapes escape mode
+   * @return ClientPrepareResult
+   */
+  public static ClientPrepareResult parameterParts(String queryString, boolean noBackslashEscapes) {
+    try {
+<span class="nc" id="L92">      boolean reWritablePrepare = false;</span>
+<span class="nc" id="L93">      boolean multipleQueriesPrepare = true;</span>
+<span class="nc" id="L94">      List&lt;byte[]&gt; partList = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L95">      LexState state = LexState.Normal;</span>
+<span class="nc" id="L96">      char lastChar = '\0';</span>
+<span class="nc" id="L97">      boolean endingSemicolon = false;</span>
+
+<span class="nc" id="L99">      boolean singleQuotes = false;</span>
+<span class="nc" id="L100">      int lastParameterPosition = 0;</span>
+
+<span class="nc" id="L102">      char[] query = queryString.toCharArray();</span>
+<span class="nc" id="L103">      int queryLength = query.length;</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">      for (int i = 0; i &lt; queryLength; i++) {</span>
+
+<span class="nc" id="L106">        char car = query[i];</span>
+<span class="nc bnc" id="L107" title="All 10 branches missed.">        if (state == LexState.Escape &amp;&amp; !((car == '\'' &amp;&amp; singleQuotes) || (car == '&quot;'</span>
+            &amp;&amp; !singleQuotes))) {
+<span class="nc" id="L109">          state = LexState.String;</span>
+<span class="nc" id="L110">          lastChar = car;</span>
+<span class="nc" id="L111">          continue;</span>
+        }
+<span class="nc bnc" id="L113" title="All 12 branches missed.">        switch (car) {</span>
+          case '*':
+<span class="nc bnc" id="L115" title="All 4 branches missed.">            if (state == LexState.Normal &amp;&amp; lastChar == '/') {</span>
+<span class="nc" id="L116">              state = LexState.SlashStarComment;</span>
+            }
+            break;
+
+          case '/':
+<span class="nc bnc" id="L121" title="All 4 branches missed.">            if (state == LexState.SlashStarComment &amp;&amp; lastChar == '*') {</span>
+<span class="nc" id="L122">              state = LexState.Normal;</span>
+<span class="nc bnc" id="L123" title="All 4 branches missed.">            } else if (state == LexState.Normal &amp;&amp; lastChar == '/') {</span>
+<span class="nc" id="L124">              state = LexState.EOLComment;</span>
+            }
+            break;
+
+          case '#':
+<span class="nc bnc" id="L129" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L130">              state = LexState.EOLComment;</span>
+            }
+            break;
+
+          case '-':
+<span class="nc bnc" id="L135" title="All 4 branches missed.">            if (state == LexState.Normal &amp;&amp; lastChar == '-') {</span>
+<span class="nc" id="L136">              state = LexState.EOLComment;</span>
+<span class="nc" id="L137">              multipleQueriesPrepare = false;</span>
+            }
+            break;
+
+          case '\n':
+<span class="nc bnc" id="L142" title="All 2 branches missed.">            if (state == LexState.EOLComment) {</span>
+<span class="nc" id="L143">              multipleQueriesPrepare = true;</span>
+<span class="nc" id="L144">              state = LexState.Normal;</span>
+            }
+            break;
+
+          case '&quot;':
+<span class="nc bnc" id="L149" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L150">              state = LexState.String;</span>
+<span class="nc" id="L151">              singleQuotes = false;</span>
+<span class="nc bnc" id="L152" title="All 4 branches missed.">            } else if (state == LexState.String &amp;&amp; !singleQuotes) {</span>
+<span class="nc" id="L153">              state = LexState.Normal;</span>
+<span class="nc bnc" id="L154" title="All 4 branches missed.">            } else if (state == LexState.Escape &amp;&amp; !singleQuotes) {</span>
+<span class="nc" id="L155">              state = LexState.String;</span>
+            }
+            break;
+
+          case '\'':
+<span class="nc bnc" id="L160" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L161">              state = LexState.String;</span>
+<span class="nc" id="L162">              singleQuotes = true;</span>
+<span class="nc bnc" id="L163" title="All 4 branches missed.">            } else if (state == LexState.String &amp;&amp; singleQuotes) {</span>
+<span class="nc" id="L164">              state = LexState.Normal;</span>
+<span class="nc bnc" id="L165" title="All 4 branches missed.">            } else if (state == LexState.Escape &amp;&amp; singleQuotes) {</span>
+<span class="nc" id="L166">              state = LexState.String;</span>
+            }
+            break;
+
+          case '\\':
+<span class="nc bnc" id="L171" title="All 2 branches missed.">            if (noBackslashEscapes) {</span>
+<span class="nc" id="L172">              break;</span>
+            }
+<span class="nc bnc" id="L174" title="All 2 branches missed.">            if (state == LexState.String) {</span>
+<span class="nc" id="L175">              state = LexState.Escape;</span>
+            }
+            break;
+          case ';':
+<span class="nc bnc" id="L179" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L180">              endingSemicolon = true;</span>
+<span class="nc" id="L181">              multipleQueriesPrepare = false;</span>
+            }
+            break;
+          case '?':
+<span class="nc bnc" id="L185" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L186">              partList.add(queryString.substring(lastParameterPosition, i).getBytes(&quot;UTF-8&quot;));</span>
+<span class="nc" id="L187">              lastParameterPosition = i + 1;</span>
+            }
+            break;
+          case '`':
+<span class="nc bnc" id="L191" title="All 2 branches missed.">            if (state == LexState.Backtick) {</span>
+<span class="nc" id="L192">              state = LexState.Normal;</span>
+<span class="nc bnc" id="L193" title="All 2 branches missed.">            } else if (state == LexState.Normal) {</span>
+<span class="nc" id="L194">              state = LexState.Backtick;</span>
+            }
+            break;
+          default:
+            //multiple queries
+<span class="nc bnc" id="L199" title="All 6 branches missed.">            if (state == LexState.Normal &amp;&amp; endingSemicolon &amp;&amp; ((byte) car &gt;= 40)) {</span>
+<span class="nc" id="L200">              endingSemicolon = false;</span>
+<span class="nc" id="L201">              multipleQueriesPrepare = true;</span>
+            }
+            break;
+        }
+<span class="nc" id="L205">        lastChar = car;</span>
+      }
+<span class="nc bnc" id="L207" title="All 2 branches missed.">      if (lastParameterPosition == 0) {</span>
+<span class="nc" id="L208">        partList.add(queryString.getBytes(&quot;UTF-8&quot;));</span>
+      } else {
+<span class="nc" id="L210">        partList.add(queryString.substring(lastParameterPosition, queryLength).getBytes(&quot;UTF-8&quot;));</span>
+      }
+
+<span class="nc" id="L213">      return new ClientPrepareResult(queryString, partList, reWritablePrepare,</span>
+          multipleQueriesPrepare, false);
+<span class="nc" id="L215">    } catch (UnsupportedEncodingException u) {</span>
+      //cannot happen
+<span class="nc" id="L217">      return null;</span>
+    }
+
+  }
+
+  /**
+   * Valid that query is valid (no ending semi colon, or end-of line comment ).
+   *
+   * @param queryString        query
+   * @param noBackslashEscapes escape
+   * @return valid flag
+   */
+  public static boolean canAggregateSemiColon(String queryString, boolean noBackslashEscapes) {
+
+<span class="nc" id="L231">    LexState state = LexState.Normal;</span>
+<span class="nc" id="L232">    char lastChar = '\0';</span>
+
+<span class="nc" id="L234">    boolean singleQuotes = false;</span>
+<span class="nc" id="L235">    boolean endingSemicolon = false;</span>
+<span class="nc" id="L236">    char[] query = queryString.toCharArray();</span>
+
+<span class="nc bnc" id="L238" title="All 2 branches missed.">    for (char car : query) {</span>
+
+<span class="nc bnc" id="L240" title="All 10 branches missed.">      if (state == LexState.Escape &amp;&amp; !((car == '\'' &amp;&amp; singleQuotes) || (car == '&quot;'</span>
+          &amp;&amp; !singleQuotes))) {
+<span class="nc" id="L242">        state = LexState.String;</span>
+<span class="nc" id="L243">        lastChar = car;</span>
+<span class="nc" id="L244">        continue;</span>
+      }
+
+<span class="nc bnc" id="L247" title="All 11 branches missed.">      switch (car) {</span>
+        case '*':
+<span class="nc bnc" id="L249" title="All 4 branches missed.">          if (state == LexState.Normal &amp;&amp; lastChar == '/') {</span>
+<span class="nc" id="L250">            state = LexState.SlashStarComment;</span>
+          }
+          break;
+
+        case '/':
+<span class="nc bnc" id="L255" title="All 4 branches missed.">          if (state == LexState.SlashStarComment &amp;&amp; lastChar == '*') {</span>
+<span class="nc" id="L256">            state = LexState.Normal;</span>
+          }
+          break;
+
+        case '#':
+<span class="nc bnc" id="L261" title="All 2 branches missed.">          if (state == LexState.Normal) {</span>
+<span class="nc" id="L262">            state = LexState.EOLComment;</span>
+          }
+          break;
+
+        case '-':
+<span class="nc bnc" id="L267" title="All 4 branches missed.">          if (state == LexState.Normal &amp;&amp; lastChar == '-') {</span>
+<span class="nc" id="L268">            state = LexState.EOLComment;</span>
+          }
+          break;
+        case ';':
+<span class="nc bnc" id="L272" title="All 2 branches missed.">          if (state == LexState.Normal) {</span>
+<span class="nc" id="L273">            endingSemicolon = true;</span>
+          }
+          break;
+        case '\n':
+<span class="nc bnc" id="L277" title="All 2 branches missed.">          if (state == LexState.EOLComment) {</span>
+<span class="nc" id="L278">            state = LexState.Normal;</span>
+          }
+          break;
+        case '&quot;':
+<span class="nc bnc" id="L282" title="All 2 branches missed.">          if (state == LexState.Normal) {</span>
+<span class="nc" id="L283">            state = LexState.String;</span>
+<span class="nc" id="L284">            singleQuotes = false;</span>
+<span class="nc bnc" id="L285" title="All 4 branches missed.">          } else if (state == LexState.String &amp;&amp; !singleQuotes) {</span>
+<span class="nc" id="L286">            state = LexState.Normal;</span>
+<span class="nc bnc" id="L287" title="All 4 branches missed.">          } else if (state == LexState.Escape &amp;&amp; !singleQuotes) {</span>
+<span class="nc" id="L288">            state = LexState.String;</span>
+          }
+          break;
+
+        case '\'':
+<span class="nc bnc" id="L293" title="All 2 branches missed.">          if (state == LexState.Normal) {</span>
+<span class="nc" id="L294">            state = LexState.String;</span>
+<span class="nc" id="L295">            singleQuotes = true;</span>
+<span class="nc bnc" id="L296" title="All 4 branches missed.">          } else if (state == LexState.String &amp;&amp; singleQuotes) {</span>
+<span class="nc" id="L297">            state = LexState.Normal;</span>
+<span class="nc bnc" id="L298" title="All 4 branches missed.">          } else if (state == LexState.Escape &amp;&amp; singleQuotes) {</span>
+<span class="nc" id="L299">            state = LexState.String;</span>
+          }
+          break;
+
+        case '\\':
+<span class="nc bnc" id="L304" title="All 2 branches missed.">          if (noBackslashEscapes) {</span>
+<span class="nc" id="L305">            break;</span>
+          }
+<span class="nc bnc" id="L307" title="All 2 branches missed.">          if (state == LexState.String) {</span>
+<span class="nc" id="L308">            state = LexState.Escape;</span>
+          }
+          break;
+        case '`':
+<span class="nc bnc" id="L312" title="All 2 branches missed.">          if (state == LexState.Backtick) {</span>
+<span class="nc" id="L313">            state = LexState.Normal;</span>
+<span class="nc bnc" id="L314" title="All 2 branches missed.">          } else if (state == LexState.Normal) {</span>
+<span class="nc" id="L315">            state = LexState.Backtick;</span>
+          }
+          break;
+        default:
+          //multiple queries
+<span class="nc bnc" id="L320" title="All 6 branches missed.">          if (state == LexState.Normal &amp;&amp; endingSemicolon &amp;&amp; ((byte) car &gt;= 40)) {</span>
+<span class="nc" id="L321">            endingSemicolon = false;</span>
+          }
+          break;
+      }
+<span class="nc" id="L325">      lastChar = car;</span>
+    }
+<span class="nc bnc" id="L327" title="All 4 branches missed.">    return state != LexState.EOLComment &amp;&amp; !endingSemicolon;</span>
+
+  }
+
+  /**
+   * &lt;p&gt;Separate query in a String list and set flag isQueryMultiValuesRewritable
+   * The parameters &quot;?&quot; (not in comments) emplacements are to be known.&lt;/p&gt;
+   *
+   * &lt;p&gt;The only rewritten queries follow these notation: INSERT [LOW_PRIORITY | DELAYED |
+   * HIGH_PRIORITY] [IGNORE] [INTO] tbl_name [PARTITION (partition_list)] [(col,...)] {VALUES |
+   * VALUE} (...) [ ON DUPLICATE KEY UPDATE col=expr [, col=expr] ... ] With expr without
+   * parameter.&lt;/p&gt;
+   *
+   * &lt;p&gt;Query with LAST_INSERT_ID() will not be rewritten&lt;/p&gt;
+   *
+   * &lt;p&gt;INSERT ... SELECT will not be rewritten.&lt;/p&gt;
+   *
+   * &lt;p&gt;String list :&lt;/p&gt;
+   * &lt;ul&gt;
+   * &lt;li&gt;pre value part&lt;/li&gt;
+   * &lt;li&gt;After value and first parameter part&lt;/li&gt;
+   * &lt;li&gt;for each parameters :
+   * &lt;ul&gt;
+   * &lt;li&gt;part after parameter and before last parenthesis&lt;/li&gt;
+   * &lt;li&gt;Last query part&lt;/li&gt;
+   * &lt;/ul&gt;
+   * &lt;/li&gt;
+   * &lt;/ul&gt;
+   *
+   * &lt;p&gt; example : INSERT INTO TABLE(col1,col2,col3,col4, col5) VALUES (9, ?, 5, ?, 8) ON DUPLICATE
+   * KEY UPDATE col2=col2+10
+   * &lt;/p&gt;
+   *
+   * &lt;ul&gt;
+   *   &lt;li&gt;pre value part : INSERT INTO TABLE(col1,col2,col3,col4, col5) VALUES &lt;/li&gt;
+   *   &lt;li&gt;after value part : &quot;(9 &quot;&lt;/li&gt;
+   *   &lt;li&gt; part after parameter 1: &quot;, 5,&quot; - &quot;, 5,&quot; - &quot;,8)&quot;&lt;/li&gt;
+   *   &lt;li&gt;last part : ON DUPLICATE KEY UPDATE col2=col2+10&lt;/li&gt;
+   * &lt;/ul&gt;
+   *
+   * &lt;p&gt; With 2 series of parameters, this query will be rewritten like [INSERT INTO
+   * TABLE(col1,col2,col3,col4, col5) VALUES][ (9, param0_1, 5, param0_2, 8)][, (9, param1_1, 5,
+   * param1_2, 8)][ ON DUPLICATE KEY UPDATE col2=col2+10]&lt;/p&gt;
+   *
+   * @param queryString        query String
+   * @param noBackslashEscapes must backslash be escaped.
+   * @return List of query part.
+   */
+  public static ClientPrepareResult rewritableParts(String queryString,
+      boolean noBackslashEscapes) {
+    try {
+<span class="nc" id="L378">      boolean reWritablePrepare = true;</span>
+<span class="nc" id="L379">      boolean multipleQueriesPrepare = true;</span>
+<span class="nc" id="L380">      List&lt;byte[]&gt; partList = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L381">      LexState state = LexState.Normal;</span>
+<span class="nc" id="L382">      char lastChar = '\0';</span>
+
+<span class="nc" id="L384">      StringBuilder sb = new StringBuilder();</span>
+
+<span class="nc" id="L386">      String preValuePart1 = null;</span>
+<span class="nc" id="L387">      String preValuePart2 = null;</span>
+<span class="nc" id="L388">      String postValuePart = null;</span>
+
+<span class="nc" id="L390">      boolean singleQuotes = false;</span>
+
+<span class="nc" id="L392">      int isInParenthesis = 0;</span>
+<span class="nc" id="L393">      boolean skipChar = false;</span>
+<span class="nc" id="L394">      boolean isFirstChar = true;</span>
+<span class="nc" id="L395">      boolean isInsert = false;</span>
+<span class="nc" id="L396">      boolean semicolon = false;</span>
+<span class="nc" id="L397">      boolean hasParam = false;</span>
+
+<span class="nc" id="L399">      char[] query = queryString.toCharArray();</span>
+<span class="nc" id="L400">      int queryLength = query.length;</span>
+<span class="nc bnc" id="L401" title="All 2 branches missed.">      for (int i = 0; i &lt; queryLength; i++) {</span>
+
+<span class="nc" id="L403">        char car = query[i];</span>
+<span class="nc bnc" id="L404" title="All 10 branches missed.">        if (state == LexState.Escape &amp;&amp; !((car == '\'' &amp;&amp; singleQuotes) || (car == '&quot;'</span>
+            &amp;&amp; !singleQuotes))) {
+<span class="nc" id="L406">          sb.append(car);</span>
+<span class="nc" id="L407">          lastChar = car;</span>
+<span class="nc" id="L408">          state = LexState.String;</span>
+<span class="nc" id="L409">          continue;</span>
+        }
+
+<span class="nc bnc" id="L412" title="All 17 branches missed.">        switch (car) {</span>
+          case '*':
+<span class="nc bnc" id="L414" title="All 4 branches missed.">            if (state == LexState.Normal &amp;&amp; lastChar == '/') {</span>
+<span class="nc" id="L415">              state = LexState.SlashStarComment;</span>
+            }
+            break;
+          case '/':
+<span class="nc bnc" id="L419" title="All 4 branches missed.">            if (state == LexState.SlashStarComment &amp;&amp; lastChar == '*') {</span>
+<span class="nc" id="L420">              state = LexState.Normal;</span>
+            }
+            break;
+
+          case '#':
+<span class="nc bnc" id="L425" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L426">              state = LexState.EOLComment;</span>
+            }
+            break;
+
+          case '-':
+<span class="nc bnc" id="L431" title="All 4 branches missed.">            if (state == LexState.Normal &amp;&amp; lastChar == '-') {</span>
+<span class="nc" id="L432">              state = LexState.EOLComment;</span>
+<span class="nc" id="L433">              multipleQueriesPrepare = false;</span>
+            }
+            break;
+
+          case '\n':
+<span class="nc bnc" id="L438" title="All 2 branches missed.">            if (state == LexState.EOLComment) {</span>
+<span class="nc" id="L439">              state = LexState.Normal;</span>
+            }
+            break;
+
+          case '&quot;':
+<span class="nc bnc" id="L444" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L445">              state = LexState.String;</span>
+<span class="nc" id="L446">              singleQuotes = false;</span>
+<span class="nc bnc" id="L447" title="All 4 branches missed.">            } else if (state == LexState.String &amp;&amp; !singleQuotes) {</span>
+<span class="nc" id="L448">              state = LexState.Normal;</span>
+<span class="nc bnc" id="L449" title="All 4 branches missed.">            } else if (state == LexState.Escape &amp;&amp; !singleQuotes) {</span>
+<span class="nc" id="L450">              state = LexState.String;</span>
+            }
+            break;
+          case ';':
+<span class="nc bnc" id="L454" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L455">              semicolon = true;</span>
+<span class="nc" id="L456">              multipleQueriesPrepare = false;</span>
+            }
+            break;
+          case '\'':
+<span class="nc bnc" id="L460" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L461">              state = LexState.String;</span>
+<span class="nc" id="L462">              singleQuotes = true;</span>
+<span class="nc bnc" id="L463" title="All 4 branches missed.">            } else if (state == LexState.String &amp;&amp; singleQuotes) {</span>
+<span class="nc" id="L464">              state = LexState.Normal;</span>
+<span class="nc bnc" id="L465" title="All 4 branches missed.">            } else if (state == LexState.Escape &amp;&amp; singleQuotes) {</span>
+<span class="nc" id="L466">              state = LexState.String;</span>
+            }
+            break;
+
+          case '\\':
+<span class="nc bnc" id="L471" title="All 2 branches missed.">            if (noBackslashEscapes) {</span>
+<span class="nc" id="L472">              break;</span>
+            }
+<span class="nc bnc" id="L474" title="All 2 branches missed.">            if (state == LexState.String) {</span>
+<span class="nc" id="L475">              state = LexState.Escape;</span>
+            }
+            break;
+
+          case '?':
+<span class="nc bnc" id="L480" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L481">              hasParam = true;</span>
+<span class="nc bnc" id="L482" title="All 2 branches missed.">              if (preValuePart1 == null) {</span>
+<span class="nc" id="L483">                preValuePart1 = sb.toString();</span>
+<span class="nc" id="L484">                sb.setLength(0);</span>
+              }
+<span class="nc bnc" id="L486" title="All 2 branches missed.">              if (preValuePart2 == null) {</span>
+<span class="nc" id="L487">                preValuePart2 = sb.toString();</span>
+<span class="nc" id="L488">                sb.setLength(0);</span>
+              } else {
+<span class="nc bnc" id="L490" title="All 2 branches missed.">                if (postValuePart != null) {</span>
+                  //having parameters after the last &quot;)&quot; of value is not rewritable
+<span class="nc" id="L492">                  reWritablePrepare = false;</span>
+
+                  //add part
+<span class="nc" id="L495">                  sb.insert(0, postValuePart);</span>
+<span class="nc" id="L496">                  postValuePart = null;</span>
+                }
+<span class="nc" id="L498">                partList.add(sb.toString().getBytes(&quot;UTF-8&quot;));</span>
+<span class="nc" id="L499">                sb.setLength(0);</span>
+              }
+
+<span class="nc" id="L502">              skipChar = true;</span>
+            }
+            break;
+          case '`':
+<span class="nc bnc" id="L506" title="All 2 branches missed.">            if (state == LexState.Backtick) {</span>
+<span class="nc" id="L507">              state = LexState.Normal;</span>
+<span class="nc bnc" id="L508" title="All 2 branches missed.">            } else if (state == LexState.Normal) {</span>
+<span class="nc" id="L509">              state = LexState.Backtick;</span>
+            }
+            break;
+
+          case 's':
+          case 'S':
+<span class="nc bnc" id="L515" title="All 26 branches missed.">            if (state == LexState.Normal</span>
+                &amp;&amp; postValuePart == null
+                &amp;&amp; queryLength &gt; i + 7
+                &amp;&amp; (query[i + 1] == 'e' || query[i + 1] == 'E')
+                &amp;&amp; (query[i + 2] == 'l' || query[i + 2] == 'L')
+                &amp;&amp; (query[i + 3] == 'e' || query[i + 3] == 'E')
+                &amp;&amp; (query[i + 4] == 'c' || query[i + 4] == 'C')
+                &amp;&amp; (query[i + 5] == 't' || query[i + 5] == 'T')) {
+
+              //field/table name might contain 'select'
+<span class="nc bnc" id="L525" title="All 6 branches missed.">              if (i &gt; 0 &amp;&amp; (query[i - 1] &gt; ' ' &amp;&amp; &quot;();&gt;&lt;=-+,&quot;.indexOf(query[i - 1]) == -1)) {</span>
+<span class="nc" id="L526">                break;</span>
+              }
+<span class="nc bnc" id="L528" title="All 4 branches missed.">              if (query[i + 6] &gt; ' ' &amp;&amp; &quot;();&gt;&lt;=-+,&quot;.indexOf(query[i + 6]) == -1) {</span>
+<span class="nc" id="L529">                break;</span>
+              }
+
+              //SELECT queries, INSERT FROM SELECT not rewritable
+<span class="nc" id="L533">              reWritablePrepare = false;</span>
+            }
+            break;
+          case 'v':
+          case 'V':
+<span class="nc bnc" id="L538" title="All 34 branches missed.">            if (state == LexState.Normal</span>
+                &amp;&amp; preValuePart1 == null
+                &amp;&amp; (lastChar == ')' || ((byte) lastChar &lt;= 40))
+                &amp;&amp; queryLength &gt; i + 7
+                &amp;&amp; (query[i + 1] == 'a' || query[i + 1] == 'A')
+                &amp;&amp; (query[i + 2] == 'l' || query[i + 2] == 'L')
+                &amp;&amp; (query[i + 3] == 'u' || query[i + 3] == 'U')
+                &amp;&amp; (query[i + 4] == 'e' || query[i + 4] == 'E')
+                &amp;&amp; (query[i + 5] == 's' || query[i + 5] == 'S')
+                &amp;&amp; (query[i + 6] == '(' || ((byte) query[i + 6] &lt;= 40))) {
+<span class="nc" id="L548">              sb.append(car);</span>
+<span class="nc" id="L549">              sb.append(query[i + 1]);</span>
+<span class="nc" id="L550">              sb.append(query[i + 2]);</span>
+<span class="nc" id="L551">              sb.append(query[i + 3]);</span>
+<span class="nc" id="L552">              sb.append(query[i + 4]);</span>
+<span class="nc" id="L553">              sb.append(query[i + 5]);</span>
+<span class="nc" id="L554">              i = i + 5;</span>
+<span class="nc" id="L555">              preValuePart1 = sb.toString();</span>
+<span class="nc" id="L556">              sb.setLength(0);</span>
+<span class="nc" id="L557">              skipChar = true;</span>
+            }
+            break;
+          case 'l':
+          case 'L':
+<span class="nc bnc" id="L562" title="All 54 branches missed.">            if (state == LexState.Normal</span>
+                &amp;&amp; queryLength &gt; i + 14
+                &amp;&amp; (query[i + 1] == 'a' || query[i + 1] == 'A')
+                &amp;&amp; (query[i + 2] == 's' || query[i + 2] == 'S')
+                &amp;&amp; (query[i + 3] == 't' || query[i + 3] == 'T')
+                &amp;&amp; query[i + 4] == '_'
+                &amp;&amp; (query[i + 5] == 'i' || query[i + 5] == 'I')
+                &amp;&amp; (query[i + 6] == 'n' || query[i + 6] == 'N')
+                &amp;&amp; (query[i + 7] == 's' || query[i + 7] == 'S')
+                &amp;&amp; (query[i + 8] == 'e' || query[i + 8] == 'E')
+                &amp;&amp; (query[i + 9] == 'r' || query[i + 9] == 'R')
+                &amp;&amp; (query[i + 10] == 't' || query[i + 10] == 'T')
+                &amp;&amp; query[i + 11] == '_'
+                &amp;&amp; (query[i + 12] == 'i' || query[i + 12] == 'I')
+                &amp;&amp; (query[i + 13] == 'd' || query[i + 13] == 'D')
+                &amp;&amp; query[i + 14] == '(') {
+<span class="nc" id="L578">              sb.append(car);</span>
+<span class="nc" id="L579">              reWritablePrepare = false;</span>
+<span class="nc" id="L580">              skipChar = true;</span>
+            }
+            break;
+          case '(':
+<span class="nc bnc" id="L584" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L585">              isInParenthesis++;</span>
+            }
+            break;
+          case ')':
+<span class="nc bnc" id="L589" title="All 2 branches missed.">            if (state == LexState.Normal) {</span>
+<span class="nc" id="L590">              isInParenthesis--;</span>
+<span class="nc bnc" id="L591" title="All 6 branches missed.">              if (isInParenthesis == 0 &amp;&amp; preValuePart2 != null &amp;&amp; postValuePart == null) {</span>
+<span class="nc" id="L592">                sb.append(car);</span>
+<span class="nc" id="L593">                postValuePart = sb.toString();</span>
+<span class="nc" id="L594">                sb.setLength(0);</span>
+<span class="nc" id="L595">                skipChar = true;</span>
+              }
+            }
+            break;
+          default:
+<span class="nc bnc" id="L600" title="All 6 branches missed.">            if (state == LexState.Normal &amp;&amp; isFirstChar &amp;&amp; ((byte) car &gt;= 40)) {</span>
+<span class="nc bnc" id="L601" title="All 4 branches missed.">              if (car == 'I' || car == 'i') {</span>
+<span class="nc" id="L602">                isInsert = true;</span>
+              }
+<span class="nc" id="L604">              isFirstChar = false;</span>
+            }
+            //multiple queries
+<span class="nc bnc" id="L607" title="All 6 branches missed.">            if (state == LexState.Normal &amp;&amp; semicolon &amp;&amp; ((byte) car &gt;= 40)) {</span>
+<span class="nc" id="L608">              reWritablePrepare = false;</span>
+<span class="nc" id="L609">              multipleQueriesPrepare = true;</span>
+            }
+            break;
+        }
+
+<span class="nc" id="L614">        lastChar = car;</span>
+<span class="nc bnc" id="L615" title="All 2 branches missed.">        if (skipChar) {</span>
+<span class="nc" id="L616">          skipChar = false;</span>
+        } else {
+<span class="nc" id="L618">          sb.append(car);</span>
+        }
+      }
+
+<span class="nc bnc" id="L622" title="All 2 branches missed.">      if (!hasParam) {</span>
+        //permit to have rewrite without parameter
+<span class="nc bnc" id="L624" title="All 2 branches missed.">        if (preValuePart1 == null) {</span>
+<span class="nc" id="L625">          partList.add(0, sb.toString().getBytes(&quot;UTF-8&quot;));</span>
+<span class="nc" id="L626">          partList.add(1, new byte[0]);</span>
+        } else {
+<span class="nc" id="L628">          partList.add(0, preValuePart1.getBytes(&quot;UTF-8&quot;));</span>
+<span class="nc" id="L629">          partList.add(1, sb.toString().getBytes(&quot;UTF-8&quot;));</span>
+        }
+<span class="nc" id="L631">        sb.setLength(0);</span>
+      } else {
+<span class="nc bnc" id="L633" title="All 2 branches missed.">        partList.add(0, (preValuePart1 == null) ? new byte[0] : preValuePart1.getBytes(&quot;UTF-8&quot;));</span>
+<span class="nc bnc" id="L634" title="All 2 branches missed.">        partList.add(1, (preValuePart2 == null) ? new byte[0] : preValuePart2.getBytes(&quot;UTF-8&quot;));</span>
+      }
+
+<span class="nc bnc" id="L637" title="All 2 branches missed.">      if (!isInsert) {</span>
+<span class="nc" id="L638">        reWritablePrepare = false;</span>
+      }
+
+      //postValuePart is the value after the last parameter and parenthesis
+      //if no param, don't add to the list.
+<span class="nc bnc" id="L643" title="All 2 branches missed.">      if (hasParam) {</span>
+<span class="nc bnc" id="L644" title="All 2 branches missed.">        partList.add((postValuePart == null) ? new byte[0] : postValuePart.getBytes(&quot;UTF-8&quot;));</span>
+      }
+<span class="nc" id="L646">      partList.add(sb.toString().getBytes(&quot;UTF-8&quot;));</span>
+
+<span class="nc" id="L648">      return new ClientPrepareResult(queryString, partList, reWritablePrepare,</span>
+          multipleQueriesPrepare, true);
+
+<span class="nc" id="L651">    } catch (UnsupportedEncodingException u) {</span>
+      //cannot happen
+<span class="nc" id="L653">      throw new IllegalStateException(&quot;UTF-8 is an unknown encoding !?&quot;);</span>
+    }
+  }
+
+  public String getSql() {
+<span class="nc" id="L658">    return sql;</span>
+  }
+
+  public List&lt;byte[]&gt; getQueryParts() {
+<span class="nc" id="L662">    return queryParts;</span>
+  }
+
+  public boolean isQueryMultiValuesRewritable() {
+<span class="nc" id="L666">    return isQueryMultiValuesRewritable;</span>
+  }
+
+  public boolean isQueryMultipleRewritable() {
+<span class="nc" id="L670">    return isQueryMultipleRewritable;</span>
+  }
+
+  public boolean isRewriteType() {
+<span class="nc" id="L674">    return rewriteType;</span>
+  }
+
+  public int getParamCount() {
+<span class="nc" id="L678">    return paramCount;</span>
+  }
+
+<span class="nc" id="L681">  enum LexState {</span>
+<span class="nc" id="L682">    Normal, /* inside  query */</span>
+<span class="nc" id="L683">    String, /* inside string */</span>
+<span class="nc" id="L684">    SlashStarComment, /* inside slash-star comment */</span>
+<span class="nc" id="L685">    Escape, /* found backslash */</span>
+<span class="nc" id="L686">    EOLComment, /* # comment, or // comment, or -- comment */</span>
+<span class="nc" id="L687">    Backtick /* found backtick */</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

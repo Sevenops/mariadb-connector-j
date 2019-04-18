@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MariaDbParameterMetaData.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">MariaDbParameterMetaData.java</span></div><h1>MariaDbParameterMetaData.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+
+package org.mariadb.jdbc;
+
+import java.sql.ParameterMetaData;
+import java.sql.SQLException;
+import org.mariadb.jdbc.internal.ColumnType;
+import org.mariadb.jdbc.internal.com.read.resultset.ColumnInformation;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+/**
+ * Very basic info about the parameterized query, only reliable method is getParameterCount().
+ */
+public class MariaDbParameterMetaData implements ParameterMetaData {
+
+  private final ColumnInformation[] parametersInformation;
+
+<span class="nc" id="L69">  public MariaDbParameterMetaData(ColumnInformation[] parametersInformation) {</span>
+<span class="nc" id="L70">    this.parametersInformation = parametersInformation;</span>
+<span class="nc" id="L71">  }</span>
+
+  private void checkAvailable() throws SQLException {
+<span class="nc bnc" id="L74" title="All 2 branches missed.">    if (this.parametersInformation == null) {</span>
+<span class="nc" id="L75">      throw new SQLException(&quot;Parameter metadata not available for these statement&quot;, &quot;S1C00&quot;);</span>
+    }
+<span class="nc" id="L77">  }</span>
+
+  @Override
+  public int getParameterCount() throws SQLException {
+<span class="nc" id="L81">    checkAvailable();</span>
+<span class="nc" id="L82">    return parametersInformation.length;</span>
+  }
+
+  private ColumnInformation getParameterInformation(int param) throws SQLException {
+<span class="nc" id="L86">    checkAvailable();</span>
+<span class="nc bnc" id="L87" title="All 4 branches missed.">    if (param &gt;= 1 &amp;&amp; param &lt;= parametersInformation.length) {</span>
+<span class="nc" id="L88">      return parametersInformation[param - 1];</span>
+    }
+<span class="nc" id="L90">    throw new SQLException(</span>
+        &quot;Parameter metadata out of range : param was &quot; + param + &quot; and must be 1 &lt;= param &lt;=&quot;
+            + parametersInformation.length,
+        &quot;07009&quot;);
+  }
+
+  @Override
+  public int isNullable(final int param) throws SQLException {
+<span class="nc bnc" id="L98" title="All 2 branches missed.">    if (getParameterInformation(param).isNotNull()) {</span>
+<span class="nc" id="L99">      return ParameterMetaData.parameterNoNulls;</span>
+    } else {
+<span class="nc" id="L101">      return ParameterMetaData.parameterNullable;</span>
+    }
+  }
+
+  @Override
+  public boolean isSigned(int param) throws SQLException {
+<span class="nc" id="L107">    return getParameterInformation(param).isSigned();</span>
+  }
+
+  @Override
+  public int getPrecision(int param) throws SQLException {
+<span class="nc" id="L112">    long length = getParameterInformation(param).getLength();</span>
+<span class="nc bnc" id="L113" title="All 2 branches missed.">    return (length &gt; Integer.MAX_VALUE) ? Integer.MAX_VALUE : (int) length;</span>
+  }
+
+  @Override
+  public int getScale(int param) throws SQLException {
+<span class="nc bnc" id="L118" title="All 2 branches missed.">    if (ColumnType.isNumeric(getParameterInformation(param).getColumnType())) {</span>
+<span class="nc" id="L119">      return getParameterInformation(param).getDecimals();</span>
+    }
+<span class="nc" id="L121">    return 0;</span>
+  }
+
+  /**
+   * Parameter type are not sent by server.
+   * See https://jira.mariadb.org/browse/CONJ-568 and https://jira.mariadb.org/browse/MDEV-15031
+   *
+   * @param param parameter number
+   * @return SQL type from java.sql.Types
+   * @throws SQLException a feature not supported, since server doesn't sent the right information
+   */
+  @Override
+  public int getParameterType(int param) throws SQLException {
+<span class="nc" id="L134">    throw ExceptionMapper</span>
+<span class="nc" id="L135">        .getFeatureNotSupportedException(&quot;Getting parameter type metadata are not supported&quot;);</span>
+  }
+
+  @Override
+  public String getParameterTypeName(int param) throws SQLException {
+<span class="nc" id="L140">    return getParameterInformation(param).getColumnType().getTypeName();</span>
+  }
+
+  @Override
+  public String getParameterClassName(int param) throws SQLException {
+<span class="nc" id="L145">    return getParameterInformation(param).getColumnType().getClassName();</span>
+  }
+
+  @Override
+  public int getParameterMode(int param) {
+<span class="nc" id="L150">    return parameterModeIn;</span>
+  }
+
+  @Override
+  public &lt;T&gt; T unwrap(final Class&lt;T&gt; iface) throws SQLException {
+    try {
+<span class="nc bnc" id="L156" title="All 2 branches missed.">      if (isWrapperFor(iface)) {</span>
+<span class="nc" id="L157">        return iface.cast(this);</span>
+      } else {
+<span class="nc" id="L159">        throw new SQLException(&quot;The receiver is not a wrapper for &quot; + iface.getName());</span>
+      }
+<span class="nc" id="L161">    } catch (Exception e) {</span>
+<span class="nc" id="L162">      throw new SQLException(&quot;The receiver is not a wrapper and does not implement the interface&quot;);</span>
+    }
+  }
+
+  public boolean isWrapperFor(final Class&lt;?&gt; iface) throws SQLException {
+<span class="nc" id="L167">    return iface.isInstance(this);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

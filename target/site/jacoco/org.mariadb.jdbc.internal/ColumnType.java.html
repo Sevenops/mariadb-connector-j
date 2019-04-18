@@ -1,0 +1,372 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ColumnType.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal</a> &gt; <span class="el_source">ColumnType.java</span></div><h1>ColumnType.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.sql.Date;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.sql.Types;
+import org.mariadb.jdbc.internal.util.Options;
+
+
+<span class="nc" id="L64">public enum ColumnType {</span>
+<span class="nc" id="L65">  OLDDECIMAL(0, Types.DECIMAL, &quot;Types.DECIMAL&quot;, BigDecimal.class.getName()),</span>
+<span class="nc" id="L66">  TINYINT(1, Types.SMALLINT, &quot;Types.SMALLINT&quot;, Integer.class.getName()),</span>
+<span class="nc" id="L67">  SMALLINT(2, Types.SMALLINT, &quot;Types.SMALLINT&quot;, Integer.class.getName()),</span>
+<span class="nc" id="L68">  INTEGER(3, Types.INTEGER, &quot;Types.INTEGER&quot;, Integer.class.getName()),</span>
+<span class="nc" id="L69">  FLOAT(4, Types.REAL, &quot;Types.REAL&quot;, Float.class.getName()),</span>
+<span class="nc" id="L70">  DOUBLE(5, Types.DOUBLE, &quot;Types.DOUBLE&quot;, Double.class.getName()),</span>
+<span class="nc" id="L71">  NULL(6, Types.NULL, &quot;Types.NULL&quot;, String.class.getName()),</span>
+<span class="nc" id="L72">  TIMESTAMP(7, Types.TIMESTAMP, &quot;Types.TIMESTAMP&quot;, Timestamp.class.getName()),</span>
+<span class="nc" id="L73">  BIGINT(8, Types.BIGINT, &quot;Types.BIGINT&quot;, Long.class.getName()),</span>
+<span class="nc" id="L74">  MEDIUMINT(9, Types.INTEGER, &quot;Types.INTEGER&quot;, Integer.class.getName()),</span>
+<span class="nc" id="L75">  DATE(10, Types.DATE, &quot;Types.DATE&quot;, Date.class.getName()),</span>
+<span class="nc" id="L76">  TIME(11, Types.TIME, &quot;Types.TIME&quot;, Time.class.getName()),</span>
+<span class="nc" id="L77">  DATETIME(12, Types.TIMESTAMP, &quot;Types.TIMESTAMP&quot;, Timestamp.class.getName()),</span>
+<span class="nc" id="L78">  YEAR(13, Types.SMALLINT, &quot;Types.SMALLINT&quot;, Short.class.getName()),</span>
+<span class="nc" id="L79">  NEWDATE(14, Types.DATE, &quot;Types.DATE&quot;, Date.class.getName()),</span>
+<span class="nc" id="L80">  VARCHAR(15, Types.VARCHAR, &quot;Types.VARCHAR&quot;, String.class.getName()),</span>
+<span class="nc" id="L81">  BIT(16, Types.BIT, &quot;Types.BIT&quot;, &quot;[B&quot;),</span>
+<span class="nc" id="L82">  JSON(245, Types.VARCHAR, &quot;Types.VARCHAR&quot;, String.class.getName()),</span>
+<span class="nc" id="L83">  DECIMAL(246, Types.DECIMAL, &quot;Types.DECIMAL&quot;, BigDecimal.class.getName()),</span>
+<span class="nc" id="L84">  ENUM(247, Types.VARCHAR, &quot;Types.VARCHAR&quot;, String.class.getName()),</span>
+<span class="nc" id="L85">  SET(248, Types.VARCHAR, &quot;Types.VARCHAR&quot;, String.class.getName()),</span>
+<span class="nc" id="L86">  TINYBLOB(249, Types.VARBINARY, &quot;Types.VARBINARY&quot;, &quot;[B&quot;),</span>
+<span class="nc" id="L87">  MEDIUMBLOB(250, Types.VARBINARY, &quot;Types.VARBINARY&quot;, &quot;[B&quot;),</span>
+<span class="nc" id="L88">  LONGBLOB(251, Types.LONGVARBINARY, &quot;Types.LONGVARBINARY&quot;, &quot;[B&quot;),</span>
+<span class="nc" id="L89">  BLOB(252, Types.LONGVARBINARY, &quot;Types.LONGVARBINARY&quot;, &quot;[B&quot;),</span>
+<span class="nc" id="L90">  VARSTRING(253, Types.VARCHAR, &quot;Types.VARCHAR&quot;, String.class.getName()),</span>
+<span class="nc" id="L91">  STRING(254, Types.VARCHAR, &quot;Types.VARCHAR&quot;, String.class.getName()),</span>
+<span class="nc" id="L92">  GEOMETRY(255, Types.VARBINARY, &quot;Types.VARBINARY&quot;, &quot;[B&quot;);</span>
+
+  static final ColumnType[] typeMap;
+
+  static {
+<span class="nc" id="L97">    typeMap = new ColumnType[256];</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">    for (ColumnType v : values()) {</span>
+<span class="nc" id="L99">      typeMap[v.mariadbType] = v;</span>
+    }
+<span class="nc" id="L101">  }</span>
+
+  private final short mariadbType;
+  private final int javaType;
+  private final String javaTypeName;
+  private final String className;
+
+<span class="nc" id="L108">  ColumnType(int mariadbType, int javaType, String javaTypeName, String className) {</span>
+<span class="nc" id="L109">    this.mariadbType = (short) mariadbType;</span>
+<span class="nc" id="L110">    this.javaType = javaType;</span>
+<span class="nc" id="L111">    this.javaTypeName = javaTypeName;</span>
+<span class="nc" id="L112">    this.className = className;</span>
+<span class="nc" id="L113">  }</span>
+
+  /**
+   * Permit to know java result class according to java.sql.Types.
+   *
+   * @param type java.sql.Type value
+   * @return Class name.
+   */
+  public static Class classFromJavaType(int type) {
+<span class="nc bnc" id="L122" title="All 15 branches missed.">    switch (type) {</span>
+      case Types.BOOLEAN:
+      case Types.BIT:
+<span class="nc" id="L125">        return Boolean.class;</span>
+
+      case Types.TINYINT:
+<span class="nc" id="L128">        return Byte.class;</span>
+
+      case Types.SMALLINT:
+<span class="nc" id="L131">        return Short.class;</span>
+
+      case Types.INTEGER:
+<span class="nc" id="L134">        return Integer.class;</span>
+
+      case Types.BIGINT:
+<span class="nc" id="L137">        return Long.class;</span>
+
+      case Types.DOUBLE:
+      case Types.FLOAT:
+<span class="nc" id="L141">        return Double.class;</span>
+
+      case Types.REAL:
+<span class="nc" id="L144">        return Float.class;</span>
+
+      case Types.TIMESTAMP:
+<span class="nc" id="L147">        return Timestamp.class;</span>
+
+      case Types.DATE:
+<span class="nc" id="L150">        return Date.class;</span>
+
+      case Types.VARCHAR:
+      case Types.NVARCHAR:
+      case Types.CHAR:
+      case Types.NCHAR:
+      case Types.LONGVARCHAR:
+      case Types.LONGNVARCHAR:
+      case Types.CLOB:
+      case Types.NCLOB:
+<span class="nc" id="L160">        return String.class;</span>
+
+      case Types.DECIMAL:
+      case Types.NUMERIC:
+<span class="nc" id="L164">        return BigDecimal.class;</span>
+
+      case Types.VARBINARY:
+      case Types.BINARY:
+      case Types.LONGVARBINARY:
+      case Types.BLOB:
+      case Types.JAVA_OBJECT:
+<span class="nc" id="L171">        return byte[].class;</span>
+
+      case Types.NULL:
+<span class="nc" id="L174">        return null;</span>
+
+      case Types.TIME:
+<span class="nc" id="L177">        return Time.class;</span>
+
+      default:
+        //DISTINCT
+        //STRUCT
+        //ARRAY
+        //REF
+        //DATALINK
+        //ROWID
+        //SQLXML
+        //REF_CURSOR
+        //TIME_WITH_TIMEZONE
+        //TIMESTAMP_WITH_TIMEZONE
+        break;
+    }
+<span class="nc" id="L192">    return null;</span>
+  }
+
+  /**
+   * Is type numeric.
+   *
+   * @param type mariadb type
+   * @return true if type is numeric
+   */
+  public static boolean isNumeric(ColumnType type) {
+<span class="nc bnc" id="L202" title="All 2 branches missed.">    switch (type) {</span>
+      case OLDDECIMAL:
+      case TINYINT:
+      case SMALLINT:
+      case INTEGER:
+      case FLOAT:
+      case DOUBLE:
+      case BIGINT:
+      case MEDIUMINT:
+      case BIT:
+      case DECIMAL:
+<span class="nc" id="L213">        return true;</span>
+      default:
+<span class="nc" id="L215">        return false;</span>
+    }
+  }
+
+  /**
+   * Get columnTypeName.
+   *
+   * @param type   type
+   * @param len    len
+   * @param signed signed
+   * @param binary binary
+   * @return type
+   */
+  public static String getColumnTypeName(ColumnType type, long len, boolean signed,
+      boolean binary) {
+<span class="nc bnc" id="L230" title="All 5 branches missed.">    switch (type) {</span>
+      case SMALLINT:
+      case MEDIUMINT:
+      case INTEGER:
+      case BIGINT:
+<span class="nc bnc" id="L235" title="All 2 branches missed.">        if (!signed) {</span>
+<span class="nc" id="L236">          return type.getTypeName() + &quot; UNSIGNED&quot;;</span>
+        } else {
+<span class="nc" id="L238">          return type.getTypeName();</span>
+        }
+      case BLOB:
+        /*
+         map to different blob types based on datatype length
+         see https://mariadb.com/kb/en/library/data-types/
+        */
+<span class="nc bnc" id="L245" title="All 2 branches missed.">        if (len &lt; 0) {</span>
+<span class="nc" id="L246">          return &quot;LONGBLOB&quot;;</span>
+<span class="nc bnc" id="L247" title="All 2 branches missed.">        } else if (len &lt;= 255) {</span>
+<span class="nc" id="L248">          return &quot;TINYBLOB&quot;;</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">        } else if (len &lt;= 65535) {</span>
+<span class="nc" id="L250">          return &quot;BLOB&quot;;</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">        } else if (len &lt;= 16777215) {</span>
+<span class="nc" id="L252">          return &quot;MEDIUMBLOB&quot;;</span>
+        } else {
+<span class="nc" id="L254">          return &quot;LONGBLOB&quot;;</span>
+        }
+      case VARSTRING:
+      case VARCHAR:
+<span class="nc bnc" id="L258" title="All 2 branches missed.">        if (binary) {</span>
+<span class="nc" id="L259">          return &quot;VARBINARY&quot;;</span>
+        }
+<span class="nc" id="L261">        return &quot;VARCHAR&quot;;</span>
+      case STRING:
+<span class="nc bnc" id="L263" title="All 2 branches missed.">        if (binary) {</span>
+<span class="nc" id="L264">          return &quot;BINARY&quot;;</span>
+        }
+<span class="nc" id="L266">        return &quot;CHAR&quot;;</span>
+      default:
+<span class="nc" id="L268">        return type.getTypeName();</span>
+    }
+  }
+
+  /**
+   * Convert server Type to server type.
+   *
+   * @param typeValue     type value
+   * @param charsetNumber charset
+   * @return MariaDb type
+   */
+  public static ColumnType fromServer(int typeValue, int charsetNumber) {
+
+<span class="nc" id="L281">    ColumnType columnType = typeMap[typeValue];</span>
+
+<span class="nc bnc" id="L283" title="All 2 branches missed.">    if (columnType == null) {</span>
+      // Potential fallback for types that are not implemented.
+      // Should not be normally used.
+<span class="nc" id="L286">      columnType = BLOB;</span>
+    }
+
+<span class="nc bnc" id="L289" title="All 6 branches missed.">    if (charsetNumber != 63 &amp;&amp; typeValue &gt;= 249 &amp;&amp; typeValue &lt;= 252) {</span>
+      // MariaDB Text dataType
+<span class="nc" id="L291">      return ColumnType.VARCHAR;</span>
+    }
+
+<span class="nc" id="L294">    return columnType;</span>
+  }
+
+  /**
+   * Convert javatype to ColumnType.
+   *
+   * @param javaType javatype value
+   * @return mariaDb type value
+   */
+  public static ColumnType toServer(int javaType) {
+<span class="nc bnc" id="L304" title="All 2 branches missed.">    for (ColumnType v : values()) {</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">      if (v.javaType == javaType) {</span>
+<span class="nc" id="L306">        return v;</span>
+      }
+    }
+<span class="nc" id="L309">    return ColumnType.BLOB;</span>
+  }
+
+  /**
+   * Get class name.
+   *
+   * @param type    type
+   * @param len     len
+   * @param signed  signed
+   * @param binary  binary
+   * @param options options
+   * @return class name
+   */
+  public static String getClassName(ColumnType type, int len, boolean signed, boolean binary,
+      Options options) {
+<span class="nc bnc" id="L324" title="All 7 branches missed.">    switch (type) {</span>
+      case TINYINT:
+<span class="nc bnc" id="L326" title="All 4 branches missed.">        if (len == 1 &amp;&amp; options.tinyInt1isBit) {</span>
+<span class="nc" id="L327">          return Boolean.class.getName();</span>
+        }
+<span class="nc" id="L329">        return Integer.class.getName();</span>
+      case INTEGER:
+<span class="nc bnc" id="L331" title="All 2 branches missed.">        return (signed) ? Integer.class.getName() : Long.class.getName();</span>
+      case BIGINT:
+<span class="nc bnc" id="L333" title="All 2 branches missed.">        return (signed) ? Long.class.getName() : BigInteger.class.getName();</span>
+      case YEAR:
+<span class="nc bnc" id="L335" title="All 2 branches missed.">        if (options.yearIsDateType) {</span>
+<span class="nc" id="L336">          return Date.class.getName();</span>
+        }
+<span class="nc" id="L338">        return Short.class.getName();</span>
+      case BIT:
+<span class="nc bnc" id="L340" title="All 2 branches missed.">        return (len == 1) ? Boolean.class.getName() : &quot;[B&quot;;</span>
+      case STRING:
+      case VARCHAR:
+      case VARSTRING:
+<span class="nc bnc" id="L344" title="All 2 branches missed.">        return binary ? &quot;[B&quot; : String.class.getName();</span>
+      default:
+        break;
+    }
+<span class="nc" id="L348">    return type.getClassName();</span>
+  }
+
+  public String getClassName() {
+<span class="nc" id="L352">    return className;</span>
+  }
+
+  public int getSqlType() {
+<span class="nc" id="L356">    return javaType;</span>
+  }
+
+  public String getTypeName() {
+<span class="nc" id="L360">    return name();</span>
+  }
+
+  public short getType() {
+<span class="nc" id="L364">    return mariadbType;</span>
+  }
+
+  public String getJavaTypeName() {
+<span class="nc" id="L368">    return javaTypeName;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

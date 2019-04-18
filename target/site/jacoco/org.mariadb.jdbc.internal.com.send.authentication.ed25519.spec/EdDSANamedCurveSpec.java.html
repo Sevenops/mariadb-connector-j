@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>EdDSANamedCurveSpec.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.send.authentication.ed25519.spec</a> &gt; <span class="el_source">EdDSANamedCurveSpec.java</span></div><h1>EdDSANamedCurveSpec.java</h1><pre class="source lang-java linenums">/**
+ * EdDSA-Java by str4d
+ * &lt;p&gt;
+ * To the extent possible under law, the person who associated CC0 with EdDSA-Java has waived all
+ * copyright and related or neighboring rights to EdDSA-Java.
+ * &lt;p&gt;
+ * You should have received a copy of the CC0 legalcode along with this work. If not, see
+ * &lt;https://creativecommons.org/publicdomain/zero/1.0/&gt;.
+ */
+package org.mariadb.jdbc.internal.com.send.authentication.ed25519.spec;
+
+import org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.Curve;
+import org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement;
+import org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.ed25519.ScalarOps;
+
+/**
+ * EdDSA Curve specification that can also be referred to by name.
+ *
+ * @author str4d
+ */
+public class EdDSANamedCurveSpec extends EdDSAParameterSpec {
+
+  private final String name;
+
+  public EdDSANamedCurveSpec(String name, Curve curve,
+      String hashAlgo, ScalarOps sc, GroupElement B) {
+<span class="nc" id="L27">    super(curve, hashAlgo, sc, B);</span>
+<span class="nc" id="L28">    this.name = name;</span>
+<span class="nc" id="L29">  }</span>
+
+  public String getName() {
+<span class="nc" id="L32">    return name;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

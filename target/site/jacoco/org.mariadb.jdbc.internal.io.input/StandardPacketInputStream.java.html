@@ -1,0 +1,383 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>StandardPacketInputStream.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.io.input</a> &gt; <span class="el_source">StandardPacketInputStream.java</span></div><h1>StandardPacketInputStream.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.io.input;
+
+import static org.mariadb.jdbc.internal.io.TraceObject.NOT_COMPRESSED;
+
+import java.io.BufferedInputStream;
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Arrays;
+import org.mariadb.jdbc.internal.ColumnType;
+import org.mariadb.jdbc.internal.com.read.Buffer;
+import org.mariadb.jdbc.internal.io.LruTraceCache;
+import org.mariadb.jdbc.internal.io.TraceObject;
+import org.mariadb.jdbc.internal.logging.Logger;
+import org.mariadb.jdbc.internal.logging.LoggerFactory;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.Utils;
+
+public class StandardPacketInputStream implements PacketInputStream {
+
+  private static final int REUSABLE_BUFFER_LENGTH = 1024;
+  private static final int MAX_PACKET_SIZE = 0xffffff;
+<span class="nc" id="L75">  private static final Logger logger = LoggerFactory.getLogger(StandardPacketInputStream.class);</span>
+<span class="nc" id="L76">  private final byte[] header = new byte[4];</span>
+<span class="nc" id="L77">  private final byte[] reusableArray = new byte[REUSABLE_BUFFER_LENGTH];</span>
+
+  private final InputStream inputStream;
+  private final int maxQuerySizeToLog;
+  private int packetSeq;
+  private int lastPacketLength;
+<span class="nc" id="L83">  private String serverThreadLog = &quot;&quot;;</span>
+
+<span class="nc" id="L85">  private LruTraceCache traceCache = null;</span>
+
+  /**
+   * Constructor of standard socket MySQL packet stream reader.
+   *
+   * @param in        stream
+   * @param options   connection options
+   */
+<span class="nc" id="L93">  public StandardPacketInputStream(InputStream in, Options options) {</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">    inputStream = options.useReadAheadInput ? new ReadAheadBufferedStream(in)</span>
+<span class="nc" id="L95">        : new BufferedInputStream(in, 16384);</span>
+<span class="nc" id="L96">    this.maxQuerySizeToLog = options.maxQuerySizeToLog;</span>
+<span class="nc" id="L97">  }</span>
+
+  /**
+   * Constructor for single Data (using text format).
+   *
+   * @param value value
+   * @return Buffer
+   */
+  public static byte[] create(byte[] value) {
+<span class="nc bnc" id="L106" title="All 2 branches missed.">    if (value == null) {</span>
+<span class="nc" id="L107">      return new byte[]{(byte) 251};</span>
+    }
+
+<span class="nc" id="L110">    int length = value.length;</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">    if (length &lt; 251) {</span>
+
+<span class="nc" id="L113">      byte[] buf = new byte[length + 1];</span>
+<span class="nc" id="L114">      buf[0] = (byte) length;</span>
+<span class="nc" id="L115">      System.arraycopy(value, 0, buf, 1, length);</span>
+<span class="nc" id="L116">      return buf;</span>
+
+<span class="nc bnc" id="L118" title="All 2 branches missed.">    } else if (length &lt; 65536) {</span>
+
+<span class="nc" id="L120">      byte[] buf = new byte[length + 3];</span>
+<span class="nc" id="L121">      buf[0] = (byte) 0xfc;</span>
+<span class="nc" id="L122">      buf[1] = (byte) length;</span>
+<span class="nc" id="L123">      buf[2] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L124">      System.arraycopy(value, 0, buf, 3, length);</span>
+<span class="nc" id="L125">      return buf;</span>
+
+<span class="nc bnc" id="L127" title="All 2 branches missed.">    } else if (length &lt; 16777216) {</span>
+
+<span class="nc" id="L129">      byte[] buf = new byte[length + 4];</span>
+<span class="nc" id="L130">      buf[0] = (byte) 0xfd;</span>
+<span class="nc" id="L131">      buf[1] = (byte) length;</span>
+<span class="nc" id="L132">      buf[2] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L133">      buf[3] = (byte) (length &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L134">      System.arraycopy(value, 0, buf, 4, length);</span>
+<span class="nc" id="L135">      return buf;</span>
+
+    } else {
+
+<span class="nc" id="L139">      byte[] buf = new byte[length + 9];</span>
+<span class="nc" id="L140">      buf[0] = (byte) 0xfe;</span>
+<span class="nc" id="L141">      buf[1] = (byte) length;</span>
+<span class="nc" id="L142">      buf[2] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L143">      buf[3] = (byte) (length &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L144">      buf[4] = (byte) (length &gt;&gt;&gt; 24);</span>
+      //byte[] cannot have a more than 4 byte length size, so buf[5] -&gt; buf[8] = 0x00;
+<span class="nc" id="L146">      System.arraycopy(value, 0, buf, 9, length);</span>
+<span class="nc" id="L147">      return buf;</span>
+    }
+
+  }
+
+  /**
+   * Create Buffer with Text protocol values.
+   *
+   * @param rowDatas    datas
+   * @param columnTypes column types
+   * @return Buffer
+   */
+  public static byte[] create(byte[][] rowDatas, ColumnType[] columnTypes) {
+
+<span class="nc" id="L161">    int totalLength = 0;</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">    for (byte[] rowData : rowDatas) {</span>
+<span class="nc bnc" id="L163" title="All 2 branches missed.">      if (rowData == null) {</span>
+<span class="nc" id="L164">        totalLength++;</span>
+      } else {
+<span class="nc" id="L166">        int length = rowData.length;</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">        if (length &lt; 251) {</span>
+<span class="nc" id="L168">          totalLength += length + 1;</span>
+<span class="nc bnc" id="L169" title="All 2 branches missed.">        } else if (length &lt; 65536) {</span>
+<span class="nc" id="L170">          totalLength += length + 3;</span>
+<span class="nc bnc" id="L171" title="All 2 branches missed.">        } else if (length &lt; 16777216) {</span>
+<span class="nc" id="L172">          totalLength += length + 4;</span>
+        } else {
+<span class="nc" id="L174">          totalLength += length + 9;</span>
+        }
+      }
+    }
+<span class="nc" id="L178">    byte[] buf = new byte[totalLength];</span>
+
+<span class="nc" id="L180">    int pos = 0;</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">    for (byte[] arr : rowDatas) {</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">      if (arr == null) {</span>
+<span class="nc" id="L183">        buf[pos++] = (byte) 251;</span>
+      } else {
+<span class="nc" id="L185">        int length = arr.length;</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">        if (length &lt; 251) {</span>
+<span class="nc" id="L187">          buf[pos++] = (byte) length;</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">        } else if (length &lt; 65536) {</span>
+<span class="nc" id="L189">          buf[pos++] = (byte) 0xfc;</span>
+<span class="nc" id="L190">          buf[pos++] = (byte) length;</span>
+<span class="nc" id="L191">          buf[pos++] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">        } else if (length &lt; 16777216) {</span>
+<span class="nc" id="L193">          buf[pos++] = (byte) 0xfd;</span>
+<span class="nc" id="L194">          buf[pos++] = (byte) length;</span>
+<span class="nc" id="L195">          buf[pos++] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L196">          buf[pos++] = (byte) (length &gt;&gt;&gt; 16);</span>
+        } else {
+<span class="nc" id="L198">          buf[pos++] = (byte) 0xfe;</span>
+<span class="nc" id="L199">          buf[pos++] = (byte) length;</span>
+<span class="nc" id="L200">          buf[pos++] = (byte) (length &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L201">          buf[pos++] = (byte) (length &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L202">          buf[pos++] = (byte) (length &gt;&gt;&gt; 24);</span>
+          //byte[] cannot have more than 4 byte length size, so buf[pos+5] -&gt; buf[pos+8] = 0x00;
+<span class="nc" id="L204">          pos += 4;</span>
+        }
+<span class="nc" id="L206">        System.arraycopy(arr, 0, buf, pos, length);</span>
+<span class="nc" id="L207">        pos += length;</span>
+      }
+    }
+<span class="nc" id="L210">    return buf;</span>
+  }
+
+  @Override
+  public Buffer getPacket(boolean reUsable) throws IOException {
+<span class="nc" id="L215">    return new Buffer(getPacketArray(reUsable), lastPacketLength);</span>
+  }
+
+  /**
+   * Get current input stream for creating compress input stream, to avoid losing already
+   * read bytes in case of pipelining.
+   *
+   * @return input stream.
+   */
+  public InputStream getInputStream() {
+<span class="nc" id="L225">    return inputStream;</span>
+  }
+
+  /**
+   * Get next packet. If packet is more than 16M, read as many packet needed to finish packet.
+   * (first that has not length = 16Mb)
+   *
+   * @param reUsable if can use existing reusable buffer to avoid creating array
+   * @return array packet.
+   * @throws IOException if socket exception occur.
+   */
+  public byte[] getPacketArray(boolean reUsable) throws IOException {
+
+    //***************************************************
+    //Read 4 byte header
+    //***************************************************
+<span class="nc" id="L241">    int remaining = 4;</span>
+<span class="nc" id="L242">    int off = 0;</span>
+    do {
+<span class="nc" id="L244">      int count = inputStream.read(header, off, remaining);</span>
+<span class="nc bnc" id="L245" title="All 2 branches missed.">      if (count &lt; 0) {</span>
+<span class="nc" id="L246">        throw new EOFException(&quot;unexpected end of stream, read &quot; + off</span>
+            + &quot; bytes from 4 (socket was closed by server)&quot;);
+      }
+<span class="nc" id="L249">      remaining -= count;</span>
+<span class="nc" id="L250">      off += count;</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">    } while (remaining &gt; 0);</span>
+
+<span class="nc" id="L253">    lastPacketLength = (header[0] &amp; 0xff) + ((header[1] &amp; 0xff) &lt;&lt; 8) + ((header[2] &amp; 0xff) &lt;&lt; 16);</span>
+<span class="nc" id="L254">    packetSeq = header[3];</span>
+
+    //prepare array
+    byte[] rawBytes;
+<span class="nc bnc" id="L258" title="All 4 branches missed.">    if (reUsable &amp;&amp; lastPacketLength &lt; REUSABLE_BUFFER_LENGTH) {</span>
+<span class="nc" id="L259">      rawBytes = reusableArray;</span>
+    } else {
+<span class="nc" id="L261">      rawBytes = new byte[lastPacketLength];</span>
+    }
+
+    //***************************************************
+    //Read content
+    //***************************************************
+<span class="nc" id="L267">    remaining = lastPacketLength;</span>
+<span class="nc" id="L268">    off = 0;</span>
+    do {
+<span class="nc" id="L270">      int count = inputStream.read(rawBytes, off, remaining);</span>
+<span class="nc bnc" id="L271" title="All 2 branches missed.">      if (count &lt; 0) {</span>
+<span class="nc" id="L272">        throw new EOFException(</span>
+            &quot;unexpected end of stream, read &quot; + (lastPacketLength - remaining) + &quot; bytes from &quot;
+                + lastPacketLength
+                + &quot; (socket was closed by server)&quot;);
+      }
+<span class="nc" id="L277">      remaining -= count;</span>
+<span class="nc" id="L278">      off += count;</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">    } while (remaining &gt; 0);</span>
+
+<span class="nc bnc" id="L281" title="All 2 branches missed.">    if (traceCache != null) {</span>
+<span class="nc" id="L282">      traceCache.put(new TraceObject(false, NOT_COMPRESSED, Arrays.copyOfRange(header, 0, 4),</span>
+<span class="nc bnc" id="L283" title="All 2 branches missed.">          Arrays.copyOfRange(rawBytes, 0, off &gt; 1000 ? 1000 : off)));</span>
+    }
+
+<span class="nc bnc" id="L286" title="All 2 branches missed.">    if (logger.isTraceEnabled()) {</span>
+<span class="nc" id="L287">      logger.trace(&quot;read: {}{}&quot;,</span>
+          serverThreadLog,
+<span class="nc" id="L289">          Utils.hexdump(maxQuerySizeToLog - 4, 0, lastPacketLength, header, rawBytes));</span>
+    }
+
+    //***************************************************
+    //In case content length is big, content will be separate in many 16Mb packets
+    //***************************************************
+<span class="nc bnc" id="L295" title="All 2 branches missed.">    if (lastPacketLength == MAX_PACKET_SIZE) {</span>
+      int packetLength;
+      do {
+<span class="nc" id="L298">        remaining = 4;</span>
+<span class="nc" id="L299">        off = 0;</span>
+        do {
+<span class="nc" id="L301">          int count = inputStream.read(header, off, remaining);</span>
+<span class="nc bnc" id="L302" title="All 2 branches missed.">          if (count &lt; 0) {</span>
+<span class="nc" id="L303">            throw new EOFException(&quot;unexpected end of stream, read &quot; + off + &quot; bytes from 4&quot;);</span>
+          }
+<span class="nc" id="L305">          remaining -= count;</span>
+<span class="nc" id="L306">          off += count;</span>
+<span class="nc bnc" id="L307" title="All 2 branches missed.">        } while (remaining &gt; 0);</span>
+
+<span class="nc" id="L309">        packetLength = (header[0] &amp; 0xff) + ((header[1] &amp; 0xff) &lt;&lt; 8) + ((header[2] &amp; 0xff) &lt;&lt; 16);</span>
+<span class="nc" id="L310">        packetSeq = header[3];</span>
+
+<span class="nc" id="L312">        int currentBufferLength = rawBytes.length;</span>
+<span class="nc" id="L313">        byte[] newRawBytes = new byte[currentBufferLength + packetLength];</span>
+<span class="nc" id="L314">        System.arraycopy(rawBytes, 0, newRawBytes, 0, currentBufferLength);</span>
+<span class="nc" id="L315">        rawBytes = newRawBytes;</span>
+
+        //***************************************************
+        //Read content
+        //***************************************************
+<span class="nc" id="L320">        remaining = packetLength;</span>
+<span class="nc" id="L321">        off = currentBufferLength;</span>
+        do {
+<span class="nc" id="L323">          int count = inputStream.read(rawBytes, off, remaining);</span>
+<span class="nc bnc" id="L324" title="All 2 branches missed.">          if (count &lt; 0) {</span>
+<span class="nc" id="L325">            throw new EOFException(</span>
+                &quot;unexpected end of stream, read &quot; + (packetLength - remaining) + &quot; bytes from &quot;
+                    + packetLength);
+          }
+<span class="nc" id="L329">          remaining -= count;</span>
+<span class="nc" id="L330">          off += count;</span>
+<span class="nc bnc" id="L331" title="All 2 branches missed.">        } while (remaining &gt; 0);</span>
+
+<span class="nc bnc" id="L333" title="All 2 branches missed.">        if (traceCache != null) {</span>
+<span class="nc" id="L334">          traceCache.put(new TraceObject(false, NOT_COMPRESSED, Arrays.copyOfRange(header, 0, 4),</span>
+<span class="nc bnc" id="L335" title="All 2 branches missed.">              Arrays.copyOfRange(rawBytes, 0, off &gt; 1000 ? 1000 : off)));</span>
+        }
+
+<span class="nc bnc" id="L338" title="All 2 branches missed.">        if (logger.isTraceEnabled()) {</span>
+<span class="nc" id="L339">          logger.trace(&quot;read: {}{}&quot;,</span>
+              serverThreadLog,
+<span class="nc" id="L341">              Utils.hexdump(maxQuerySizeToLog - 4, currentBufferLength, packetLength, header,</span>
+                  rawBytes));
+        }
+
+<span class="nc" id="L345">        lastPacketLength += packetLength;</span>
+<span class="nc bnc" id="L346" title="All 2 branches missed.">      } while (packetLength == MAX_PACKET_SIZE);</span>
+    }
+
+<span class="nc" id="L349">    return rawBytes;</span>
+  }
+
+  @Override
+  public int getLastPacketSeq() {
+<span class="nc" id="L354">    return packetSeq;</span>
+  }
+
+  @Override
+  public int getCompressLastPacketSeq() {
+<span class="nc" id="L359">    return 0;</span>
+  }
+
+  @Override
+  public void close() throws IOException {
+<span class="nc" id="L364">    inputStream.close();</span>
+<span class="nc" id="L365">  }</span>
+
+  /**
+   * Set server thread id.
+   *
+   * @param serverThreadId current server thread id.
+   * @param isMaster       is server master
+   */
+  public void setServerThreadId(long serverThreadId, Boolean isMaster) {
+<span class="nc" id="L374">    this.serverThreadLog =</span>
+<span class="nc bnc" id="L375" title="All 4 branches missed.">        &quot;conn=&quot; + serverThreadId + ((isMaster != null) ? &quot;(&quot; + (isMaster ? &quot;M&quot; : &quot;S&quot;) + &quot;)&quot; : &quot;&quot;);</span>
+<span class="nc" id="L376">  }</span>
+
+
+  public void setTraceCache(LruTraceCache traceCache) {
+<span class="nc" id="L380">    this.traceCache = traceCache;</span>
+<span class="nc" id="L381">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

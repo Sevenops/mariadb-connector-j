@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Curve.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.send.authentication.ed25519.math</a> &gt; <span class="el_source">Curve.java</span></div><h1>Curve.java</h1><pre class="source lang-java linenums">/**
+ * EdDSA-Java by str4d
+ * &lt;p&gt;
+ * To the extent possible under law, the person who associated CC0 with EdDSA-Java has waived all
+ * copyright and related or neighboring rights to EdDSA-Java.
+ * &lt;p&gt;
+ * You should have received a copy of the CC0 legalcode along with this work. If not, see
+ * &lt;https://creativecommons.org/publicdomain/zero/1.0/&gt;.
+ */
+package org.mariadb.jdbc.internal.com.send.authentication.ed25519.math;
+
+import java.io.Serializable;
+
+/**
+ * A twisted Edwards curve. Points on the curve satisfy $-x^2 + y^2 = 1 + d x^2y^2$
+ *
+ * @author str4d
+ */
+public class Curve implements Serializable {
+
+  private static final long serialVersionUID = 4578920872509827L;
+  private final Field f;
+  private final FieldElement d;
+  private final FieldElement d2;
+  private final FieldElement I;
+
+  private final GroupElement zeroP2;
+  private final GroupElement zeroP3;
+  private final GroupElement zeroPrecomp;
+
+<span class="nc" id="L31">  public Curve(Field f, byte[] d, FieldElement I) {</span>
+<span class="nc" id="L32">    this.f = f;</span>
+<span class="nc" id="L33">    this.d = f.fromByteArray(d);</span>
+<span class="nc" id="L34">    this.d2 = this.d.add(this.d);</span>
+<span class="nc" id="L35">    this.I = I;</span>
+
+<span class="nc" id="L37">    FieldElement zero = f.ZERO;</span>
+<span class="nc" id="L38">    FieldElement one = f.ONE;</span>
+<span class="nc" id="L39">    zeroP2 = GroupElement.p2(this, zero, one, one);</span>
+<span class="nc" id="L40">    zeroP3 = GroupElement.p3(this, zero, one, one, zero);</span>
+<span class="nc" id="L41">    zeroPrecomp = GroupElement.precomp(this, one, one, zero);</span>
+<span class="nc" id="L42">  }</span>
+
+  public Field getField() {
+<span class="nc" id="L45">    return f;</span>
+  }
+
+  public FieldElement getD() {
+<span class="nc" id="L49">    return d;</span>
+  }
+
+  public FieldElement get2D() {
+<span class="nc" id="L53">    return d2;</span>
+  }
+
+  public FieldElement getI() {
+<span class="nc" id="L57">    return I;</span>
+  }
+
+  public GroupElement getZero(GroupElement.Representation repr) {
+<span class="nc bnc" id="L61" title="All 4 branches missed.">    switch (repr) {</span>
+      case P2:
+<span class="nc" id="L63">        return zeroP2;</span>
+      case P3:
+<span class="nc" id="L65">        return zeroP3;</span>
+      case PRECOMP:
+<span class="nc" id="L67">        return zeroPrecomp;</span>
+      default:
+<span class="nc" id="L69">        return null;</span>
+    }
+  }
+
+  public GroupElement createPoint(byte[] P, boolean precompute) {
+<span class="nc" id="L74">    GroupElement ge = new GroupElement(this, P);</span>
+<span class="nc bnc" id="L75" title="All 2 branches missed.">    if (precompute) {</span>
+<span class="nc" id="L76">      ge.precompute(true);</span>
+    }
+<span class="nc" id="L78">    return ge;</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L83">    return f.hashCode() ^</span>
+<span class="nc" id="L84">        d.hashCode() ^</span>
+<span class="nc" id="L85">        I.hashCode();</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L90" title="All 2 branches missed.">    if (o == this) {</span>
+<span class="nc" id="L91">      return true;</span>
+    }
+<span class="nc bnc" id="L93" title="All 2 branches missed.">    if (!(o instanceof org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.Curve)) {</span>
+<span class="nc" id="L94">      return false;</span>
+    }
+<span class="nc" id="L96">    org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.Curve c = (org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.Curve) o;</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">    return f.equals(c.getField()) &amp;&amp;</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">        d.equals(c.getD()) &amp;&amp;</span>
+<span class="nc bnc" id="L99" title="All 2 branches missed.">        I.equals(c.getI());</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

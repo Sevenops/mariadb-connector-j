@@ -1,0 +1,1684 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BinaryRowProtocol.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.read.resultset.rowprotocol</a> &gt; <span class="el_source">BinaryRowProtocol.java</span></div><h1>BinaryRowProtocol.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.com.read.resultset.rowprotocol;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.sql.Date;
+import java.sql.SQLException;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.sql.Types;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.OffsetTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.Calendar;
+import java.util.TimeZone;
+import org.mariadb.jdbc.internal.com.read.resultset.ColumnInformation;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+public class BinaryRowProtocol extends RowProtocol {
+
+  private final ColumnInformation[] columnInformation;
+  private final int columnInformationLength;
+
+  /**
+   * Constructor.
+   *
+   * @param columnInformation       column information.
+   * @param columnInformationLength number of columns
+   * @param maxFieldSize            max field size
+   * @param options                 connection options
+   */
+  public BinaryRowProtocol(ColumnInformation[] columnInformation, int columnInformationLength,
+      int maxFieldSize, Options options) {
+<span class="nc" id="L92">    super(maxFieldSize, options);</span>
+<span class="nc" id="L93">    this.columnInformation = columnInformation;</span>
+<span class="nc" id="L94">    this.columnInformationLength = columnInformationLength;</span>
+<span class="nc" id="L95">  }</span>
+
+  /**
+   * Set length and pos indicator to asked index.
+   *
+   * @param newIndex index (0 is first).
+   * @see &lt;a href=&quot;https://mariadb.com/kb/en/mariadb/resultset-row/&quot;&gt;Resultset row protocol
+   * documentation&lt;/a&gt;
+   */
+  public void setPosition(int newIndex) {
+
+    //check NULL-Bitmap that indicate if field is null
+<span class="nc bnc" id="L107" title="All 2 branches missed.">    if ((buf[1 + (newIndex + 2) / 8] &amp; (1 &lt;&lt; ((newIndex + 2) % 8))) != 0) {</span>
+<span class="nc" id="L108">      this.lastValueNull = BIT_LAST_FIELD_NULL;</span>
+<span class="nc" id="L109">      return;</span>
+    }
+
+    //if not must parse data until reading the desired field
+<span class="nc bnc" id="L113" title="All 2 branches missed.">    if (index != newIndex) {</span>
+<span class="nc" id="L114">      int internalPos = this.pos;</span>
+<span class="nc bnc" id="L115" title="All 4 branches missed.">      if (index == -1 || index &gt; newIndex) {</span>
+        //if there wasn't previous non-null read field, or if last field was after searched index,
+        // position is set on first field position.
+<span class="nc" id="L118">        index = 0;</span>
+<span class="nc" id="L119">        internalPos = 1 + (columnInformationLength + 9) / 8; // 0x00 header + NULL-Bitmap length</span>
+      } else {
+        //start at previous non-null field position if was before searched index
+<span class="nc" id="L122">        index++;</span>
+<span class="nc" id="L123">        internalPos += length;</span>
+      }
+
+<span class="nc bnc" id="L126" title="All 2 branches missed.">      for (; index &lt;= newIndex; index++) {</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">        if ((buf[1 + (index + 2) / 8] &amp; (1 &lt;&lt; ((index + 2) % 8))) == 0) {</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">          if (index != newIndex) {</span>
+            //skip bytes
+<span class="nc bnc" id="L130" title="All 5 branches missed.">            switch (columnInformation[index].getColumnType()) {</span>
+              case BIGINT:
+              case DOUBLE:
+<span class="nc" id="L133">                internalPos += 8;</span>
+<span class="nc" id="L134">                break;</span>
+
+              case INTEGER:
+              case MEDIUMINT:
+              case FLOAT:
+<span class="nc" id="L139">                internalPos += 4;</span>
+<span class="nc" id="L140">                break;</span>
+
+              case SMALLINT:
+              case YEAR:
+<span class="nc" id="L144">                internalPos += 2;</span>
+<span class="nc" id="L145">                break;</span>
+
+              case TINYINT:
+<span class="nc" id="L148">                internalPos += 1;</span>
+<span class="nc" id="L149">                break;</span>
+
+              default:
+<span class="nc" id="L152">                int type = this.buf[internalPos++] &amp; 0xff;</span>
+<span class="nc bnc" id="L153" title="All 5 branches missed.">                switch (type) {</span>
+
+                  case 251:
+<span class="nc" id="L156">                    break;</span>
+
+                  case 252:
+<span class="nc" id="L159">                    internalPos +=</span>
+                        2 + (0xffff &amp; (((buf[internalPos] &amp; 0xff) + ((buf[internalPos + 1] &amp; 0xff)
+                            &lt;&lt; 8))));
+<span class="nc" id="L162">                    break;</span>
+
+                  case 253:
+<span class="nc" id="L165">                    internalPos += 3 + (0xffffff &amp; ((buf[internalPos] &amp; 0xff)</span>
+                        + ((buf[internalPos + 1] &amp; 0xff) &lt;&lt; 8)
+                        + ((buf[internalPos + 2] &amp; 0xff) &lt;&lt; 16)));
+<span class="nc" id="L168">                    break;</span>
+
+                  case 254:
+<span class="nc" id="L171">                    internalPos += 8 + ((buf[internalPos] &amp; 0xff)</span>
+                        + ((long) (buf[internalPos + 1] &amp; 0xff) &lt;&lt; 8)
+                        + ((long) (buf[internalPos + 2] &amp; 0xff) &lt;&lt; 16)
+                        + ((long) (buf[internalPos + 3] &amp; 0xff) &lt;&lt; 24)
+                        + ((long) (buf[internalPos + 4] &amp; 0xff) &lt;&lt; 32)
+                        + ((long) (buf[internalPos + 5] &amp; 0xff) &lt;&lt; 40)
+                        + ((long) (buf[internalPos + 6] &amp; 0xff) &lt;&lt; 48)
+                        + ((long) (buf[internalPos + 7] &amp; 0xff) &lt;&lt; 56));
+<span class="nc" id="L179">                    break;</span>
+
+                  default:
+<span class="nc" id="L182">                    internalPos += type;</span>
+                    break;
+                }
+<span class="nc" id="L185">                break;</span>
+            }
+          } else {
+            //read asked field position and length
+<span class="nc bnc" id="L189" title="All 5 branches missed.">            switch (columnInformation[index].getColumnType()) {</span>
+              case BIGINT:
+              case DOUBLE:
+<span class="nc" id="L192">                this.pos = internalPos;</span>
+<span class="nc" id="L193">                length = 8;</span>
+<span class="nc" id="L194">                this.lastValueNull = BIT_LAST_FIELD_NOT_NULL;</span>
+<span class="nc" id="L195">                return;</span>
+
+              case INTEGER:
+              case MEDIUMINT:
+              case FLOAT:
+<span class="nc" id="L200">                this.pos = internalPos;</span>
+<span class="nc" id="L201">                length = 4;</span>
+<span class="nc" id="L202">                this.lastValueNull = BIT_LAST_FIELD_NOT_NULL;</span>
+<span class="nc" id="L203">                return;</span>
+
+              case SMALLINT:
+              case YEAR:
+<span class="nc" id="L207">                this.pos = internalPos;</span>
+<span class="nc" id="L208">                length = 2;</span>
+<span class="nc" id="L209">                this.lastValueNull = BIT_LAST_FIELD_NOT_NULL;</span>
+<span class="nc" id="L210">                return;</span>
+
+              case TINYINT:
+<span class="nc" id="L213">                this.pos = internalPos;</span>
+<span class="nc" id="L214">                length = 1;</span>
+<span class="nc" id="L215">                this.lastValueNull = BIT_LAST_FIELD_NOT_NULL;</span>
+<span class="nc" id="L216">                return;</span>
+
+              default:
+                //field with variable length
+<span class="nc" id="L220">                int type = this.buf[internalPos++] &amp; 0xff;</span>
+<span class="nc bnc" id="L221" title="All 5 branches missed.">                switch (type) {</span>
+                  case 251:
+                    //null length field
+                    //must never occur
+                    //null value are set in NULL-Bitmap, not send with a null length indicator.
+<span class="nc" id="L226">                    throw new IllegalStateException(</span>
+                        &quot;null data is encoded in binary protocol but NULL-Bitmap is not set&quot;);
+
+                  case 252:
+                    //length is encoded on 3 bytes (0xfc header + 2 bytes indicating length)
+<span class="nc" id="L231">                    length = 0xffff &amp; ((buf[internalPos++] &amp; 0xff)</span>
+                        + ((buf[internalPos++] &amp; 0xff) &lt;&lt; 8));
+<span class="nc" id="L233">                    this.pos = internalPos;</span>
+<span class="nc" id="L234">                    this.lastValueNull = BIT_LAST_FIELD_NOT_NULL;</span>
+<span class="nc" id="L235">                    return;</span>
+
+                  case 253:
+                    //length is encoded on 4 bytes (0xfd header + 3 bytes indicating length)
+<span class="nc" id="L239">                    length = 0xffffff &amp; ((buf[internalPos++] &amp; 0xff)</span>
+                        + ((buf[internalPos++] &amp; 0xff) &lt;&lt; 8)
+                        + ((buf[internalPos++] &amp; 0xff) &lt;&lt; 16));
+<span class="nc" id="L242">                    this.pos = internalPos;</span>
+<span class="nc" id="L243">                    this.lastValueNull = BIT_LAST_FIELD_NOT_NULL;</span>
+<span class="nc" id="L244">                    return;</span>
+
+                  case 254:
+                    //length is encoded on 9 bytes (0xfe header + 8 bytes indicating length)
+<span class="nc" id="L248">                    length = (int) ((buf[internalPos++] &amp; 0xff)</span>
+                        + ((long) (buf[internalPos++] &amp; 0xff) &lt;&lt; 8)
+                        + ((long) (buf[internalPos++] &amp; 0xff) &lt;&lt; 16)
+                        + ((long) (buf[internalPos++] &amp; 0xff) &lt;&lt; 24)
+                        + ((long) (buf[internalPos++] &amp; 0xff) &lt;&lt; 32)
+                        + ((long) (buf[internalPos++] &amp; 0xff) &lt;&lt; 40)
+                        + ((long) (buf[internalPos++] &amp; 0xff) &lt;&lt; 48)
+                        + ((long) (buf[internalPos++] &amp; 0xff) &lt;&lt; 56));
+<span class="nc" id="L256">                    this.pos = internalPos;</span>
+<span class="nc" id="L257">                    this.lastValueNull = BIT_LAST_FIELD_NOT_NULL;</span>
+<span class="nc" id="L258">                    return;</span>
+
+                  default:
+                    //length is encoded on 1 bytes (is then less than 251)
+<span class="nc" id="L262">                    length = type;</span>
+<span class="nc" id="L263">                    this.pos = internalPos;</span>
+<span class="nc" id="L264">                    this.lastValueNull = BIT_LAST_FIELD_NOT_NULL;</span>
+<span class="nc" id="L265">                    return;</span>
+
+                }
+            }
+          }
+        }
+      }
+    }
+<span class="nc bnc" id="L273" title="All 2 branches missed.">    this.lastValueNull = length == NULL_LENGTH ? BIT_LAST_FIELD_NULL : BIT_LAST_FIELD_NOT_NULL;</span>
+<span class="nc" id="L274">  }</span>
+
+  /**
+   * Get string from raw binary format.
+   *
+   * @param columnInfo column information
+   * @param cal        calendar
+   * @param timeZone   time zone
+   * @return String value of raw bytes
+   * @throws SQLException if conversion failed
+   */
+  public String getInternalString(ColumnInformation columnInfo, Calendar cal, TimeZone timeZone)
+      throws SQLException {
+<span class="nc bnc" id="L287" title="All 2 branches missed.">    if ((lastValueNull &amp; BIT_LAST_FIELD_NULL) != 0) {</span>
+<span class="nc" id="L288">      return null;</span>
+    }
+
+<span class="nc bnc" id="L291" title="All 16 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case STRING:
+<span class="nc bnc" id="L293" title="All 2 branches missed.">        if (getMaxFieldSize() &gt; 0) {</span>
+<span class="nc" id="L294">          return new String(buf, pos, Math.min(getMaxFieldSize() * 3, length),</span>
+              StandardCharsets.UTF_8)
+<span class="nc" id="L296">              .substring(0, Math.min(getMaxFieldSize(), length));</span>
+        }
+<span class="nc" id="L298">        return new String(buf, pos, length, StandardCharsets.UTF_8);</span>
+
+      case BIT:
+<span class="nc" id="L301">        return String.valueOf(parseBit());</span>
+      case TINYINT:
+<span class="nc" id="L303">        return zeroFillingIfNeeded(String.valueOf(getInternalTinyInt(columnInfo)), columnInfo);</span>
+      case SMALLINT:
+<span class="nc" id="L305">        return zeroFillingIfNeeded(String.valueOf(getInternalSmallInt(columnInfo)), columnInfo);</span>
+      case INTEGER:
+      case MEDIUMINT:
+<span class="nc" id="L308">        return zeroFillingIfNeeded(String.valueOf(getInternalMediumInt(columnInfo)), columnInfo);</span>
+      case BIGINT:
+<span class="nc bnc" id="L310" title="All 2 branches missed.">        if (!columnInfo.isSigned()) {</span>
+<span class="nc" id="L311">          return zeroFillingIfNeeded(String.valueOf(getInternalBigInteger(columnInfo)), columnInfo);</span>
+        }
+<span class="nc" id="L313">        return zeroFillingIfNeeded(String.valueOf(getInternalLong(columnInfo)), columnInfo);</span>
+      case DOUBLE:
+<span class="nc" id="L315">        return zeroFillingIfNeeded(String.valueOf(getInternalDouble(columnInfo)), columnInfo);</span>
+      case FLOAT:
+<span class="nc" id="L317">        return zeroFillingIfNeeded(String.valueOf(getInternalFloat(columnInfo)), columnInfo);</span>
+      case TIME:
+<span class="nc" id="L319">        return getInternalTimeString(columnInfo);</span>
+      case DATE:
+<span class="nc" id="L321">        Date date = getInternalDate(columnInfo, cal, timeZone);</span>
+<span class="nc bnc" id="L322" title="All 2 branches missed.">        if (date == null) {</span>
+<span class="nc" id="L323">          return null;</span>
+        }
+<span class="nc" id="L325">        return date.toString();</span>
+      case YEAR:
+<span class="nc bnc" id="L327" title="All 2 branches missed.">        if (options.yearIsDateType) {</span>
+<span class="nc" id="L328">          Date dateInter = getInternalDate(columnInfo, cal, timeZone);</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">          return (dateInter == null) ? null : dateInter.toString();</span>
+        }
+<span class="nc" id="L331">        return String.valueOf(getInternalSmallInt(columnInfo));</span>
+      case TIMESTAMP:
+      case DATETIME:
+<span class="nc" id="L334">        Timestamp timestamp = getInternalTimestamp(columnInfo, cal, timeZone);</span>
+<span class="nc bnc" id="L335" title="All 2 branches missed.">        if (timestamp == null) {</span>
+<span class="nc" id="L336">          return null;</span>
+        }
+<span class="nc" id="L338">        return timestamp.toString();</span>
+      case DECIMAL:
+      case OLDDECIMAL:
+<span class="nc" id="L341">        BigDecimal bigDecimal = getInternalBigDecimal(columnInfo);</span>
+<span class="nc bnc" id="L342" title="All 2 branches missed.">        return (bigDecimal == null) ? null : zeroFillingIfNeeded(bigDecimal.toString(), columnInfo);</span>
+      case GEOMETRY:
+<span class="nc" id="L344">        return new String(buf, pos, length);</span>
+      case NULL:
+<span class="nc" id="L346">        return null;</span>
+      default:
+<span class="nc bnc" id="L348" title="All 2 branches missed.">        if (getMaxFieldSize() &gt; 0) {</span>
+<span class="nc" id="L349">          return new String(buf, pos, Math.min(getMaxFieldSize() * 3, length),</span>
+              StandardCharsets.UTF_8)
+<span class="nc" id="L351">              .substring(0, Math.min(getMaxFieldSize(), length));</span>
+        }
+<span class="nc" id="L353">        return new String(buf, pos, length, StandardCharsets.UTF_8);</span>
+    }
+  }
+
+
+  /**
+   * Get int from raw binary format.
+   *
+   * @param columnInfo column information
+   * @return int value
+   * @throws SQLException if column is not numeric or is not in Integer bounds.
+   */
+  public int getInternalInt(ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L366" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L367">      return 0;</span>
+    }
+
+    long value;
+<span class="nc bnc" id="L371" title="All 10 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case BIT:
+<span class="nc" id="L373">        value = parseBit();</span>
+<span class="nc" id="L374">        break;</span>
+      case TINYINT:
+<span class="nc" id="L376">        value = getInternalTinyInt(columnInfo);</span>
+<span class="nc" id="L377">        break;</span>
+      case SMALLINT:
+      case YEAR:
+<span class="nc" id="L380">        value = getInternalSmallInt(columnInfo);</span>
+<span class="nc" id="L381">        break;</span>
+      case INTEGER:
+      case MEDIUMINT:
+<span class="nc" id="L384">        value = ((buf[pos] &amp; 0xff)</span>
+            + ((buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+            + ((buf[pos + 2] &amp; 0xff) &lt;&lt; 16)
+            + ((buf[pos + 3] &amp; 0xff) &lt;&lt; 24));
+<span class="nc bnc" id="L388" title="All 2 branches missed.">        if (columnInfo.isSigned()) {</span>
+<span class="nc" id="L389">          return (int) value;</span>
+<span class="nc bnc" id="L390" title="All 2 branches missed.">        } else if (value &lt; 0) {</span>
+<span class="nc" id="L391">          value = value &amp; 0xffffffffL;</span>
+        }
+        break;
+      case BIGINT:
+<span class="nc" id="L395">        value = getInternalLong(columnInfo);</span>
+<span class="nc" id="L396">        break;</span>
+      case FLOAT:
+<span class="nc" id="L398">        value = (long) getInternalFloat(columnInfo);</span>
+<span class="nc" id="L399">        break;</span>
+      case DOUBLE:
+<span class="nc" id="L401">        value = (long) getInternalDouble(columnInfo);</span>
+<span class="nc" id="L402">        break;</span>
+      case DECIMAL:
+      case OLDDECIMAL:
+<span class="nc" id="L405">        BigDecimal bigDecimal = getInternalBigDecimal(columnInfo);</span>
+<span class="nc" id="L406">        rangeCheck(Integer.class, Integer.MIN_VALUE, Integer.MAX_VALUE, bigDecimal, columnInfo);</span>
+<span class="nc" id="L407">        return bigDecimal.intValue();</span>
+      case VARSTRING:
+      case VARCHAR:
+      case STRING:
+<span class="nc" id="L411">        value = Long.parseLong(new String(buf, pos, length, StandardCharsets.UTF_8));</span>
+<span class="nc" id="L412">        break;</span>
+      default:
+<span class="nc" id="L414">        throw new SQLException(</span>
+<span class="nc" id="L415">            &quot;getInt not available for data field type &quot; + columnInfo.getColumnType()</span>
+<span class="nc" id="L416">                .getJavaTypeName());</span>
+    }
+<span class="nc" id="L418">    rangeCheck(Integer.class, Integer.MIN_VALUE, Integer.MAX_VALUE, value, columnInfo);</span>
+<span class="nc" id="L419">    return (int) value;</span>
+  }
+
+  /**
+   * Get long from raw binary format.
+   *
+   * @param columnInfo column information
+   * @return long value
+   * @throws SQLException if column is not numeric or is not in Long bounds (for big unsigned
+   *                      values)
+   */
+  public long getInternalLong(ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L431" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L432">      return 0;</span>
+    }
+
+    long value;
+<span class="nc bnc" id="L436" title="All 10 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case BIT:
+<span class="nc" id="L438">        return parseBit();</span>
+      case TINYINT:
+<span class="nc" id="L440">        value = getInternalTinyInt(columnInfo);</span>
+<span class="nc" id="L441">        break;</span>
+      case SMALLINT:
+      case YEAR:
+<span class="nc" id="L444">        value = getInternalSmallInt(columnInfo);</span>
+<span class="nc" id="L445">        break;</span>
+      case INTEGER:
+      case MEDIUMINT:
+<span class="nc" id="L448">        value = getInternalMediumInt(columnInfo);</span>
+<span class="nc" id="L449">        break;</span>
+      case BIGINT:
+<span class="nc" id="L451">        value = ((buf[pos] &amp; 0xff)</span>
+            + ((long) (buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+            + ((long) (buf[pos + 2] &amp; 0xff) &lt;&lt; 16)
+            + ((long) (buf[pos + 3] &amp; 0xff) &lt;&lt; 24)
+            + ((long) (buf[pos + 4] &amp; 0xff) &lt;&lt; 32)
+            + ((long) (buf[pos + 5] &amp; 0xff) &lt;&lt; 40)
+            + ((long) (buf[pos + 6] &amp; 0xff) &lt;&lt; 48)
+            + ((long) (buf[pos + 7] &amp; 0xff) &lt;&lt; 56));
+<span class="nc bnc" id="L459" title="All 2 branches missed.">        if (columnInfo.isSigned()) {</span>
+<span class="nc" id="L460">          return value;</span>
+        }
+<span class="nc" id="L462">        BigInteger unsignedValue = new BigInteger(1, new byte[]{(byte) (value &gt;&gt; 56),</span>
+            (byte) (value &gt;&gt; 48), (byte) (value &gt;&gt; 40), (byte) (value &gt;&gt; 32),
+            (byte) (value &gt;&gt; 24), (byte) (value &gt;&gt; 16), (byte) (value &gt;&gt; 8),
+            (byte) value});
+<span class="nc bnc" id="L466" title="All 2 branches missed.">        if (unsignedValue.compareTo(new BigInteger(String.valueOf(Long.MAX_VALUE))) &gt; 0) {</span>
+<span class="nc" id="L467">          throw new SQLException(</span>
+<span class="nc" id="L468">              &quot;Out of range value for column '&quot; + columnInfo.getName() + &quot;' : value &quot;</span>
+                  + unsignedValue + &quot; is not in Long range&quot;, &quot;22003&quot;, 1264);
+        }
+<span class="nc" id="L471">        return unsignedValue.longValue();</span>
+      case FLOAT:
+<span class="nc" id="L473">        Float floatValue = getInternalFloat(columnInfo);</span>
+<span class="nc bnc" id="L474" title="All 2 branches missed.">        if (floatValue.compareTo((float) Long.MAX_VALUE) &gt;= 1) {</span>
+<span class="nc" id="L475">          throw new SQLException(</span>
+<span class="nc" id="L476">              &quot;Out of range value for column '&quot; + columnInfo.getName() + &quot;' : value &quot; + floatValue</span>
+                  + &quot; is not in Long range&quot;, &quot;22003&quot;, 1264);
+        }
+<span class="nc" id="L479">        return floatValue.longValue();</span>
+      case DOUBLE:
+<span class="nc" id="L481">        Double doubleValue = getInternalDouble(columnInfo);</span>
+<span class="nc bnc" id="L482" title="All 2 branches missed.">        if (doubleValue.compareTo((double) Long.MAX_VALUE) &gt;= 1) {</span>
+<span class="nc" id="L483">          throw new SQLException(</span>
+<span class="nc" id="L484">              &quot;Out of range value for column '&quot; + columnInfo.getName() + &quot;' : value &quot; + doubleValue</span>
+                  + &quot; is not in Long range&quot;, &quot;22003&quot;, 1264);
+        }
+<span class="nc" id="L487">        return doubleValue.longValue();</span>
+      case DECIMAL:
+      case OLDDECIMAL:
+<span class="nc" id="L490">        BigDecimal bigDecimal = getInternalBigDecimal(columnInfo);</span>
+<span class="nc" id="L491">        rangeCheck(Long.class, Long.MIN_VALUE, Long.MAX_VALUE, bigDecimal, columnInfo);</span>
+<span class="nc" id="L492">        return bigDecimal.longValue();</span>
+      case VARSTRING:
+      case VARCHAR:
+      case STRING:
+<span class="nc" id="L496">        return Long.parseLong(new String(buf, pos, length, StandardCharsets.UTF_8));</span>
+      default:
+<span class="nc" id="L498">        throw new SQLException(</span>
+<span class="nc" id="L499">            &quot;getLong not available for data field type &quot; + columnInfo.getColumnType()</span>
+<span class="nc" id="L500">                .getJavaTypeName());</span>
+
+    }
+<span class="nc" id="L503">    rangeCheck(Long.class, Long.MIN_VALUE, Long.MAX_VALUE, value, columnInfo);</span>
+<span class="nc" id="L504">    return value;</span>
+
+  }
+
+  /**
+   * Get float from raw binary format.
+   *
+   * @param columnInfo column information
+   * @return float value
+   * @throws SQLException if column is not numeric or is not in Float bounds.
+   */
+  public float getInternalFloat(ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L516" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L517">      return 0;</span>
+    }
+
+    long value;
+<span class="nc bnc" id="L521" title="All 9 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case BIT:
+<span class="nc" id="L523">        return parseBit();</span>
+      case TINYINT:
+<span class="nc" id="L525">        value = getInternalTinyInt(columnInfo);</span>
+<span class="nc" id="L526">        break;</span>
+      case SMALLINT:
+      case YEAR:
+<span class="nc" id="L529">        value = getInternalSmallInt(columnInfo);</span>
+<span class="nc" id="L530">        break;</span>
+      case INTEGER:
+      case MEDIUMINT:
+<span class="nc" id="L533">        value = getInternalMediumInt(columnInfo);</span>
+<span class="nc" id="L534">        break;</span>
+      case BIGINT:
+<span class="nc" id="L536">        value = ((buf[pos] &amp; 0xff)</span>
+            + ((long) (buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+            + ((long) (buf[pos + 2] &amp; 0xff) &lt;&lt; 16)
+            + ((long) (buf[pos + 3] &amp; 0xff) &lt;&lt; 24)
+            + ((long) (buf[pos + 4] &amp; 0xff) &lt;&lt; 32)
+            + ((long) (buf[pos + 5] &amp; 0xff) &lt;&lt; 40)
+            + ((long) (buf[pos + 6] &amp; 0xff) &lt;&lt; 48)
+            + ((long) (buf[pos + 7] &amp; 0xff) &lt;&lt; 56));
+<span class="nc bnc" id="L544" title="All 2 branches missed.">        if (columnInfo.isSigned()) {</span>
+<span class="nc" id="L545">          return value;</span>
+        }
+<span class="nc" id="L547">        BigInteger unsignedValue = new BigInteger(1, new byte[]{(byte) (value &gt;&gt; 56),</span>
+            (byte) (value &gt;&gt; 48), (byte) (value &gt;&gt; 40), (byte) (value &gt;&gt; 32),
+            (byte) (value &gt;&gt; 24), (byte) (value &gt;&gt; 16), (byte) (value &gt;&gt; 8),
+            (byte) value});
+<span class="nc" id="L551">        return unsignedValue.floatValue();</span>
+      case FLOAT:
+<span class="nc" id="L553">        int valueFloat = ((buf[pos] &amp; 0xff)</span>
+            + ((buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+            + ((buf[pos + 2] &amp; 0xff) &lt;&lt; 16)
+            + ((buf[pos + 3] &amp; 0xff) &lt;&lt; 24));
+<span class="nc" id="L557">        return Float.intBitsToFloat(valueFloat);</span>
+      case DOUBLE:
+<span class="nc" id="L559">        return (float) getInternalDouble(columnInfo);</span>
+      case DECIMAL:
+      case VARSTRING:
+      case VARCHAR:
+      case STRING:
+      case OLDDECIMAL:
+        try {
+<span class="nc" id="L566">          return Float.valueOf(new String(buf, pos, length, StandardCharsets.UTF_8));</span>
+<span class="nc" id="L567">        } catch (NumberFormatException nfe) {</span>
+<span class="nc" id="L568">          SQLException sqlException = new SQLException(</span>
+              &quot;Incorrect format for getFloat for data field with type &quot;
+<span class="nc" id="L570">                  + columnInfo.getColumnType().getJavaTypeName(), &quot;22003&quot;, 1264, nfe);</span>
+<span class="nc" id="L571">          throw sqlException;</span>
+        }
+      default:
+<span class="nc" id="L574">        throw new SQLException(</span>
+<span class="nc" id="L575">            &quot;getFloat not available for data field type &quot; + columnInfo.getColumnType()</span>
+<span class="nc" id="L576">                .getJavaTypeName());</span>
+    }
+    try {
+<span class="nc" id="L579">      return Float.valueOf(String.valueOf(value));</span>
+<span class="nc" id="L580">    } catch (NumberFormatException nfe) {</span>
+<span class="nc" id="L581">      SQLException sqlException = new SQLException(</span>
+          &quot;Incorrect format for getFloat for data field with type &quot;
+<span class="nc" id="L583">              + columnInfo.getColumnType().getJavaTypeName(), &quot;22003&quot;, 1264, nfe);</span>
+<span class="nc" id="L584">      throw sqlException;</span>
+    }
+  }
+
+  /**
+   * Get double from raw binary format.
+   *
+   * @param columnInfo column information
+   * @return double value
+   * @throws SQLException if column is not numeric or is not in Double bounds (unsigned columns).
+   */
+  public double getInternalDouble(ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L596" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L597">      return 0;</span>
+    }
+<span class="nc bnc" id="L599" title="All 9 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case BIT:
+<span class="nc" id="L601">        return parseBit();</span>
+      case TINYINT:
+<span class="nc" id="L603">        return getInternalTinyInt(columnInfo);</span>
+      case SMALLINT:
+      case YEAR:
+<span class="nc" id="L606">        return getInternalSmallInt(columnInfo);</span>
+      case INTEGER:
+      case MEDIUMINT:
+<span class="nc" id="L609">        return getInternalMediumInt(columnInfo);</span>
+      case BIGINT:
+<span class="nc" id="L611">        long valueLong = ((buf[pos] &amp; 0xff)</span>
+            + ((long) (buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+            + ((long) (buf[pos + 2] &amp; 0xff) &lt;&lt; 16)
+            + ((long) (buf[pos + 3] &amp; 0xff) &lt;&lt; 24)
+            + ((long) (buf[pos + 4] &amp; 0xff) &lt;&lt; 32)
+            + ((long) (buf[pos + 5] &amp; 0xff) &lt;&lt; 40)
+            + ((long) (buf[pos + 6] &amp; 0xff) &lt;&lt; 48)
+            + ((long) (buf[pos + 7] &amp; 0xff) &lt;&lt; 56)
+        );
+<span class="nc bnc" id="L620" title="All 2 branches missed.">        if (columnInfo.isSigned()) {</span>
+<span class="nc" id="L621">          return valueLong;</span>
+        } else {
+<span class="nc" id="L623">          return new BigInteger(1, new byte[]{(byte) (valueLong &gt;&gt; 56),</span>
+              (byte) (valueLong &gt;&gt; 48), (byte) (valueLong &gt;&gt; 40), (byte) (valueLong &gt;&gt; 32),
+              (byte) (valueLong &gt;&gt; 24), (byte) (valueLong &gt;&gt; 16), (byte) (valueLong &gt;&gt; 8),
+<span class="nc" id="L626">              (byte) valueLong}).doubleValue();</span>
+        }
+      case FLOAT:
+<span class="nc" id="L629">        return getInternalFloat(columnInfo);</span>
+      case DOUBLE:
+<span class="nc" id="L631">        long valueDouble = ((buf[pos] &amp; 0xff)</span>
+            + ((long) (buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+            + ((long) (buf[pos + 2] &amp; 0xff) &lt;&lt; 16)
+            + ((long) (buf[pos + 3] &amp; 0xff) &lt;&lt; 24)
+            + ((long) (buf[pos + 4] &amp; 0xff) &lt;&lt; 32)
+            + ((long) (buf[pos + 5] &amp; 0xff) &lt;&lt; 40)
+            + ((long) (buf[pos + 6] &amp; 0xff) &lt;&lt; 48)
+            + ((long) (buf[pos + 7] &amp; 0xff) &lt;&lt; 56));
+<span class="nc" id="L639">        return Double.longBitsToDouble(valueDouble);</span>
+      case DECIMAL:
+      case VARSTRING:
+      case VARCHAR:
+      case STRING:
+      case OLDDECIMAL:
+        try {
+<span class="nc" id="L646">          return Double.valueOf(new String(buf, pos, length, StandardCharsets.UTF_8));</span>
+<span class="nc" id="L647">        } catch (NumberFormatException nfe) {</span>
+<span class="nc" id="L648">          SQLException sqlException = new SQLException(</span>
+              &quot;Incorrect format for getDouble for data field with type &quot;
+<span class="nc" id="L650">                  + columnInfo.getColumnType().getJavaTypeName(), &quot;22003&quot;, 1264);</span>
+          //noinspection UnnecessaryInitCause
+<span class="nc" id="L652">          sqlException.initCause(nfe);</span>
+<span class="nc" id="L653">          throw sqlException;</span>
+        }
+      default:
+<span class="nc" id="L656">        throw new SQLException(&quot;getDouble not available for data field type &quot;</span>
+<span class="nc" id="L657">            + columnInfo.getColumnType().getJavaTypeName());</span>
+    }
+  }
+
+  /**
+   * Get BigDecimal from raw binary format.
+   *
+   * @param columnInfo column information
+   * @return BigDecimal value
+   * @throws SQLException if column is not numeric
+   */
+  public BigDecimal getInternalBigDecimal(ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L669" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L670">      return null;</span>
+    }
+
+<span class="nc bnc" id="L673" title="All 9 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case BIT:
+<span class="nc" id="L675">        return BigDecimal.valueOf(parseBit());</span>
+      case TINYINT:
+<span class="nc" id="L677">        return BigDecimal.valueOf((long) getInternalTinyInt(columnInfo));</span>
+      case SMALLINT:
+      case YEAR:
+<span class="nc" id="L680">        return BigDecimal.valueOf((long) getInternalSmallInt(columnInfo));</span>
+      case INTEGER:
+      case MEDIUMINT:
+<span class="nc" id="L683">        return BigDecimal.valueOf(getInternalMediumInt(columnInfo));</span>
+      case BIGINT:
+<span class="nc" id="L685">        long value = ((buf[pos] &amp; 0xff)</span>
+            + ((long) (buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+            + ((long) (buf[pos + 2] &amp; 0xff) &lt;&lt; 16)
+            + ((long) (buf[pos + 3] &amp; 0xff) &lt;&lt; 24)
+            + ((long) (buf[pos + 4] &amp; 0xff) &lt;&lt; 32)
+            + ((long) (buf[pos + 5] &amp; 0xff) &lt;&lt; 40)
+            + ((long) (buf[pos + 6] &amp; 0xff) &lt;&lt; 48)
+            + ((long) (buf[pos + 7] &amp; 0xff) &lt;&lt; 56)
+        );
+<span class="nc bnc" id="L694" title="All 2 branches missed.">        if (columnInfo.isSigned()) {</span>
+<span class="nc" id="L695">          return new BigDecimal(String.valueOf(BigInteger.valueOf(value)))</span>
+<span class="nc" id="L696">              .setScale(columnInfo.getDecimals());</span>
+        } else {
+<span class="nc" id="L698">          return new BigDecimal(String.valueOf(new BigInteger(1, new byte[]{(byte) (value &gt;&gt; 56),</span>
+              (byte) (value &gt;&gt; 48), (byte) (value &gt;&gt; 40), (byte) (value &gt;&gt; 32),
+              (byte) (value &gt;&gt; 24), (byte) (value &gt;&gt; 16), (byte) (value &gt;&gt; 8),
+<span class="nc" id="L701">              (byte) value}))).setScale(columnInfo.getDecimals());</span>
+        }
+      case FLOAT:
+<span class="nc" id="L704">        return BigDecimal.valueOf(getInternalFloat(columnInfo));</span>
+      case DOUBLE:
+<span class="nc" id="L706">        return BigDecimal.valueOf(getInternalDouble(columnInfo));</span>
+      case DECIMAL:
+      case VARSTRING:
+      case VARCHAR:
+      case STRING:
+      case OLDDECIMAL:
+<span class="nc" id="L712">        return new BigDecimal(new String(buf, pos, length, StandardCharsets.UTF_8));</span>
+      default:
+<span class="nc" id="L714">        throw new SQLException(&quot;getBigDecimal not available for data field type &quot;</span>
+<span class="nc" id="L715">            + columnInfo.getColumnType().getJavaTypeName());</span>
+    }
+  }
+
+  /**
+   * Get date from raw binary format.
+   *
+   * @param columnInfo column information
+   * @param cal        calendar
+   * @param timeZone   time zone
+   * @return date value
+   * @throws SQLException if column is not compatible to Date
+   */
+  @SuppressWarnings(&quot;deprecation&quot;)
+  public Date getInternalDate(ColumnInformation columnInfo, Calendar cal, TimeZone timeZone)
+      throws SQLException {
+<span class="nc bnc" id="L731" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L732">      return null;</span>
+    }
+<span class="nc bnc" id="L734" title="All 4 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case TIMESTAMP:
+      case DATETIME:
+<span class="nc" id="L737">        Timestamp timestamp = getInternalTimestamp(columnInfo, cal, timeZone);</span>
+<span class="nc bnc" id="L738" title="All 2 branches missed.">        return (timestamp == null) ? null : new Date(timestamp.getTime());</span>
+      case TIME:
+<span class="nc" id="L740">        throw new SQLException(&quot;Cannot read Date using a Types.TIME field&quot;);</span>
+      case STRING:
+<span class="nc" id="L742">        String rawValue = new String(buf, pos, length, StandardCharsets.UTF_8);</span>
+<span class="nc bnc" id="L743" title="All 2 branches missed.">        if (&quot;0000-00-00&quot;.equals(rawValue)) {</span>
+<span class="nc" id="L744">          lastValueNull |= BIT_LAST_ZERO_DATE;</span>
+<span class="nc" id="L745">          return null;</span>
+        }
+
+<span class="nc" id="L748">        return new Date(</span>
+<span class="nc" id="L749">            Integer.parseInt(rawValue.substring(0, 4)) - 1900,</span>
+<span class="nc" id="L750">            Integer.parseInt(rawValue.substring(5, 7)) - 1,</span>
+<span class="nc" id="L751">            Integer.parseInt(rawValue.substring(8, 10))</span>
+        );
+      default:
+<span class="nc bnc" id="L754" title="All 2 branches missed.">        if (length == 0) {</span>
+<span class="nc" id="L755">          lastValueNull |= BIT_LAST_FIELD_NULL;</span>
+<span class="nc" id="L756">          return null;</span>
+        }
+
+<span class="nc" id="L759">        int year = ((buf[pos] &amp; 0xff) | (buf[pos + 1] &amp; 0xff) &lt;&lt; 8);</span>
+
+<span class="nc bnc" id="L761" title="All 4 branches missed.">        if (length == 2 &amp;&amp; columnInfo.getLength() == 2) {</span>
+          //YEAR(2) - deprecated
+<span class="nc bnc" id="L763" title="All 2 branches missed.">          if (year &lt;= 69) {</span>
+<span class="nc" id="L764">            year += 2000;</span>
+          } else {
+<span class="nc" id="L766">            year += 1900;</span>
+          }
+        }
+
+<span class="nc" id="L770">        int month = 1;</span>
+<span class="nc" id="L771">        int day = 1;</span>
+
+<span class="nc bnc" id="L773" title="All 2 branches missed.">        if (length &gt;= 4) {</span>
+<span class="nc" id="L774">          month = buf[pos + 2];</span>
+<span class="nc" id="L775">          day = buf[pos + 3];</span>
+        }
+
+<span class="nc" id="L778">        Calendar calendar = Calendar.getInstance();</span>
+<span class="nc" id="L779">        calendar.clear();</span>
+<span class="nc" id="L780">        calendar.set(Calendar.YEAR, year);</span>
+<span class="nc" id="L781">        calendar.set(Calendar.MONTH, month - 1);</span>
+<span class="nc" id="L782">        calendar.set(Calendar.DAY_OF_MONTH, day);</span>
+<span class="nc" id="L783">        calendar.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="nc" id="L784">        calendar.set(Calendar.MINUTE, 0);</span>
+<span class="nc" id="L785">        calendar.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L786">        calendar.set(Calendar.MILLISECOND, 0);</span>
+<span class="nc" id="L787">        Date dt = new Date(calendar.getTimeInMillis());</span>
+<span class="nc" id="L788">        return dt;</span>
+    }
+  }
+
+  /**
+   * Get time from raw binary format.
+   *
+   * @param columnInfo column information
+   * @param cal        calendar
+   * @param timeZone   time zone
+   * @return Time value
+   * @throws SQLException if column cannot be converted to Time
+   */
+  public Time getInternalTime(ColumnInformation columnInfo, Calendar cal, TimeZone timeZone)
+      throws SQLException {
+<span class="nc bnc" id="L803" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L804">      return null;</span>
+    }
+<span class="nc bnc" id="L806" title="All 3 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case TIMESTAMP:
+      case DATETIME:
+<span class="nc" id="L809">        Timestamp ts = getInternalTimestamp(columnInfo, cal, timeZone);</span>
+<span class="nc bnc" id="L810" title="All 2 branches missed.">        return (ts == null) ? null : new Time(ts.getTime());</span>
+      case DATE:
+<span class="nc" id="L812">        throw new SQLException(&quot;Cannot read Time using a Types.DATE field&quot;);</span>
+      default:
+<span class="nc" id="L814">        Calendar calendar = Calendar.getInstance();</span>
+<span class="nc" id="L815">        calendar.clear();</span>
+<span class="nc" id="L816">        int day = 0;</span>
+<span class="nc" id="L817">        int hour = 0;</span>
+<span class="nc" id="L818">        int minutes = 0;</span>
+<span class="nc" id="L819">        int seconds = 0;</span>
+<span class="nc" id="L820">        boolean negate = false;</span>
+<span class="nc bnc" id="L821" title="All 2 branches missed.">        if (length &gt; 0) {</span>
+<span class="nc bnc" id="L822" title="All 2 branches missed.">          negate = (buf[pos] &amp; 0xff) == 0x01;</span>
+        }
+<span class="nc bnc" id="L824" title="All 2 branches missed.">        if (length &gt; 4) {</span>
+<span class="nc" id="L825">          day = ((buf[pos + 1] &amp; 0xff)</span>
+              + ((buf[pos + 2] &amp; 0xff) &lt;&lt; 8)
+              + ((buf[pos + 3] &amp; 0xff) &lt;&lt; 16)
+              + ((buf[pos + 4] &amp; 0xff) &lt;&lt; 24));
+        }
+<span class="nc bnc" id="L830" title="All 2 branches missed.">        if (length &gt; 7) {</span>
+<span class="nc" id="L831">          hour = buf[pos + 5];</span>
+<span class="nc" id="L832">          minutes = buf[pos + 6];</span>
+<span class="nc" id="L833">          seconds = buf[pos + 7];</span>
+        }
+<span class="nc" id="L835">        calendar</span>
+<span class="nc bnc" id="L836" title="All 4 branches missed.">            .set(1970, Calendar.JANUARY, ((negate ? -1 : 1) * day) + 1, (negate ? -1 : 1) * hour,</span>
+                minutes, seconds);
+
+<span class="nc" id="L839">        int nanoseconds = 0;</span>
+<span class="nc bnc" id="L840" title="All 2 branches missed.">        if (length &gt; 8) {</span>
+<span class="nc" id="L841">          nanoseconds = ((buf[pos + 8] &amp; 0xff)</span>
+              + ((buf[pos + 9] &amp; 0xff) &lt;&lt; 8)
+              + ((buf[pos + 10] &amp; 0xff) &lt;&lt; 16)
+              + ((buf[pos + 11] &amp; 0xff) &lt;&lt; 24));
+        }
+
+<span class="nc" id="L847">        calendar.set(Calendar.MILLISECOND, nanoseconds / 1000);</span>
+
+<span class="nc" id="L849">        return new Time(calendar.getTimeInMillis());</span>
+    }
+  }
+
+  /**
+   * Get timestamp from raw binary format.
+   *
+   * @param columnInfo   column information
+   * @param userCalendar user calendar
+   * @param timeZone     time zone
+   * @return timestamp value
+   * @throws SQLException if column type is not compatible
+   */
+  public Timestamp getInternalTimestamp(ColumnInformation columnInfo, Calendar userCalendar,
+      TimeZone timeZone) throws SQLException {
+<span class="nc bnc" id="L864" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L865">      return null;</span>
+    }
+<span class="nc bnc" id="L867" title="All 2 branches missed.">    if (length == 0) {</span>
+<span class="nc" id="L868">      lastValueNull |= BIT_LAST_FIELD_NULL;</span>
+<span class="nc" id="L869">      return null;</span>
+    }
+
+<span class="nc" id="L872">    int year = 1970;</span>
+<span class="nc" id="L873">    int month = 0;</span>
+<span class="nc" id="L874">    int day = 0;</span>
+<span class="nc" id="L875">    int hour = 0;</span>
+<span class="nc" id="L876">    int minutes = 0;</span>
+<span class="nc" id="L877">    int seconds = 0;</span>
+<span class="nc" id="L878">    int microseconds = 0;</span>
+
+<span class="nc bnc" id="L880" title="All 3 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case TIME:
+<span class="nc bnc" id="L882" title="All 2 branches missed.">        Calendar calendar = userCalendar != null ? userCalendar : Calendar.getInstance();</span>
+
+<span class="nc" id="L884">        boolean negate = false;</span>
+<span class="nc bnc" id="L885" title="All 2 branches missed.">        if (length &gt; 0) {</span>
+<span class="nc bnc" id="L886" title="All 2 branches missed.">          negate = (buf[pos] &amp; 0xff) == 0x01;</span>
+        }
+<span class="nc bnc" id="L888" title="All 2 branches missed.">        if (length &gt; 4) {</span>
+<span class="nc" id="L889">          day = ((buf[pos + 1] &amp; 0xff)</span>
+              + ((buf[pos + 2] &amp; 0xff) &lt;&lt; 8)
+              + ((buf[pos + 3] &amp; 0xff) &lt;&lt; 16)
+              + ((buf[pos + 4] &amp; 0xff) &lt;&lt; 24));
+        }
+<span class="nc bnc" id="L894" title="All 2 branches missed.">        if (length &gt; 7) {</span>
+<span class="nc" id="L895">          hour = buf[pos + 5];</span>
+<span class="nc" id="L896">          minutes = buf[pos + 6];</span>
+<span class="nc" id="L897">          seconds = buf[pos + 7];</span>
+        }
+
+<span class="nc bnc" id="L900" title="All 2 branches missed.">        if (length &gt; 8) {</span>
+<span class="nc" id="L901">          microseconds = ((buf[pos + 8] &amp; 0xff)</span>
+              + ((buf[pos + 9] &amp; 0xff) &lt;&lt; 8)
+              + ((buf[pos + 10] &amp; 0xff) &lt;&lt; 16)
+              + ((buf[pos + 11] &amp; 0xff) &lt;&lt; 24));
+        }
+<span class="nc" id="L906">        year = 1970;</span>
+<span class="nc" id="L907">        month = 1;</span>
+<span class="nc bnc" id="L908" title="All 2 branches missed.">        day = ((negate ? -1 : 1) * day) + 1;</span>
+<span class="nc bnc" id="L909" title="All 2 branches missed.">        hour = (negate ? -1 : 1) * hour;</span>
+<span class="nc" id="L910">        break;</span>
+
+      case STRING:
+      case VARSTRING:
+<span class="nc" id="L914">        String rawValue = new String(buf, pos, length, StandardCharsets.UTF_8);</span>
+<span class="nc bnc" id="L915" title="All 2 branches missed.">        if (rawValue.startsWith(&quot;0000-00-00 00:00:00&quot;)) {</span>
+<span class="nc" id="L916">          lastValueNull |= BIT_LAST_ZERO_DATE;</span>
+<span class="nc" id="L917">          return null;</span>
+        }
+
+<span class="nc bnc" id="L920" title="All 2 branches missed.">        if (rawValue.length() &gt;= 4) {</span>
+<span class="nc" id="L921">          year = Integer.parseInt(rawValue.substring(0, 4));</span>
+<span class="nc bnc" id="L922" title="All 2 branches missed.">          if (rawValue.length() &gt;= 7) {</span>
+<span class="nc" id="L923">            month = Integer.parseInt(rawValue.substring(5, 7));</span>
+<span class="nc bnc" id="L924" title="All 2 branches missed.">            if (rawValue.length() &gt;= 10) {</span>
+<span class="nc" id="L925">              day = Integer.parseInt(rawValue.substring(8, 10));</span>
+<span class="nc bnc" id="L926" title="All 2 branches missed.">              if (rawValue.length() &gt;= 19) {</span>
+<span class="nc" id="L927">                hour = Integer.parseInt(rawValue.substring(11, 13));</span>
+<span class="nc" id="L928">                minutes = Integer.parseInt(rawValue.substring(14, 16));</span>
+<span class="nc" id="L929">                seconds = Integer.parseInt(rawValue.substring(17, 19));</span>
+              }
+<span class="nc" id="L931">              microseconds = extractNanos(rawValue) / 1000000;</span>
+            }
+          }
+        }
+        break;
+
+      default:
+<span class="nc" id="L938">        year = ((buf[pos] &amp; 0xff) | (buf[pos + 1] &amp; 0xff) &lt;&lt; 8);</span>
+<span class="nc" id="L939">        month = buf[pos + 2];</span>
+<span class="nc" id="L940">        day = buf[pos + 3];</span>
+<span class="nc bnc" id="L941" title="All 2 branches missed.">        if (length &gt; 4) {</span>
+<span class="nc" id="L942">          hour = buf[pos + 4];</span>
+<span class="nc" id="L943">          minutes = buf[pos + 5];</span>
+<span class="nc" id="L944">          seconds = buf[pos + 6];</span>
+
+<span class="nc bnc" id="L946" title="All 2 branches missed.">          if (length &gt; 7) {</span>
+<span class="nc" id="L947">            microseconds = ((buf[pos + 7] &amp; 0xff)</span>
+                + ((buf[pos + 8] &amp; 0xff) &lt;&lt; 8)
+                + ((buf[pos + 9] &amp; 0xff) &lt;&lt; 16)
+                + ((buf[pos + 10] &amp; 0xff) &lt;&lt; 24));
+          }
+        }
+    }
+
+    Calendar calendar;
+<span class="nc bnc" id="L956" title="All 2 branches missed.">    if (userCalendar != null) {</span>
+<span class="nc" id="L957">      calendar = userCalendar;</span>
+<span class="nc bnc" id="L958" title="All 2 branches missed.">    } else if (columnInfo.getColumnType().getSqlType() == Types.TIMESTAMP) {</span>
+<span class="nc" id="L959">      calendar = Calendar.getInstance(timeZone);</span>
+    } else {
+<span class="nc" id="L961">      calendar = Calendar.getInstance();</span>
+    }
+
+    Timestamp tt;
+<span class="nc" id="L965">    synchronized (calendar) {</span>
+<span class="nc" id="L966">      calendar.clear();</span>
+<span class="nc" id="L967">      calendar.set(year, month - 1, day, hour, minutes, seconds);</span>
+<span class="nc" id="L968">      tt = new Timestamp(calendar.getTimeInMillis());</span>
+<span class="nc" id="L969">    }</span>
+<span class="nc" id="L970">    tt.setNanos(microseconds * 1000);</span>
+<span class="nc" id="L971">    return tt;</span>
+  }
+
+  /**
+   * Get Object from raw binary format.
+   *
+   * @param columnInfo column information
+   * @param timeZone   time zone
+   * @return Object value
+   * @throws SQLException if column type is not compatible
+   */
+  public Object getInternalObject(ColumnInformation columnInfo, TimeZone timeZone)
+      throws SQLException {
+<span class="nc bnc" id="L984" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L985">      return null;</span>
+    }
+
+<span class="nc bnc" id="L988" title="All 21 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case BIT:
+<span class="nc bnc" id="L990" title="All 2 branches missed.">        if (columnInfo.getLength() == 1) {</span>
+<span class="nc bnc" id="L991" title="All 2 branches missed.">          return buf[pos] != 0;</span>
+        }
+<span class="nc" id="L993">        byte[] dataBit = new byte[length];</span>
+<span class="nc" id="L994">        System.arraycopy(buf, pos, dataBit, 0, length);</span>
+<span class="nc" id="L995">        return dataBit;</span>
+      case TINYINT:
+<span class="nc bnc" id="L997" title="All 4 branches missed.">        if (options.tinyInt1isBit &amp;&amp; columnInfo.getLength() == 1) {</span>
+<span class="nc bnc" id="L998" title="All 2 branches missed.">          return buf[pos] != 0;</span>
+        }
+<span class="nc" id="L1000">        return getInternalInt(columnInfo);</span>
+      case INTEGER:
+<span class="nc bnc" id="L1002" title="All 2 branches missed.">        if (!columnInfo.isSigned()) {</span>
+<span class="nc" id="L1003">          return getInternalLong(columnInfo);</span>
+        }
+<span class="nc" id="L1005">        return getInternalInt(columnInfo);</span>
+      case BIGINT:
+<span class="nc bnc" id="L1007" title="All 2 branches missed.">        if (!columnInfo.isSigned()) {</span>
+<span class="nc" id="L1008">          return getInternalBigInteger(columnInfo);</span>
+        }
+<span class="nc" id="L1010">        return getInternalLong(columnInfo);</span>
+      case DOUBLE:
+<span class="nc" id="L1012">        return getInternalDouble(columnInfo);</span>
+      case VARCHAR:
+      case VARSTRING:
+      case STRING:
+<span class="nc bnc" id="L1016" title="All 2 branches missed.">        if (columnInfo.isBinary()) {</span>
+<span class="nc" id="L1017">          byte[] data = new byte[getLengthMaxFieldSize()];</span>
+<span class="nc" id="L1018">          System.arraycopy(buf, pos, data, 0, getLengthMaxFieldSize());</span>
+<span class="nc" id="L1019">          return data;</span>
+        }
+<span class="nc" id="L1021">        return getInternalString(columnInfo, null, timeZone);</span>
+      case TIMESTAMP:
+      case DATETIME:
+<span class="nc" id="L1024">        return getInternalTimestamp(columnInfo, null, timeZone);</span>
+      case DATE:
+<span class="nc" id="L1026">        return getInternalDate(columnInfo, null, timeZone);</span>
+      case DECIMAL:
+<span class="nc" id="L1028">        return getInternalBigDecimal(columnInfo);</span>
+      case BLOB:
+      case LONGBLOB:
+      case MEDIUMBLOB:
+      case TINYBLOB:
+<span class="nc" id="L1033">        byte[] dataBlob = new byte[getLengthMaxFieldSize()];</span>
+<span class="nc" id="L1034">        System.arraycopy(buf, pos, dataBlob, 0, getLengthMaxFieldSize());</span>
+<span class="nc" id="L1035">        return dataBlob;</span>
+      case NULL:
+<span class="nc" id="L1037">        return null;</span>
+      case YEAR:
+<span class="nc bnc" id="L1039" title="All 2 branches missed.">        if (options.yearIsDateType) {</span>
+<span class="nc" id="L1040">          return getInternalDate(columnInfo, null, timeZone);</span>
+        }
+<span class="nc" id="L1042">        return getInternalShort(columnInfo);</span>
+      case SMALLINT:
+      case MEDIUMINT:
+<span class="nc" id="L1045">        return getInternalInt(columnInfo);</span>
+      case FLOAT:
+<span class="nc" id="L1047">        return getInternalFloat(columnInfo);</span>
+      case TIME:
+<span class="nc" id="L1049">        return getInternalTime(columnInfo, null, timeZone);</span>
+      case OLDDECIMAL:
+      case JSON:
+<span class="nc" id="L1052">        return getInternalString(columnInfo, null, timeZone);</span>
+      case GEOMETRY:
+<span class="nc" id="L1054">        byte[] data = new byte[length];</span>
+<span class="nc" id="L1055">        System.arraycopy(buf, pos, data, 0, length);</span>
+<span class="nc" id="L1056">        return data;</span>
+      case ENUM:
+<span class="nc" id="L1058">        break;</span>
+      case NEWDATE:
+<span class="nc" id="L1060">        break;</span>
+      case SET:
+<span class="nc" id="L1062">        break;</span>
+      default:
+        break;
+    }
+<span class="nc" id="L1066">    throw ExceptionMapper.getFeatureNotSupportedException(</span>
+<span class="nc" id="L1067">        &quot;Type '&quot; + columnInfo.getColumnType().getTypeName() + &quot;' is not supported&quot;);</span>
+  }
+
+  /**
+   * Get boolean from raw binary format.
+   *
+   * @param columnInfo column information
+   * @return boolean value
+   * @throws SQLException if column type doesn't permit conversion
+   */
+  public boolean getInternalBoolean(ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L1078" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L1079">      return false;</span>
+    }
+<span class="nc bnc" id="L1081" title="All 9 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case BIT:
+<span class="nc bnc" id="L1083" title="All 2 branches missed.">        return parseBit() != 0;</span>
+      case TINYINT:
+<span class="nc bnc" id="L1085" title="All 2 branches missed.">        return getInternalTinyInt(columnInfo) != 0;</span>
+      case SMALLINT:
+      case YEAR:
+<span class="nc bnc" id="L1088" title="All 2 branches missed.">        return getInternalSmallInt(columnInfo) != 0;</span>
+      case INTEGER:
+      case MEDIUMINT:
+<span class="nc bnc" id="L1091" title="All 2 branches missed.">        return getInternalMediumInt(columnInfo) != 0;</span>
+      case BIGINT:
+<span class="nc bnc" id="L1093" title="All 2 branches missed.">        return getInternalLong(columnInfo) != 0;</span>
+      case FLOAT:
+<span class="nc bnc" id="L1095" title="All 2 branches missed.">        return getInternalFloat(columnInfo) != 0;</span>
+      case DOUBLE:
+<span class="nc bnc" id="L1097" title="All 2 branches missed.">        return getInternalDouble(columnInfo) != 0;</span>
+      case DECIMAL:
+      case OLDDECIMAL:
+<span class="nc bnc" id="L1100" title="All 2 branches missed.">        return getInternalBigDecimal(columnInfo).longValue() != 0;</span>
+      default:
+<span class="nc" id="L1102">        final String rawVal = new String(buf, pos, length, StandardCharsets.UTF_8);</span>
+<span class="nc bnc" id="L1103" title="All 4 branches missed.">        return !(&quot;false&quot;.equals(rawVal) || &quot;0&quot;.equals(rawVal));</span>
+    }
+  }
+
+  /**
+   * Get byte from raw binary format.
+   *
+   * @param columnInfo column information
+   * @return byte value
+   * @throws SQLException if column type doesn't permit conversion
+   */
+  public byte getInternalByte(ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L1115" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L1116">      return 0;</span>
+    }
+    long value;
+<span class="nc bnc" id="L1119" title="All 10 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case BIT:
+<span class="nc" id="L1121">        value = parseBit();</span>
+<span class="nc" id="L1122">        break;</span>
+      case TINYINT:
+<span class="nc" id="L1124">        value = getInternalTinyInt(columnInfo);</span>
+<span class="nc" id="L1125">        break;</span>
+      case SMALLINT:
+      case YEAR:
+<span class="nc" id="L1128">        value = getInternalSmallInt(columnInfo);</span>
+<span class="nc" id="L1129">        break;</span>
+      case INTEGER:
+      case MEDIUMINT:
+<span class="nc" id="L1132">        value = getInternalMediumInt(columnInfo);</span>
+<span class="nc" id="L1133">        break;</span>
+      case BIGINT:
+<span class="nc" id="L1135">        value = getInternalLong(columnInfo);</span>
+<span class="nc" id="L1136">        break;</span>
+      case FLOAT:
+<span class="nc" id="L1138">        value = (long) getInternalFloat(columnInfo);</span>
+<span class="nc" id="L1139">        break;</span>
+      case DOUBLE:
+<span class="nc" id="L1141">        value = (long) getInternalDouble(columnInfo);</span>
+<span class="nc" id="L1142">        break;</span>
+      case DECIMAL:
+      case OLDDECIMAL:
+<span class="nc" id="L1145">        BigDecimal bigDecimal = getInternalBigDecimal(columnInfo);</span>
+<span class="nc" id="L1146">        rangeCheck(Byte.class, Byte.MIN_VALUE, Byte.MAX_VALUE, bigDecimal, columnInfo);</span>
+<span class="nc" id="L1147">        return bigDecimal.byteValue();</span>
+      case VARSTRING:
+      case VARCHAR:
+      case STRING:
+<span class="nc" id="L1151">        value = Long.parseLong(new String(buf, pos, length, StandardCharsets.UTF_8));</span>
+<span class="nc" id="L1152">        break;</span>
+      default:
+<span class="nc" id="L1154">        throw new SQLException(</span>
+<span class="nc" id="L1155">            &quot;getByte not available for data field type &quot; + columnInfo.getColumnType()</span>
+<span class="nc" id="L1156">                .getJavaTypeName());</span>
+    }
+<span class="nc" id="L1158">    rangeCheck(Byte.class, Byte.MIN_VALUE, Byte.MAX_VALUE, value, columnInfo);</span>
+<span class="nc" id="L1159">    return (byte) value;</span>
+  }
+
+  /**
+   * Get short from raw binary format.
+   *
+   * @param columnInfo column information
+   * @return short value
+   * @throws SQLException if column type doesn't permit conversion
+   */
+  public short getInternalShort(ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L1170" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L1171">      return 0;</span>
+    }
+
+    long value;
+<span class="nc bnc" id="L1175" title="All 10 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case BIT:
+<span class="nc" id="L1177">        value = parseBit();</span>
+<span class="nc" id="L1178">        break;</span>
+      case TINYINT:
+<span class="nc" id="L1180">        value = getInternalTinyInt(columnInfo);</span>
+<span class="nc" id="L1181">        break;</span>
+      case SMALLINT:
+      case YEAR:
+<span class="nc" id="L1184">        value = ((buf[pos] &amp; 0xff) + ((buf[pos + 1] &amp; 0xff) &lt;&lt; 8));</span>
+<span class="nc bnc" id="L1185" title="All 2 branches missed.">        if (columnInfo.isSigned()) {</span>
+<span class="nc" id="L1186">          return (short) value;</span>
+        }
+<span class="nc" id="L1188">        value = value &amp; 0xffff;</span>
+<span class="nc" id="L1189">        break;</span>
+      case INTEGER:
+      case MEDIUMINT:
+<span class="nc" id="L1192">        value = getInternalMediumInt(columnInfo);</span>
+<span class="nc" id="L1193">        break;</span>
+      case BIGINT:
+<span class="nc" id="L1195">        value = getInternalLong(columnInfo);</span>
+<span class="nc" id="L1196">        break;</span>
+      case FLOAT:
+<span class="nc" id="L1198">        value = (long) getInternalFloat(columnInfo);</span>
+<span class="nc" id="L1199">        break;</span>
+      case DOUBLE:
+<span class="nc" id="L1201">        value = (long) getInternalDouble(columnInfo);</span>
+<span class="nc" id="L1202">        break;</span>
+      case DECIMAL:
+      case OLDDECIMAL:
+<span class="nc" id="L1205">        BigDecimal bigDecimal = getInternalBigDecimal(columnInfo);</span>
+<span class="nc" id="L1206">        rangeCheck(Short.class, Short.MIN_VALUE, Short.MAX_VALUE, bigDecimal, columnInfo);</span>
+<span class="nc" id="L1207">        return bigDecimal.shortValue();</span>
+      case VARSTRING:
+      case VARCHAR:
+      case STRING:
+<span class="nc" id="L1211">        value = Long.parseLong(new String(buf, pos, length, StandardCharsets.UTF_8));</span>
+<span class="nc" id="L1212">        break;</span>
+      default:
+<span class="nc" id="L1214">        throw new SQLException(</span>
+<span class="nc" id="L1215">            &quot;getShort not available for data field type &quot; + columnInfo.getColumnType()</span>
+<span class="nc" id="L1216">                .getJavaTypeName());</span>
+    }
+<span class="nc" id="L1218">    rangeCheck(Short.class, Short.MIN_VALUE, Short.MAX_VALUE, value, columnInfo);</span>
+<span class="nc" id="L1219">    return (short) value;</span>
+  }
+
+  /**
+   * Get Time in string format from raw binary format.
+   *
+   * @param columnInfo column information
+   * @return time value
+   */
+  public String getInternalTimeString(ColumnInformation columnInfo) {
+<span class="nc bnc" id="L1229" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L1230">      return null;</span>
+    }
+<span class="nc bnc" id="L1232" title="All 2 branches missed.">    if (length == 0) {</span>
+      // binary send 00:00:00 as 0.
+<span class="nc bnc" id="L1234" title="All 2 branches missed.">      if (columnInfo.getDecimals() == 0) {</span>
+<span class="nc" id="L1235">        return &quot;00:00:00&quot;;</span>
+      } else {
+<span class="nc" id="L1237">        StringBuilder value = new StringBuilder(&quot;00:00:00.&quot;);</span>
+<span class="nc" id="L1238">        int decimal = columnInfo.getDecimals();</span>
+<span class="nc bnc" id="L1239" title="All 2 branches missed.">        while (decimal-- &gt; 0) {</span>
+<span class="nc" id="L1240">          value.append(&quot;0&quot;);</span>
+        }
+<span class="nc" id="L1242">        return value.toString();</span>
+      }
+    }
+<span class="nc" id="L1245">    String rawValue = new String(buf, pos, length, StandardCharsets.UTF_8);</span>
+<span class="nc bnc" id="L1246" title="All 2 branches missed.">    if (&quot;0000-00-00&quot;.equals(rawValue)) {</span>
+<span class="nc" id="L1247">      return null;</span>
+    }
+
+<span class="nc" id="L1250">    int day = ((buf[pos + 1] &amp; 0xff)</span>
+        | ((buf[pos + 2] &amp; 0xff) &lt;&lt; 8)
+        | ((buf[pos + 3] &amp; 0xff) &lt;&lt; 16)
+        | ((buf[pos + 4] &amp; 0xff) &lt;&lt; 24));
+<span class="nc" id="L1254">    int hour = buf[pos + 5];</span>
+<span class="nc" id="L1255">    int timeHour = hour + day * 24;</span>
+
+    String hourString;
+<span class="nc bnc" id="L1258" title="All 2 branches missed.">    if (timeHour &lt; 10) {</span>
+<span class="nc" id="L1259">      hourString = &quot;0&quot; + timeHour;</span>
+    } else {
+<span class="nc" id="L1261">      hourString = Integer.toString(timeHour);</span>
+    }
+
+    String minuteString;
+<span class="nc" id="L1265">    int minutes = buf[pos + 6];</span>
+<span class="nc bnc" id="L1266" title="All 2 branches missed.">    if (minutes &lt; 10) {</span>
+<span class="nc" id="L1267">      minuteString = &quot;0&quot; + minutes;</span>
+    } else {
+<span class="nc" id="L1269">      minuteString = Integer.toString(minutes);</span>
+    }
+
+    String secondString;
+<span class="nc" id="L1273">    int seconds = buf[pos + 7];</span>
+<span class="nc bnc" id="L1274" title="All 2 branches missed.">    if (seconds &lt; 10) {</span>
+<span class="nc" id="L1275">      secondString = &quot;0&quot; + seconds;</span>
+    } else {
+<span class="nc" id="L1277">      secondString = Integer.toString(seconds);</span>
+    }
+
+<span class="nc" id="L1280">    int microseconds = 0;</span>
+<span class="nc bnc" id="L1281" title="All 2 branches missed.">    if (length &gt; 8) {</span>
+<span class="nc" id="L1282">      microseconds = ((buf[pos + 8] &amp; 0xff)</span>
+          | (buf[pos + 9] &amp; 0xff) &lt;&lt; 8
+          | (buf[pos + 10] &amp; 0xff) &lt;&lt; 16
+          | (buf[pos + 11] &amp; 0xff) &lt;&lt; 24);
+    }
+
+<span class="nc" id="L1288">    StringBuilder microsecondString = new StringBuilder(Integer.toString(microseconds));</span>
+<span class="nc bnc" id="L1289" title="All 2 branches missed.">    while (microsecondString.length() &lt; 6) {</span>
+<span class="nc" id="L1290">      microsecondString.insert(0, &quot;0&quot;);</span>
+    }
+<span class="nc bnc" id="L1292" title="All 2 branches missed.">    boolean negative = (buf[pos] == 0x01);</span>
+<span class="nc bnc" id="L1293" title="All 2 branches missed.">    return (negative ? &quot;-&quot; : &quot;&quot;) + (hourString + &quot;:&quot; + minuteString + &quot;:&quot; + secondString + &quot;.&quot;</span>
+        + microsecondString);
+  }
+
+  /**
+   * Get BigInteger from raw binary format.
+   *
+   * @param columnInfo column information
+   * @return BigInteger value
+   * @throws SQLException if column type doesn't permit conversion or value is not in BigInteger
+   *                      range
+   */
+  public BigInteger getInternalBigInteger(ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L1306" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L1307">      return null;</span>
+    }
+<span class="nc bnc" id="L1309" title="All 9 branches missed.">    switch (columnInfo.getColumnType()) {</span>
+      case BIT:
+<span class="nc" id="L1311">        return BigInteger.valueOf((long) buf[pos]);</span>
+      case TINYINT:
+<span class="nc" id="L1313">        return BigInteger.valueOf((long)</span>
+<span class="nc bnc" id="L1314" title="All 2 branches missed.">            (columnInfo.isSigned() ? buf[pos] : (buf[pos] &amp; 0xff)));</span>
+      case SMALLINT:
+      case YEAR:
+<span class="nc" id="L1317">        short valueShort = (short) ((buf[pos] &amp; 0xff) | ((buf[pos + 1] &amp; 0xff) &lt;&lt; 8));</span>
+<span class="nc" id="L1318">        return BigInteger</span>
+<span class="nc bnc" id="L1319" title="All 2 branches missed.">            .valueOf((long) (columnInfo.isSigned() ? valueShort : (valueShort &amp; 0xffff)));</span>
+      case INTEGER:
+      case MEDIUMINT:
+<span class="nc" id="L1322">        int valueInt = ((buf[pos] &amp; 0xff)</span>
+            + ((buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+            + ((buf[pos + 2] &amp; 0xff) &lt;&lt; 16)
+            + ((buf[pos + 3] &amp; 0xff) &lt;&lt; 24));
+<span class="nc bnc" id="L1326" title="All 2 branches missed.">        return BigInteger.valueOf(((columnInfo.isSigned()) ? valueInt</span>
+<span class="nc bnc" id="L1327" title="All 2 branches missed.">            : (valueInt &gt;= 0) ? valueInt : valueInt &amp; 0xffffffffL));</span>
+      case BIGINT:
+<span class="nc" id="L1329">        long value = ((buf[pos] &amp; 0xff)</span>
+            + ((long) (buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+            + ((long) (buf[pos + 2] &amp; 0xff) &lt;&lt; 16)
+            + ((long) (buf[pos + 3] &amp; 0xff) &lt;&lt; 24)
+            + ((long) (buf[pos + 4] &amp; 0xff) &lt;&lt; 32)
+            + ((long) (buf[pos + 5] &amp; 0xff) &lt;&lt; 40)
+            + ((long) (buf[pos + 6] &amp; 0xff) &lt;&lt; 48)
+            + ((long) (buf[pos + 7] &amp; 0xff) &lt;&lt; 56)
+        );
+<span class="nc bnc" id="L1338" title="All 2 branches missed.">        if (columnInfo.isSigned()) {</span>
+<span class="nc" id="L1339">          return BigInteger.valueOf(value);</span>
+        } else {
+<span class="nc" id="L1341">          return new BigInteger(1, new byte[]{(byte) (value &gt;&gt; 56),</span>
+              (byte) (value &gt;&gt; 48), (byte) (value &gt;&gt; 40), (byte) (value &gt;&gt; 32),
+              (byte) (value &gt;&gt; 24), (byte) (value &gt;&gt; 16), (byte) (value &gt;&gt; 8),
+              (byte) value});
+        }
+      case FLOAT:
+<span class="nc" id="L1347">        return BigInteger.valueOf((long) getInternalFloat(columnInfo));</span>
+      case DOUBLE:
+<span class="nc" id="L1349">        return BigInteger.valueOf((long) getInternalDouble(columnInfo));</span>
+      case DECIMAL:
+      case OLDDECIMAL:
+<span class="nc" id="L1352">        return BigInteger.valueOf(getInternalBigDecimal(columnInfo).longValue());</span>
+      default:
+<span class="nc" id="L1354">        return new BigInteger(new String(buf, pos, length, StandardCharsets.UTF_8));</span>
+    }
+  }
+
+  /**
+   * Get ZonedDateTime from raw binary format.
+   *
+   * @param columnInfo column information
+   * @param clazz      asked class
+   * @param timeZone   time zone
+   * @return ZonedDateTime value
+   * @throws SQLException if column type doesn't permit conversion
+   */
+  public ZonedDateTime getInternalZonedDateTime(ColumnInformation columnInfo, Class clazz,
+      TimeZone timeZone) throws SQLException {
+<span class="nc bnc" id="L1369" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L1370">      return null;</span>
+    }
+<span class="nc bnc" id="L1372" title="All 2 branches missed.">    if (length == 0) {</span>
+<span class="nc" id="L1373">      lastValueNull |= BIT_LAST_FIELD_NULL;</span>
+<span class="nc" id="L1374">      return null;</span>
+    }
+
+<span class="nc bnc" id="L1377" title="All 3 branches missed.">    switch (columnInfo.getColumnType().getSqlType()) {</span>
+      case Types.TIMESTAMP:
+
+<span class="nc" id="L1380">        int year = ((buf[pos] &amp; 0xff) | (buf[pos + 1] &amp; 0xff) &lt;&lt; 8);</span>
+<span class="nc" id="L1381">        int month = buf[pos + 2];</span>
+<span class="nc" id="L1382">        int day = buf[pos + 3];</span>
+<span class="nc" id="L1383">        int hour = 0;</span>
+<span class="nc" id="L1384">        int minutes = 0;</span>
+<span class="nc" id="L1385">        int seconds = 0;</span>
+<span class="nc" id="L1386">        int microseconds = 0;</span>
+
+<span class="nc bnc" id="L1388" title="All 2 branches missed.">        if (length &gt; 4) {</span>
+<span class="nc" id="L1389">          hour = buf[pos + 4];</span>
+<span class="nc" id="L1390">          minutes = buf[pos + 5];</span>
+<span class="nc" id="L1391">          seconds = buf[pos + 6];</span>
+
+<span class="nc bnc" id="L1393" title="All 2 branches missed.">          if (length &gt; 7) {</span>
+<span class="nc" id="L1394">            microseconds = ((buf[pos + 7] &amp; 0xff)</span>
+                + ((buf[pos + 8] &amp; 0xff) &lt;&lt; 8)
+                + ((buf[pos + 9] &amp; 0xff) &lt;&lt; 16)
+                + ((buf[pos + 10] &amp; 0xff) &lt;&lt; 24));
+          }
+        }
+
+<span class="nc" id="L1401">        return ZonedDateTime</span>
+<span class="nc" id="L1402">            .of(year, month, day, hour, minutes, seconds, microseconds * 1000, timeZone.toZoneId());</span>
+
+      case Types.VARCHAR:
+      case Types.LONGVARCHAR:
+      case Types.CHAR:
+
+        //string conversion
+<span class="nc" id="L1409">        String raw = new String(buf, pos, length, StandardCharsets.UTF_8);</span>
+<span class="nc bnc" id="L1410" title="All 2 branches missed.">        if (raw.startsWith(&quot;0000-00-00 00:00:00&quot;)) {</span>
+<span class="nc" id="L1411">          return null;</span>
+        }
+        try {
+<span class="nc" id="L1414">          return ZonedDateTime.parse(raw, TEXT_ZONED_DATE_TIME);</span>
+<span class="nc" id="L1415">        } catch (DateTimeParseException dateParserEx) {</span>
+<span class="nc" id="L1416">          throw new SQLException(raw</span>
+              + &quot; cannot be parse as ZonedDateTime. time must have \&quot;yyyy-MM-dd[T/ ]HH:mm:ss[.S]\&quot; &quot;
+              + &quot;with offset and timezone format (example : '2011-12-03 10:15:30+01:00[Europe/Paris]')&quot;);
+        }
+
+      default:
+<span class="nc" id="L1422">        throw new SQLException(</span>
+<span class="nc" id="L1423">            &quot;Cannot read &quot; + clazz.getName() + &quot; using a &quot; + columnInfo.getColumnType()</span>
+<span class="nc" id="L1424">                .getJavaTypeName() + &quot; field&quot;);</span>
+    }
+
+  }
+
+  /**
+   * Get OffsetTime from raw binary format.
+   *
+   * @param columnInfo column information
+   * @param timeZone   time zone
+   * @return OffsetTime value
+   * @throws SQLException if column type doesn't permit conversion
+   */
+  public OffsetTime getInternalOffsetTime(ColumnInformation columnInfo, TimeZone timeZone)
+      throws SQLException {
+<span class="nc bnc" id="L1439" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L1440">      return null;</span>
+    }
+<span class="nc bnc" id="L1442" title="All 2 branches missed.">    if (length == 0) {</span>
+<span class="nc" id="L1443">      lastValueNull |= BIT_LAST_FIELD_NULL;</span>
+<span class="nc" id="L1444">      return null;</span>
+    }
+
+<span class="nc" id="L1447">    ZoneId zoneId = timeZone.toZoneId().normalized();</span>
+<span class="nc bnc" id="L1448" title="All 2 branches missed.">    if (zoneId instanceof ZoneOffset) {</span>
+<span class="nc" id="L1449">      ZoneOffset zoneOffset = (ZoneOffset) zoneId;</span>
+
+<span class="nc" id="L1451">      int day = 0;</span>
+<span class="nc" id="L1452">      int hour = 0;</span>
+<span class="nc" id="L1453">      int minutes = 0;</span>
+<span class="nc" id="L1454">      int seconds = 0;</span>
+<span class="nc" id="L1455">      int microseconds = 0;</span>
+
+<span class="nc bnc" id="L1457" title="All 4 branches missed.">      switch (columnInfo.getColumnType().getSqlType()) {</span>
+        case Types.TIMESTAMP:
+<span class="nc" id="L1459">          int year = ((buf[pos] &amp; 0xff) | (buf[pos + 1] &amp; 0xff) &lt;&lt; 8);</span>
+<span class="nc" id="L1460">          int month = buf[pos + 2];</span>
+<span class="nc" id="L1461">          day = buf[pos + 3];</span>
+
+<span class="nc bnc" id="L1463" title="All 2 branches missed.">          if (length &gt; 4) {</span>
+<span class="nc" id="L1464">            hour = buf[pos + 4];</span>
+<span class="nc" id="L1465">            minutes = buf[pos + 5];</span>
+<span class="nc" id="L1466">            seconds = buf[pos + 6];</span>
+
+<span class="nc bnc" id="L1468" title="All 2 branches missed.">            if (length &gt; 7) {</span>
+<span class="nc" id="L1469">              microseconds = ((buf[pos + 7] &amp; 0xff)</span>
+                  + ((buf[pos + 8] &amp; 0xff) &lt;&lt; 8)
+                  + ((buf[pos + 9] &amp; 0xff) &lt;&lt; 16)
+                  + ((buf[pos + 10] &amp; 0xff) &lt;&lt; 24));
+            }
+          }
+
+<span class="nc" id="L1476">          return ZonedDateTime</span>
+<span class="nc" id="L1477">              .of(year, month, day, hour, minutes, seconds, microseconds * 1000, zoneOffset)</span>
+<span class="nc" id="L1478">              .toOffsetDateTime().toOffsetTime();</span>
+
+        case Types.TIME:
+
+<span class="nc bnc" id="L1482" title="All 2 branches missed.">          final boolean negate = (buf[pos] &amp; 0xff) == 0x01;</span>
+
+<span class="nc bnc" id="L1484" title="All 2 branches missed.">          if (length &gt; 4) {</span>
+<span class="nc" id="L1485">            day = ((buf[pos + 1] &amp; 0xff)</span>
+                + ((buf[pos + 2] &amp; 0xff) &lt;&lt; 8)
+                + ((buf[pos + 3] &amp; 0xff) &lt;&lt; 16)
+                + ((buf[pos + 4] &amp; 0xff) &lt;&lt; 24));
+          }
+
+<span class="nc bnc" id="L1491" title="All 2 branches missed.">          if (length &gt; 7) {</span>
+<span class="nc" id="L1492">            hour = buf[pos + 5];</span>
+<span class="nc" id="L1493">            minutes = buf[pos + 6];</span>
+<span class="nc" id="L1494">            seconds = buf[pos + 7];</span>
+          }
+
+<span class="nc bnc" id="L1497" title="All 2 branches missed.">          if (length &gt; 8) {</span>
+<span class="nc" id="L1498">            microseconds = ((buf[pos + 8] &amp; 0xff)</span>
+                + ((buf[pos + 9] &amp; 0xff) &lt;&lt; 8)
+                + ((buf[pos + 10] &amp; 0xff) &lt;&lt; 16)
+                + ((buf[pos + 11] &amp; 0xff) &lt;&lt; 24));
+          }
+
+<span class="nc" id="L1504">          return OffsetTime</span>
+<span class="nc bnc" id="L1505" title="All 2 branches missed.">              .of((negate ? -1 : 1) * (day * 24 + hour), minutes, seconds, microseconds * 1000,</span>
+                  zoneOffset);
+
+        case Types.VARCHAR:
+        case Types.LONGVARCHAR:
+        case Types.CHAR:
+<span class="nc" id="L1511">          String raw = new String(buf, pos, length, StandardCharsets.UTF_8);</span>
+          try {
+<span class="nc" id="L1513">            return OffsetTime.parse(raw, DateTimeFormatter.ISO_OFFSET_TIME);</span>
+<span class="nc" id="L1514">          } catch (DateTimeParseException dateParserEx) {</span>
+<span class="nc" id="L1515">            throw new SQLException(raw</span>
+                + &quot; cannot be parse as OffsetTime (format is \&quot;HH:mm:ss[.S]\&quot; with offset for data type \&quot;&quot;
+<span class="nc" id="L1517">                + columnInfo.getColumnType() + &quot;\&quot;)&quot;);</span>
+          }
+
+        default:
+<span class="nc" id="L1521">          throw new SQLException(&quot;Cannot read &quot; + OffsetTime.class.getName() + &quot; using a &quot;</span>
+<span class="nc" id="L1522">              + columnInfo.getColumnType().getJavaTypeName() + &quot; field&quot;);</span>
+      }
+    }
+
+<span class="nc bnc" id="L1526" title="All 2 branches missed.">    if (options.useLegacyDatetimeCode) {</span>
+      //system timezone is not an offset
+<span class="nc" id="L1528">      throw new SQLException(</span>
+          &quot;Cannot return an OffsetTime for a TIME field when default timezone is '&quot; + zoneId
+              + &quot;' (only possible for time-zone offset from Greenwich/UTC, such as +02:00)&quot;);
+    }
+
+    //server timezone is not an offset
+<span class="nc" id="L1534">    throw new SQLException(</span>
+        &quot;Cannot return an OffsetTime for a TIME field when server timezone '&quot; + zoneId
+            + &quot;' (only possible for time-zone offset from Greenwich/UTC, such as +02:00)&quot;);
+
+  }
+
+  /**
+   * Get LocalTime from raw binary format.
+   *
+   * @param columnInfo column information
+   * @param timeZone   time zone
+   * @return LocalTime value
+   * @throws SQLException if column type doesn't permit conversion
+   */
+  public LocalTime getInternalLocalTime(ColumnInformation columnInfo, TimeZone timeZone)
+      throws SQLException {
+<span class="nc bnc" id="L1550" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L1551">      return null;</span>
+    }
+<span class="nc bnc" id="L1553" title="All 2 branches missed.">    if (length == 0) {</span>
+<span class="nc" id="L1554">      lastValueNull |= BIT_LAST_FIELD_NULL;</span>
+<span class="nc" id="L1555">      return null;</span>
+    }
+
+<span class="nc bnc" id="L1558" title="All 4 branches missed.">    switch (columnInfo.getColumnType().getSqlType()) {</span>
+      case Types.TIME:
+
+<span class="nc" id="L1561">        int day = 0;</span>
+<span class="nc" id="L1562">        int hour = 0;</span>
+<span class="nc" id="L1563">        int minutes = 0;</span>
+<span class="nc" id="L1564">        int seconds = 0;</span>
+<span class="nc" id="L1565">        int microseconds = 0;</span>
+
+<span class="nc bnc" id="L1567" title="All 2 branches missed.">        final boolean negate = (buf[pos] &amp; 0xff) == 0x01;</span>
+
+<span class="nc bnc" id="L1569" title="All 2 branches missed.">        if (length &gt; 4) {</span>
+<span class="nc" id="L1570">          day = ((buf[pos + 1] &amp; 0xff)</span>
+              + ((buf[pos + 2] &amp; 0xff) &lt;&lt; 8)
+              + ((buf[pos + 3] &amp; 0xff) &lt;&lt; 16)
+              + ((buf[pos + 4] &amp; 0xff) &lt;&lt; 24));
+        }
+
+<span class="nc bnc" id="L1576" title="All 2 branches missed.">        if (length &gt; 7) {</span>
+<span class="nc" id="L1577">          hour = buf[pos + 5];</span>
+<span class="nc" id="L1578">          minutes = buf[pos + 6];</span>
+<span class="nc" id="L1579">          seconds = buf[pos + 7];</span>
+        }
+
+<span class="nc bnc" id="L1582" title="All 2 branches missed.">        if (length &gt; 8) {</span>
+<span class="nc" id="L1583">          microseconds = ((buf[pos + 8] &amp; 0xff)</span>
+              + ((buf[pos + 9] &amp; 0xff) &lt;&lt; 8)
+              + ((buf[pos + 10] &amp; 0xff) &lt;&lt; 16)
+              + ((buf[pos + 11] &amp; 0xff) &lt;&lt; 24));
+        }
+
+<span class="nc" id="L1589">        return LocalTime</span>
+<span class="nc bnc" id="L1590" title="All 2 branches missed.">            .of((negate ? -1 : 1) * (day * 24 + hour), minutes, seconds, microseconds * 1000);</span>
+
+      case Types.VARCHAR:
+      case Types.LONGVARCHAR:
+      case Types.CHAR:
+        //string conversion
+<span class="nc" id="L1596">        String raw = new String(buf, pos, length, StandardCharsets.UTF_8);</span>
+        try {
+<span class="nc" id="L1598">          return LocalTime</span>
+<span class="nc" id="L1599">              .parse(raw, DateTimeFormatter.ISO_LOCAL_TIME.withZone(timeZone.toZoneId()));</span>
+<span class="nc" id="L1600">        } catch (DateTimeParseException dateParserEx) {</span>
+<span class="nc" id="L1601">          throw new SQLException(</span>
+              raw + &quot; cannot be parse as LocalTime (format is \&quot;HH:mm:ss[.S]\&quot; for data type \&quot;&quot;
+<span class="nc" id="L1603">                  + columnInfo.getColumnType() + &quot;\&quot;)&quot;);</span>
+        }
+
+      case Types.TIMESTAMP:
+<span class="nc" id="L1607">        ZonedDateTime zonedDateTime = getInternalZonedDateTime(columnInfo, LocalTime.class,</span>
+            timeZone);
+<span class="nc bnc" id="L1609" title="All 2 branches missed.">        return zonedDateTime == null ? null</span>
+<span class="nc" id="L1610">            : zonedDateTime.withZoneSameInstant(ZoneId.systemDefault()).toLocalTime();</span>
+
+      default:
+<span class="nc" id="L1613">        throw new SQLException(</span>
+<span class="nc" id="L1614">            &quot;Cannot read LocalTime using a &quot; + columnInfo.getColumnType().getJavaTypeName()</span>
+                + &quot; field&quot;);
+    }
+
+  }
+
+  /**
+   * Get LocalDate from raw binary format.
+   *
+   * @param columnInfo column information
+   * @param timeZone   time zone
+   * @return LocalDate value
+   * @throws SQLException if column type doesn't permit conversion
+   */
+  public LocalDate getInternalLocalDate(ColumnInformation columnInfo, TimeZone timeZone)
+      throws SQLException {
+<span class="nc bnc" id="L1630" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L1631">      return null;</span>
+    }
+<span class="nc bnc" id="L1633" title="All 2 branches missed.">    if (length == 0) {</span>
+<span class="nc" id="L1634">      lastValueNull |= BIT_LAST_FIELD_NULL;</span>
+<span class="nc" id="L1635">      return null;</span>
+    }
+
+<span class="nc bnc" id="L1638" title="All 4 branches missed.">    switch (columnInfo.getColumnType().getSqlType()) {</span>
+      case Types.DATE:
+<span class="nc" id="L1640">        int year = ((buf[pos] &amp; 0xff) | (buf[pos + 1] &amp; 0xff) &lt;&lt; 8);</span>
+<span class="nc" id="L1641">        int month = buf[pos + 2];</span>
+<span class="nc" id="L1642">        int day = buf[pos + 3];</span>
+<span class="nc" id="L1643">        return LocalDate.of(year, month, day);</span>
+
+      case Types.TIMESTAMP:
+<span class="nc" id="L1646">        ZonedDateTime zonedDateTime = getInternalZonedDateTime(columnInfo, LocalDate.class,</span>
+            timeZone);
+<span class="nc bnc" id="L1648" title="All 2 branches missed.">        return zonedDateTime == null ? null</span>
+<span class="nc" id="L1649">            : zonedDateTime.withZoneSameInstant(ZoneId.systemDefault()).toLocalDate();</span>
+
+      case Types.VARCHAR:
+      case Types.LONGVARCHAR:
+      case Types.CHAR:
+        //string conversion
+<span class="nc" id="L1655">        String raw = new String(buf, pos, length, StandardCharsets.UTF_8);</span>
+<span class="nc bnc" id="L1656" title="All 2 branches missed.">        if (raw.startsWith(&quot;0000-00-00&quot;)) {</span>
+<span class="nc" id="L1657">          return null;</span>
+        }
+        try {
+<span class="nc" id="L1660">          return LocalDate</span>
+<span class="nc" id="L1661">              .parse(raw, DateTimeFormatter.ISO_LOCAL_DATE.withZone(timeZone.toZoneId()));</span>
+<span class="nc" id="L1662">        } catch (DateTimeParseException dateParserEx) {</span>
+<span class="nc" id="L1663">          throw new SQLException(</span>
+              raw + &quot; cannot be parse as LocalDate. time must have \&quot;yyyy-MM-dd\&quot; format&quot;);
+        }
+
+      default:
+<span class="nc" id="L1668">        throw new SQLException(</span>
+<span class="nc" id="L1669">            &quot;Cannot read LocalDate using a &quot; + columnInfo.getColumnType().getJavaTypeName()</span>
+                + &quot; field&quot;);
+    }
+  }
+
+  /**
+   * Indicate if data is binary encoded.
+   *
+   * @return always true.
+   */
+  public boolean isBinaryEncoded() {
+<span class="nc" id="L1680">    return true;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

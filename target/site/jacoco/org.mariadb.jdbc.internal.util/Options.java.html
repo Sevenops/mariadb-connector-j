@@ -1,0 +1,574 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Options.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.util</a> &gt; <span class="el_source">Options.java</span></div><h1>Options.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.util;
+
+import java.lang.reflect.Field;
+import java.sql.DriverManager;
+
+@SuppressWarnings(&quot;ConstantConditions&quot;)
+<span class="nc" id="L59">public class Options implements Cloneable {</span>
+
+  public static final int MIN_VALUE__MAX_IDLE_TIME = 60;
+
+  //standard options
+  public String user;
+  public String password;
+
+  //divers
+  public boolean trustServerCertificate;
+  public String serverSslCert;
+  public String trustStore;
+  public String trustStoreType;
+  public String keyStoreType;
+  public String trustStorePassword;
+  public String keyStore;
+  public String keyStorePassword;
+  public String keyPassword;
+  public String enabledSslProtocolSuites;
+<span class="nc" id="L78">  public boolean useFractionalSeconds = true;</span>
+  public boolean pinGlobalTxToPhysicalConnection;
+  public String socketFactory;
+<span class="nc" id="L81">  public int connectTimeout =</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">      DriverManager.getLoginTimeout() &gt; 0 ? DriverManager.getLoginTimeout() * 1000 : 30_000;</span>
+  public String pipe;
+  public String localSocket;
+  public String sharedMemory;
+<span class="nc" id="L86">  public boolean tcpNoDelay = true;</span>
+<span class="nc" id="L87">  public boolean tcpKeepAlive = true;</span>
+  public Integer tcpRcvBuf;
+  public Integer tcpSndBuf;
+  public boolean tcpAbortiveClose;
+  public String localSocketAddress;
+  public Integer socketTimeout;
+  public boolean allowMultiQueries;
+  public boolean rewriteBatchedStatements;
+  public boolean useCompression;
+  public boolean interactiveClient;
+  public String passwordCharacterEncoding;
+
+  public boolean useSsl;
+  public String enabledSslCipherSuites;
+  public String sessionVariables;
+<span class="nc" id="L102">  public boolean tinyInt1isBit = true;</span>
+<span class="nc" id="L103">  public boolean yearIsDateType = true;</span>
+  public boolean createDatabaseIfNotExist;
+  public String serverTimezone;
+<span class="nc" id="L106">  public boolean nullCatalogMeansCurrent = true;</span>
+  public boolean dumpQueriesOnException;
+  public boolean useOldAliasMetadataBehavior;
+  public boolean useMysqlMetadata;
+<span class="nc" id="L110">  public boolean allowLocalInfile = true;</span>
+<span class="nc" id="L111">  public boolean cachePrepStmts = true;</span>
+<span class="nc" id="L112">  public int prepStmtCacheSize = 250;</span>
+<span class="nc" id="L113">  public int prepStmtCacheSqlLimit = 2048;</span>
+<span class="nc" id="L114">  public boolean useLegacyDatetimeCode = true;</span>
+  public boolean useAffectedRows;
+  public boolean maximizeMysqlCompatibility;
+  public boolean useServerPrepStmts;
+<span class="nc" id="L118">  public boolean continueBatchOnError = true;</span>
+<span class="nc" id="L119">  public boolean jdbcCompliantTruncation = true;</span>
+<span class="nc" id="L120">  public boolean cacheCallableStmts = true;</span>
+<span class="nc" id="L121">  public int callableStmtCacheSize = 150;</span>
+  public String connectionAttributes;
+  public Boolean useBatchMultiSend;
+<span class="nc" id="L124">  public int useBatchMultiSendNumber = 100;</span>
+  public Boolean usePipelineAuth;
+  public boolean enablePacketDebug;
+  public boolean useBulkStmts;
+  public boolean disableSslHostnameVerification;
+<span class="nc" id="L129">  public boolean autocommit = true;</span>
+  public boolean includeInnodbStatusInDeadlockExceptions;
+  public boolean includeThreadDumpInDeadlockExceptions;
+  public String servicePrincipalName;
+
+  //logging options
+  public boolean log;
+  public boolean profileSql;
+<span class="nc" id="L137">  public int maxQuerySizeToLog = 1024;</span>
+  public Long slowQueryThresholdNanos;
+
+  //HA options
+  public boolean assureReadOnly;
+  public boolean autoReconnect;
+  public boolean failOnReadOnly;
+<span class="nc" id="L144">  public int retriesAllDown = 120;</span>
+  public int validConnectionTimeout;
+<span class="nc" id="L146">  public int loadBalanceBlacklistTimeout = 50;</span>
+<span class="nc" id="L147">  public int failoverLoopRetries = 120;</span>
+  public boolean allowMasterDownConnection;
+  public String galeraAllowedState;
+
+  //Pool options
+  public boolean pool;
+  public String poolName;
+<span class="nc" id="L154">  public int maxPoolSize = 8;</span>
+  public Integer minPoolSize;
+<span class="nc" id="L156">  public int maxIdleTime = 600;</span>
+  public boolean staticGlobal;
+<span class="nc" id="L158">  public boolean registerJmxPool = true;</span>
+<span class="nc" id="L159">  public int poolValidMinDelay = 1000;</span>
+  public boolean useResetConnection;
+<span class="nc" id="L161">  public boolean useReadAheadInput = true;</span>
+
+  @Override
+  public String toString() {
+<span class="nc" id="L165">    StringBuilder result = new StringBuilder();</span>
+<span class="nc" id="L166">    String newLine = System.getProperty(&quot;line.separator&quot;);</span>
+<span class="nc" id="L167">    result.append(this.getClass().getName());</span>
+<span class="nc" id="L168">    result.append(&quot; Options {&quot;);</span>
+<span class="nc" id="L169">    result.append(newLine);</span>
+
+<span class="nc" id="L171">    Field[] fields = this.getClass().getDeclaredFields();</span>
+<span class="nc bnc" id="L172" title="All 2 branches missed.">    for (Field field : fields) {</span>
+<span class="nc" id="L173">      result.append(&quot;  &quot;);</span>
+      try {
+<span class="nc" id="L175">        result.append(field.getName());</span>
+<span class="nc" id="L176">        result.append(&quot;: &quot;);</span>
+        //requires access to private field:
+<span class="nc" id="L178">        result.append(field.get(this));</span>
+<span class="nc" id="L179">      } catch (IllegalAccessException ex) {</span>
+        //ignore error
+<span class="nc" id="L181">      }</span>
+<span class="nc" id="L182">      result.append(newLine);</span>
+    }
+<span class="nc" id="L184">    result.append(&quot;}&quot;);</span>
+<span class="nc" id="L185">    return result.toString();</span>
+  }
+
+  @SuppressWarnings(&quot;SimplifiableIfStatement&quot;)
+  @Override
+  public boolean equals(Object obj) {
+<span class="nc bnc" id="L191" title="All 2 branches missed.">    if (this == obj) {</span>
+<span class="nc" id="L192">      return true;</span>
+    }
+<span class="nc bnc" id="L194" title="All 4 branches missed.">    if (obj == null || getClass() != obj.getClass()) {</span>
+<span class="nc" id="L195">      return false;</span>
+    }
+
+<span class="nc" id="L198">    Options opt = (Options) obj;</span>
+
+<span class="nc bnc" id="L200" title="All 2 branches missed.">    if (trustServerCertificate != opt.trustServerCertificate) {</span>
+<span class="nc" id="L201">      return false;</span>
+    }
+<span class="nc bnc" id="L203" title="All 2 branches missed.">    if (useFractionalSeconds != opt.useFractionalSeconds) {</span>
+<span class="nc" id="L204">      return false;</span>
+    }
+<span class="nc bnc" id="L206" title="All 2 branches missed.">    if (pinGlobalTxToPhysicalConnection != opt.pinGlobalTxToPhysicalConnection) {</span>
+<span class="nc" id="L207">      return false;</span>
+    }
+<span class="nc bnc" id="L209" title="All 2 branches missed.">    if (tcpNoDelay != opt.tcpNoDelay) {</span>
+<span class="nc" id="L210">      return false;</span>
+    }
+<span class="nc bnc" id="L212" title="All 2 branches missed.">    if (tcpKeepAlive != opt.tcpKeepAlive) {</span>
+<span class="nc" id="L213">      return false;</span>
+    }
+<span class="nc bnc" id="L215" title="All 2 branches missed.">    if (tcpAbortiveClose != opt.tcpAbortiveClose) {</span>
+<span class="nc" id="L216">      return false;</span>
+    }
+<span class="nc bnc" id="L218" title="All 2 branches missed.">    if (allowMultiQueries != opt.allowMultiQueries) {</span>
+<span class="nc" id="L219">      return false;</span>
+    }
+<span class="nc bnc" id="L221" title="All 2 branches missed.">    if (rewriteBatchedStatements != opt.rewriteBatchedStatements) {</span>
+<span class="nc" id="L222">      return false;</span>
+    }
+<span class="nc bnc" id="L224" title="All 2 branches missed.">    if (useCompression != opt.useCompression) {</span>
+<span class="nc" id="L225">      return false;</span>
+    }
+<span class="nc bnc" id="L227" title="All 2 branches missed.">    if (interactiveClient != opt.interactiveClient) {</span>
+<span class="nc" id="L228">      return false;</span>
+    }
+<span class="nc bnc" id="L230" title="All 2 branches missed.">    if (useSsl != opt.useSsl) {</span>
+<span class="nc" id="L231">      return false;</span>
+    }
+<span class="nc bnc" id="L233" title="All 2 branches missed.">    if (tinyInt1isBit != opt.tinyInt1isBit) {</span>
+<span class="nc" id="L234">      return false;</span>
+    }
+<span class="nc bnc" id="L236" title="All 2 branches missed.">    if (yearIsDateType != opt.yearIsDateType) {</span>
+<span class="nc" id="L237">      return false;</span>
+    }
+<span class="nc bnc" id="L239" title="All 2 branches missed.">    if (createDatabaseIfNotExist != opt.createDatabaseIfNotExist) {</span>
+<span class="nc" id="L240">      return false;</span>
+    }
+<span class="nc bnc" id="L242" title="All 2 branches missed.">    if (nullCatalogMeansCurrent != opt.nullCatalogMeansCurrent) {</span>
+<span class="nc" id="L243">      return false;</span>
+    }
+<span class="nc bnc" id="L245" title="All 2 branches missed.">    if (dumpQueriesOnException != opt.dumpQueriesOnException) {</span>
+<span class="nc" id="L246">      return false;</span>
+    }
+<span class="nc bnc" id="L248" title="All 2 branches missed.">    if (useOldAliasMetadataBehavior != opt.useOldAliasMetadataBehavior) {</span>
+<span class="nc" id="L249">      return false;</span>
+    }
+<span class="nc bnc" id="L251" title="All 2 branches missed.">    if (allowLocalInfile != opt.allowLocalInfile) {</span>
+<span class="nc" id="L252">      return false;</span>
+    }
+<span class="nc bnc" id="L254" title="All 2 branches missed.">    if (cachePrepStmts != opt.cachePrepStmts) {</span>
+<span class="nc" id="L255">      return false;</span>
+    }
+<span class="nc bnc" id="L257" title="All 2 branches missed.">    if (useLegacyDatetimeCode != opt.useLegacyDatetimeCode) {</span>
+<span class="nc" id="L258">      return false;</span>
+    }
+<span class="nc bnc" id="L260" title="All 2 branches missed.">    if (useAffectedRows != opt.useAffectedRows) {</span>
+<span class="nc" id="L261">      return false;</span>
+    }
+<span class="nc bnc" id="L263" title="All 2 branches missed.">    if (maximizeMysqlCompatibility != opt.maximizeMysqlCompatibility) {</span>
+<span class="nc" id="L264">      return false;</span>
+    }
+<span class="nc bnc" id="L266" title="All 2 branches missed.">    if (useServerPrepStmts != opt.useServerPrepStmts) {</span>
+<span class="nc" id="L267">      return false;</span>
+    }
+<span class="nc bnc" id="L269" title="All 2 branches missed.">    if (continueBatchOnError != opt.continueBatchOnError) {</span>
+<span class="nc" id="L270">      return false;</span>
+    }
+<span class="nc bnc" id="L272" title="All 2 branches missed.">    if (jdbcCompliantTruncation != opt.jdbcCompliantTruncation) {</span>
+<span class="nc" id="L273">      return false;</span>
+    }
+<span class="nc bnc" id="L275" title="All 2 branches missed.">    if (cacheCallableStmts != opt.cacheCallableStmts) {</span>
+<span class="nc" id="L276">      return false;</span>
+    }
+<span class="nc bnc" id="L278" title="All 2 branches missed.">    if (useBatchMultiSendNumber != opt.useBatchMultiSendNumber) {</span>
+<span class="nc" id="L279">      return false;</span>
+    }
+<span class="nc bnc" id="L281" title="All 2 branches missed.">    if (enablePacketDebug != opt.enablePacketDebug) {</span>
+<span class="nc" id="L282">      return false;</span>
+    }
+<span class="nc bnc" id="L284" title="All 2 branches missed.">    if (includeInnodbStatusInDeadlockExceptions != opt.includeInnodbStatusInDeadlockExceptions) {</span>
+<span class="nc" id="L285">      return false;</span>
+    }
+<span class="nc bnc" id="L287" title="All 2 branches missed.">    if (includeThreadDumpInDeadlockExceptions != opt.includeThreadDumpInDeadlockExceptions) {</span>
+<span class="nc" id="L288">      return false;</span>
+    }
+<span class="nc bnc" id="L290" title="All 2 branches missed.">    if (useBulkStmts != opt.useBulkStmts) {</span>
+<span class="nc" id="L291">      return false;</span>
+    }
+<span class="nc bnc" id="L293" title="All 2 branches missed.">    if (disableSslHostnameVerification != opt.disableSslHostnameVerification) {</span>
+<span class="nc" id="L294">      return false;</span>
+    }
+<span class="nc bnc" id="L296" title="All 2 branches missed.">    if (log != opt.log) {</span>
+<span class="nc" id="L297">      return false;</span>
+    }
+<span class="nc bnc" id="L299" title="All 2 branches missed.">    if (profileSql != opt.profileSql) {</span>
+<span class="nc" id="L300">      return false;</span>
+    }
+<span class="nc bnc" id="L302" title="All 2 branches missed.">    if (assureReadOnly != opt.assureReadOnly) {</span>
+<span class="nc" id="L303">      return false;</span>
+    }
+<span class="nc bnc" id="L305" title="All 2 branches missed.">    if (autoReconnect != opt.autoReconnect) {</span>
+<span class="nc" id="L306">      return false;</span>
+    }
+<span class="nc bnc" id="L308" title="All 2 branches missed.">    if (failOnReadOnly != opt.failOnReadOnly) {</span>
+<span class="nc" id="L309">      return false;</span>
+    }
+<span class="nc bnc" id="L311" title="All 2 branches missed.">    if (allowMasterDownConnection != opt.allowMasterDownConnection) {</span>
+<span class="nc" id="L312">      return false;</span>
+    }
+<span class="nc bnc" id="L314" title="All 2 branches missed.">    if (retriesAllDown != opt.retriesAllDown) {</span>
+<span class="nc" id="L315">      return false;</span>
+    }
+<span class="nc bnc" id="L317" title="All 2 branches missed.">    if (validConnectionTimeout != opt.validConnectionTimeout) {</span>
+<span class="nc" id="L318">      return false;</span>
+    }
+<span class="nc bnc" id="L320" title="All 2 branches missed.">    if (loadBalanceBlacklistTimeout != opt.loadBalanceBlacklistTimeout) {</span>
+<span class="nc" id="L321">      return false;</span>
+    }
+<span class="nc bnc" id="L323" title="All 2 branches missed.">    if (failoverLoopRetries != opt.failoverLoopRetries) {</span>
+<span class="nc" id="L324">      return false;</span>
+    }
+<span class="nc bnc" id="L326" title="All 2 branches missed.">    if (pool != opt.pool) {</span>
+<span class="nc" id="L327">      return false;</span>
+    }
+<span class="nc bnc" id="L329" title="All 2 branches missed.">    if (staticGlobal != opt.staticGlobal) {</span>
+<span class="nc" id="L330">      return false;</span>
+    }
+<span class="nc bnc" id="L332" title="All 2 branches missed.">    if (registerJmxPool != opt.registerJmxPool) {</span>
+<span class="nc" id="L333">      return false;</span>
+    }
+<span class="nc bnc" id="L335" title="All 2 branches missed.">    if (useResetConnection != opt.useResetConnection) {</span>
+<span class="nc" id="L336">      return false;</span>
+    }
+<span class="nc bnc" id="L338" title="All 2 branches missed.">    if (useReadAheadInput != opt.useReadAheadInput) {</span>
+<span class="nc" id="L339">      return false;</span>
+    }
+<span class="nc bnc" id="L341" title="All 2 branches missed.">    if (maxPoolSize != opt.maxPoolSize) {</span>
+<span class="nc" id="L342">      return false;</span>
+    }
+<span class="nc bnc" id="L344" title="All 2 branches missed.">    if (maxIdleTime != opt.maxIdleTime) {</span>
+<span class="nc" id="L345">      return false;</span>
+    }
+<span class="nc bnc" id="L347" title="All 2 branches missed.">    if (poolValidMinDelay != opt.poolValidMinDelay) {</span>
+<span class="nc" id="L348">      return false;</span>
+    }
+<span class="nc bnc" id="L350" title="All 6 branches missed.">    if (user != null ? !user.equals(opt.user) : opt.user != null) {</span>
+<span class="nc" id="L351">      return false;</span>
+    }
+<span class="nc bnc" id="L353" title="All 6 branches missed.">    if (password != null ? !password.equals(opt.password) : opt.password != null) {</span>
+<span class="nc" id="L354">      return false;</span>
+    }
+<span class="nc bnc" id="L356" title="All 6 branches missed.">    if (serverSslCert != null ? !serverSslCert.equals(opt.serverSslCert)</span>
+        : opt.serverSslCert != null) {
+<span class="nc" id="L358">      return false;</span>
+    }
+<span class="nc bnc" id="L360" title="All 6 branches missed.">    if (trustStore != null ? !trustStore.equals(opt.trustStore) : opt.trustStore != null) {</span>
+<span class="nc" id="L361">      return false;</span>
+    }
+<span class="nc bnc" id="L363" title="All 6 branches missed.">    if (trustStorePassword != null ? !trustStorePassword.equals(opt.trustStorePassword)</span>
+        : opt.trustStorePassword != null) {
+<span class="nc" id="L365">      return false;</span>
+    }
+<span class="nc bnc" id="L367" title="All 6 branches missed.">    if (keyStore != null ? !keyStore.equals(opt.keyStore) : opt.keyStore != null) {</span>
+<span class="nc" id="L368">      return false;</span>
+    }
+<span class="nc bnc" id="L370" title="All 6 branches missed.">    if (keyStorePassword != null ? !keyStorePassword.equals(opt.keyStorePassword)</span>
+        : opt.keyStorePassword != null) {
+<span class="nc" id="L372">      return false;</span>
+    }
+<span class="nc bnc" id="L374" title="All 6 branches missed.">    if (keyPassword != null ? !keyPassword.equals(opt.keyPassword) : opt.keyPassword != null) {</span>
+<span class="nc" id="L375">      return false;</span>
+    }
+<span class="nc bnc" id="L377" title="All 2 branches missed.">    if (enabledSslProtocolSuites != null) {</span>
+<span class="nc bnc" id="L378" title="All 2 branches missed.">      if (!enabledSslProtocolSuites.equals(opt.enabledSslProtocolSuites)) {</span>
+<span class="nc" id="L379">        return false;</span>
+      }
+<span class="nc bnc" id="L381" title="All 2 branches missed.">    } else if (opt.enabledSslProtocolSuites != null) {</span>
+<span class="nc" id="L382">      return false;</span>
+    }
+<span class="nc bnc" id="L384" title="All 6 branches missed.">    if (socketFactory != null ? !socketFactory.equals(opt.socketFactory)</span>
+        : opt.socketFactory != null) {
+<span class="nc" id="L386">      return false;</span>
+    }
+<span class="nc bnc" id="L388" title="All 2 branches missed.">    if (connectTimeout != opt.connectTimeout) {</span>
+<span class="nc" id="L389">      return false;</span>
+    }
+<span class="nc bnc" id="L391" title="All 6 branches missed.">    if (pipe != null ? !pipe.equals(opt.pipe) : opt.pipe != null) {</span>
+<span class="nc" id="L392">      return false;</span>
+    }
+<span class="nc bnc" id="L394" title="All 6 branches missed.">    if (localSocket != null ? !localSocket.equals(opt.localSocket) : opt.localSocket != null) {</span>
+<span class="nc" id="L395">      return false;</span>
+    }
+<span class="nc bnc" id="L397" title="All 6 branches missed.">    if (sharedMemory != null ? !sharedMemory.equals(opt.sharedMemory) : opt.sharedMemory != null) {</span>
+<span class="nc" id="L398">      return false;</span>
+    }
+<span class="nc bnc" id="L400" title="All 6 branches missed.">    if (tcpRcvBuf != null ? !tcpRcvBuf.equals(opt.tcpRcvBuf) : opt.tcpRcvBuf != null) {</span>
+<span class="nc" id="L401">      return false;</span>
+    }
+<span class="nc bnc" id="L403" title="All 6 branches missed.">    if (tcpSndBuf != null ? !tcpSndBuf.equals(opt.tcpSndBuf) : opt.tcpSndBuf != null) {</span>
+<span class="nc" id="L404">      return false;</span>
+    }
+<span class="nc bnc" id="L406" title="All 6 branches missed.">    if (localSocketAddress != null ? !localSocketAddress.equals(opt.localSocketAddress)</span>
+        : opt.localSocketAddress != null) {
+<span class="nc" id="L408">      return false;</span>
+    }
+<span class="nc bnc" id="L410" title="All 6 branches missed.">    if (socketTimeout != null ? !socketTimeout.equals(opt.socketTimeout)</span>
+        : opt.socketTimeout != null) {
+<span class="nc" id="L412">      return false;</span>
+    }
+<span class="nc bnc" id="L414" title="All 2 branches missed.">    if (passwordCharacterEncoding != null) {</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">      if (!passwordCharacterEncoding.equals(opt.passwordCharacterEncoding)) {</span>
+<span class="nc" id="L416">        return false;</span>
+      }
+<span class="nc bnc" id="L418" title="All 2 branches missed.">    } else if (opt.passwordCharacterEncoding != null) {</span>
+<span class="nc" id="L419">      return false;</span>
+    }
+
+<span class="nc bnc" id="L422" title="All 6 branches missed.">    if (enabledSslCipherSuites != null ? !enabledSslCipherSuites.equals(opt.enabledSslCipherSuites)</span>
+        : opt.enabledSslCipherSuites != null) {
+<span class="nc" id="L424">      return false;</span>
+    }
+<span class="nc bnc" id="L426" title="All 6 branches missed.">    if (sessionVariables != null ? !sessionVariables.equals(opt.sessionVariables)</span>
+        : opt.sessionVariables != null) {
+<span class="nc" id="L428">      return false;</span>
+    }
+<span class="nc bnc" id="L430" title="All 6 branches missed.">    if (serverTimezone != null ? !serverTimezone.equals(opt.serverTimezone)</span>
+        : opt.serverTimezone != null) {
+<span class="nc" id="L432">      return false;</span>
+    }
+<span class="nc bnc" id="L434" title="All 2 branches missed.">    if (prepStmtCacheSize != opt.prepStmtCacheSize) {</span>
+<span class="nc" id="L435">      return false;</span>
+    }
+<span class="nc bnc" id="L437" title="All 2 branches missed.">    if (prepStmtCacheSqlLimit != opt.prepStmtCacheSqlLimit) {</span>
+<span class="nc" id="L438">      return false;</span>
+    }
+<span class="nc bnc" id="L440" title="All 2 branches missed.">    if (callableStmtCacheSize != opt.callableStmtCacheSize) {</span>
+<span class="nc" id="L441">      return false;</span>
+    }
+<span class="nc bnc" id="L443" title="All 6 branches missed.">    if (connectionAttributes != null ? !connectionAttributes.equals(opt.connectionAttributes)</span>
+        : opt.connectionAttributes != null) {
+<span class="nc" id="L445">      return false;</span>
+    }
+<span class="nc bnc" id="L447" title="All 6 branches missed.">    if (useBatchMultiSend != null ? !useBatchMultiSend.equals(opt.useBatchMultiSend)</span>
+        : opt.useBatchMultiSend != null) {
+<span class="nc" id="L449">      return false;</span>
+    }
+<span class="nc bnc" id="L451" title="All 6 branches missed.">    if (usePipelineAuth != null ? !usePipelineAuth.equals(opt.usePipelineAuth)</span>
+        : opt.usePipelineAuth != null) {
+<span class="nc" id="L453">      return false;</span>
+    }
+<span class="nc bnc" id="L455" title="All 2 branches missed.">    if (maxQuerySizeToLog != opt.maxQuerySizeToLog) {</span>
+<span class="nc" id="L456">      return false;</span>
+    }
+<span class="nc bnc" id="L458" title="All 2 branches missed.">    if (slowQueryThresholdNanos != null ? !slowQueryThresholdNanos</span>
+<span class="nc bnc" id="L459" title="All 4 branches missed.">        .equals(opt.slowQueryThresholdNanos) : opt.slowQueryThresholdNanos != null) {</span>
+<span class="nc" id="L460">      return false;</span>
+    }
+<span class="nc bnc" id="L462" title="All 2 branches missed.">    if (autocommit != opt.autocommit) {</span>
+<span class="nc" id="L463">      return false;</span>
+    }
+<span class="nc bnc" id="L465" title="All 6 branches missed.">    if (poolName != null ? !poolName.equals(opt.poolName) : opt.poolName != null) {</span>
+<span class="nc" id="L466">      return false;</span>
+    }
+<span class="nc bnc" id="L468" title="All 6 branches missed.">    if (galeraAllowedState != null ? !galeraAllowedState.equals(opt.galeraAllowedState)</span>
+        : opt.galeraAllowedState != null) {
+<span class="nc" id="L470">      return false;</span>
+    }
+<span class="nc bnc" id="L472" title="All 4 branches missed.">    return minPoolSize != null ? minPoolSize.equals(opt.minPoolSize) : opt.minPoolSize == null;</span>
+  }
+
+  @SuppressWarnings(&quot;SimplifiableIfStatement&quot;)
+  @Override
+  public int hashCode() {
+<span class="nc bnc" id="L478" title="All 2 branches missed.">    int result = user != null ? user.hashCode() : 0;</span>
+<span class="nc bnc" id="L479" title="All 2 branches missed.">    result = 31 * result + (password != null ? password.hashCode() : 0);</span>
+<span class="nc bnc" id="L480" title="All 2 branches missed.">    result = 31 * result + (trustServerCertificate ? 1 : 0);</span>
+<span class="nc bnc" id="L481" title="All 2 branches missed.">    result = 31 * result + (serverSslCert != null ? serverSslCert.hashCode() : 0);</span>
+<span class="nc bnc" id="L482" title="All 2 branches missed.">    result = 31 * result + (trustStore != null ? trustStore.hashCode() : 0);</span>
+<span class="nc bnc" id="L483" title="All 2 branches missed.">    result = 31 * result + (trustStorePassword != null ? trustStorePassword.hashCode() : 0);</span>
+<span class="nc bnc" id="L484" title="All 2 branches missed.">    result = 31 * result + (keyStore != null ? keyStore.hashCode() : 0);</span>
+<span class="nc bnc" id="L485" title="All 2 branches missed.">    result = 31 * result + (keyStorePassword != null ? keyStorePassword.hashCode() : 0);</span>
+<span class="nc bnc" id="L486" title="All 2 branches missed.">    result = 31 * result + (keyPassword != null ? keyPassword.hashCode() : 0);</span>
+<span class="nc" id="L487">    result =</span>
+<span class="nc bnc" id="L488" title="All 2 branches missed.">        31 * result + (enabledSslProtocolSuites != null ? enabledSslProtocolSuites.hashCode() : 0);</span>
+<span class="nc bnc" id="L489" title="All 2 branches missed.">    result = 31 * result + (useFractionalSeconds ? 1 : 0);</span>
+<span class="nc bnc" id="L490" title="All 2 branches missed.">    result = 31 * result + (pinGlobalTxToPhysicalConnection ? 1 : 0);</span>
+<span class="nc bnc" id="L491" title="All 2 branches missed.">    result = 31 * result + (socketFactory != null ? socketFactory.hashCode() : 0);</span>
+<span class="nc" id="L492">    result = 31 * result + connectTimeout;</span>
+<span class="nc bnc" id="L493" title="All 2 branches missed.">    result = 31 * result + (pipe != null ? pipe.hashCode() : 0);</span>
+<span class="nc bnc" id="L494" title="All 2 branches missed.">    result = 31 * result + (localSocket != null ? localSocket.hashCode() : 0);</span>
+<span class="nc bnc" id="L495" title="All 2 branches missed.">    result = 31 * result + (sharedMemory != null ? sharedMemory.hashCode() : 0);</span>
+<span class="nc bnc" id="L496" title="All 2 branches missed.">    result = 31 * result + (tcpNoDelay ? 1 : 0);</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">    result = 31 * result + (tcpKeepAlive ? 1 : 0);</span>
+<span class="nc bnc" id="L498" title="All 2 branches missed.">    result = 31 * result + (tcpRcvBuf != null ? tcpRcvBuf.hashCode() : 0);</span>
+<span class="nc bnc" id="L499" title="All 2 branches missed.">    result = 31 * result + (tcpSndBuf != null ? tcpSndBuf.hashCode() : 0);</span>
+<span class="nc bnc" id="L500" title="All 2 branches missed.">    result = 31 * result + (tcpAbortiveClose ? 1 : 0);</span>
+<span class="nc bnc" id="L501" title="All 2 branches missed.">    result = 31 * result + (localSocketAddress != null ? localSocketAddress.hashCode() : 0);</span>
+<span class="nc bnc" id="L502" title="All 2 branches missed.">    result = 31 * result + (socketTimeout != null ? socketTimeout.hashCode() : 0);</span>
+<span class="nc bnc" id="L503" title="All 2 branches missed.">    result = 31 * result + (allowMultiQueries ? 1 : 0);</span>
+<span class="nc bnc" id="L504" title="All 2 branches missed.">    result = 31 * result + (rewriteBatchedStatements ? 1 : 0);</span>
+<span class="nc bnc" id="L505" title="All 2 branches missed.">    result = 31 * result + (useCompression ? 1 : 0);</span>
+<span class="nc bnc" id="L506" title="All 2 branches missed.">    result = 31 * result + (interactiveClient ? 1 : 0);</span>
+<span class="nc bnc" id="L507" title="All 2 branches missed.">    result = 31 * result + (passwordCharacterEncoding != null ? passwordCharacterEncoding.hashCode()</span>
+<span class="nc" id="L508">        : 0);</span>
+<span class="nc bnc" id="L509" title="All 2 branches missed.">    result = 31 * result + (useSsl ? 1 : 0);</span>
+<span class="nc bnc" id="L510" title="All 2 branches missed.">    result = 31 * result + (enabledSslCipherSuites != null ? enabledSslCipherSuites.hashCode() : 0);</span>
+<span class="nc bnc" id="L511" title="All 2 branches missed.">    result = 31 * result + (sessionVariables != null ? sessionVariables.hashCode() : 0);</span>
+<span class="nc bnc" id="L512" title="All 2 branches missed.">    result = 31 * result + (tinyInt1isBit ? 1 : 0);</span>
+<span class="nc bnc" id="L513" title="All 2 branches missed.">    result = 31 * result + (yearIsDateType ? 1 : 0);</span>
+<span class="nc bnc" id="L514" title="All 2 branches missed.">    result = 31 * result + (createDatabaseIfNotExist ? 1 : 0);</span>
+<span class="nc bnc" id="L515" title="All 2 branches missed.">    result = 31 * result + (serverTimezone != null ? serverTimezone.hashCode() : 0);</span>
+<span class="nc bnc" id="L516" title="All 2 branches missed.">    result = 31 * result + (nullCatalogMeansCurrent ? 1 : 0);</span>
+<span class="nc bnc" id="L517" title="All 2 branches missed.">    result = 31 * result + (dumpQueriesOnException ? 1 : 0);</span>
+<span class="nc bnc" id="L518" title="All 2 branches missed.">    result = 31 * result + (useOldAliasMetadataBehavior ? 1 : 0);</span>
+<span class="nc bnc" id="L519" title="All 2 branches missed.">    result = 31 * result + (allowLocalInfile ? 1 : 0);</span>
+<span class="nc bnc" id="L520" title="All 2 branches missed.">    result = 31 * result + (cachePrepStmts ? 1 : 0);</span>
+<span class="nc" id="L521">    result = 31 * result + prepStmtCacheSize;</span>
+<span class="nc" id="L522">    result = 31 * result + prepStmtCacheSqlLimit;</span>
+<span class="nc bnc" id="L523" title="All 2 branches missed.">    result = 31 * result + (useLegacyDatetimeCode ? 1 : 0);</span>
+<span class="nc bnc" id="L524" title="All 2 branches missed.">    result = 31 * result + (useAffectedRows ? 1 : 0);</span>
+<span class="nc bnc" id="L525" title="All 2 branches missed.">    result = 31 * result + (maximizeMysqlCompatibility ? 1 : 0);</span>
+<span class="nc bnc" id="L526" title="All 2 branches missed.">    result = 31 * result + (useServerPrepStmts ? 1 : 0);</span>
+<span class="nc bnc" id="L527" title="All 2 branches missed.">    result = 31 * result + (continueBatchOnError ? 1 : 0);</span>
+<span class="nc bnc" id="L528" title="All 2 branches missed.">    result = 31 * result + (jdbcCompliantTruncation ? 1 : 0);</span>
+<span class="nc bnc" id="L529" title="All 2 branches missed.">    result = 31 * result + (cacheCallableStmts ? 1 : 0);</span>
+<span class="nc" id="L530">    result = 31 * result + callableStmtCacheSize;</span>
+<span class="nc bnc" id="L531" title="All 2 branches missed.">    result = 31 * result + (connectionAttributes != null ? connectionAttributes.hashCode() : 0);</span>
+<span class="nc bnc" id="L532" title="All 2 branches missed.">    result = 31 * result + (useBatchMultiSend != null ? useBatchMultiSend.hashCode() : 0);</span>
+<span class="nc" id="L533">    result = 31 * result + useBatchMultiSendNumber;</span>
+<span class="nc bnc" id="L534" title="All 2 branches missed.">    result = 31 * result + (usePipelineAuth != null ? usePipelineAuth.hashCode() : 0);</span>
+<span class="nc bnc" id="L535" title="All 2 branches missed.">    result = 31 * result + (enablePacketDebug ? 1 : 0);</span>
+<span class="nc bnc" id="L536" title="All 2 branches missed.">    result = 31 * result + (includeInnodbStatusInDeadlockExceptions ? 1 : 0);</span>
+<span class="nc bnc" id="L537" title="All 2 branches missed.">    result = 31 * result + (includeThreadDumpInDeadlockExceptions ? 1 : 0);</span>
+<span class="nc bnc" id="L538" title="All 2 branches missed.">    result = 31 * result + (useBulkStmts ? 1 : 0);</span>
+<span class="nc bnc" id="L539" title="All 2 branches missed.">    result = 31 * result + (disableSslHostnameVerification ? 1 : 0);</span>
+<span class="nc bnc" id="L540" title="All 2 branches missed.">    result = 31 * result + (log ? 1 : 0);</span>
+<span class="nc bnc" id="L541" title="All 2 branches missed.">    result = 31 * result + (profileSql ? 1 : 0);</span>
+<span class="nc" id="L542">    result = 31 * result + maxQuerySizeToLog;</span>
+<span class="nc" id="L543">    result =</span>
+<span class="nc bnc" id="L544" title="All 2 branches missed.">        31 * result + (slowQueryThresholdNanos != null ? slowQueryThresholdNanos.hashCode() : 0);</span>
+<span class="nc bnc" id="L545" title="All 2 branches missed.">    result = 31 * result + (assureReadOnly ? 1 : 0);</span>
+<span class="nc bnc" id="L546" title="All 2 branches missed.">    result = 31 * result + (autoReconnect ? 1 : 0);</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">    result = 31 * result + (failOnReadOnly ? 1 : 0);</span>
+<span class="nc bnc" id="L548" title="All 2 branches missed.">    result = 31 * result + (allowMasterDownConnection ? 1 : 0);</span>
+<span class="nc" id="L549">    result = 31 * result + retriesAllDown;</span>
+<span class="nc" id="L550">    result = 31 * result + validConnectionTimeout;</span>
+<span class="nc" id="L551">    result = 31 * result + loadBalanceBlacklistTimeout;</span>
+<span class="nc" id="L552">    result = 31 * result + failoverLoopRetries;</span>
+<span class="nc bnc" id="L553" title="All 2 branches missed.">    result = 31 * result + (pool ? 1 : 0);</span>
+<span class="nc bnc" id="L554" title="All 2 branches missed.">    result = 31 * result + (registerJmxPool ? 1 : 0);</span>
+<span class="nc bnc" id="L555" title="All 2 branches missed.">    result = 31 * result + (useResetConnection ? 1 : 0);</span>
+<span class="nc bnc" id="L556" title="All 2 branches missed.">    result = 31 * result + (useReadAheadInput ? 1 : 0);</span>
+<span class="nc bnc" id="L557" title="All 2 branches missed.">    result = 31 * result + (staticGlobal ? 1 : 0);</span>
+<span class="nc bnc" id="L558" title="All 2 branches missed.">    result = 31 * result + (poolName != null ? poolName.hashCode() : 0);</span>
+<span class="nc bnc" id="L559" title="All 2 branches missed.">    result = 31 * result + (galeraAllowedState != null ? galeraAllowedState.hashCode() : 0);</span>
+<span class="nc" id="L560">    result = 31 * result + maxPoolSize;</span>
+<span class="nc bnc" id="L561" title="All 2 branches missed.">    result = 31 * result + (minPoolSize != null ? minPoolSize.hashCode() : 0);</span>
+<span class="nc" id="L562">    result = 31 * result + maxIdleTime;</span>
+<span class="nc" id="L563">    result = 31 * result + poolValidMinDelay;</span>
+<span class="nc bnc" id="L564" title="All 2 branches missed.">    result = 31 * result + (autocommit ? 1 : 0);</span>
+
+<span class="nc" id="L566">    return result;</span>
+  }
+
+  @Override
+  public Object clone() throws CloneNotSupportedException {
+<span class="nc" id="L571">    return super.clone();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

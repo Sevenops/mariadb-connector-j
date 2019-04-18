@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ReadAheadBufferedStream.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.io.input</a> &gt; <span class="el_source">ReadAheadBufferedStream.java</span></div><h1>ReadAheadBufferedStream.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2018 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.io.input;
+
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.concurrent.locks.ReentrantLock;
+
+/**
+ * Permit to buffer socket data, reading not only asked bytes, but available number of bytes when possible.
+ */
+public class ReadAheadBufferedStream extends FilterInputStream {
+
+    private volatile byte[] buf;
+    private int end;
+    private int pos;
+    private static final int BUF_SIZE = 16384;
+<span class="nc" id="L50">    ReentrantLock lock = new ReentrantLock();</span>
+
+    public ReadAheadBufferedStream(InputStream in) {
+<span class="nc" id="L53">        super(in);</span>
+<span class="nc" id="L54">        buf = new byte[BUF_SIZE];</span>
+<span class="nc" id="L55">    }</span>
+
+    /**
+     * Reading one byte from cache of socket if needed.
+     *
+     * @return byte value
+     * @throws IOException if socket reading error.
+     */
+    public synchronized int read() throws IOException {
+<span class="nc bnc" id="L64" title="All 2 branches missed.">        if (pos &gt;= end) {</span>
+<span class="nc" id="L65">            fillBuffer(1);</span>
+<span class="nc bnc" id="L66" title="All 2 branches missed.">            if (pos &gt;= end) {</span>
+<span class="nc" id="L67">                return -1;</span>
+            }
+        }
+<span class="nc" id="L70">        return buf[pos++] &amp; 0xff;</span>
+    }
+
+    /**
+     * Returing byte array, from cache of reading socket if needed.
+     *
+     * @param externalBuf buffer to fill
+     * @param off         offset
+     * @param len         length to read
+     * @return number of added bytes
+     * @throws IOException if exception during socket reading
+     */
+    public int read(byte[] externalBuf, int off, int len) throws IOException {
+<span class="nc" id="L83">        lock.lock();</span>
+        try {
+<span class="nc bnc" id="L85" title="All 2 branches missed.">            if (len == 0) {</span>
+<span class="nc" id="L86">                return 0;</span>
+            }
+
+<span class="nc" id="L89">            int totalReads = 0;</span>
+            while (true) {
+
+                //read
+<span class="nc bnc" id="L93" title="All 2 branches missed.">                if (end - pos &lt;= 0) {</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">                    if (len - totalReads &gt;= buf.length) {</span>
+                        //buffer length is less than asked byte and buffer is empty
+                        // =&gt; filling directly into external buffer
+<span class="nc" id="L97">                        int reads = super.read(externalBuf, off + totalReads, len - totalReads);</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">                        if (reads &lt;= 0) {</span>
+<span class="nc bnc" id="L99" title="All 2 branches missed.">                            return (totalReads == 0) ? -1 : totalReads;</span>
+                        }
+<span class="nc" id="L101">                        return totalReads + reads;</span>
+
+                    } else {
+
+                        //filling internal buffer
+<span class="nc" id="L106">                        fillBuffer(len - totalReads);</span>
+<span class="nc bnc" id="L107" title="All 2 branches missed.">                        if (end &lt;= 0) {</span>
+<span class="nc bnc" id="L108" title="All 2 branches missed.">                            return (totalReads == 0) ? -1 : totalReads;</span>
+                        }
+                    }
+                }
+
+                //copy internal value to buffer.
+<span class="nc" id="L114">                int copyLength = Math.min(len - totalReads, end - pos);</span>
+<span class="nc" id="L115">                System.arraycopy(buf, pos, externalBuf, off + totalReads, copyLength);</span>
+<span class="nc" id="L116">                pos += copyLength;</span>
+<span class="nc" id="L117">                totalReads += copyLength;</span>
+
+<span class="nc bnc" id="L119" title="All 4 branches missed.">                if (totalReads &gt;= len || super.available() &lt;= 0) {</span>
+<span class="nc" id="L120">                    return totalReads;</span>
+                }
+<span class="nc" id="L122">            }</span>
+<span class="nc" id="L123">        } catch (Exception e) {</span>
+<span class="nc" id="L124">            lock.unlock();</span>
+        }
+<span class="nc" id="L126">        return 0;</span>
+    }
+
+    /**
+     * Fill buffer with required length, or available bytes.
+     *
+     * @param minNeededBytes asked number of bytes
+     * @throws IOException in case of failing reading stream.
+     */
+    private void fillBuffer(int minNeededBytes) throws IOException {
+<span class="nc" id="L136">        int lengthToReallyRead = Math.min(BUF_SIZE, Math.max(super.available(), minNeededBytes));</span>
+<span class="nc" id="L137">        end = super.read(buf, 0, lengthToReallyRead);</span>
+<span class="nc" id="L138">        pos = 0;</span>
+<span class="nc" id="L139">    }</span>
+
+
+    public synchronized long skip(long n) throws IOException {
+<span class="nc" id="L143">        throw new IOException(&quot;Skip from socket not implemented&quot;);</span>
+    }
+
+    public synchronized int available() throws IOException {
+<span class="nc" id="L147">        throw new IOException(&quot;available from socket not implemented&quot;);</span>
+    }
+
+    public synchronized void reset() throws IOException {
+<span class="nc" id="L151">        throw new IOException(&quot;reset from socket not implemented&quot;);</span>
+    }
+
+    public boolean markSupported() {
+<span class="nc" id="L155">        return false;</span>
+    }
+
+    public void close() throws IOException {
+<span class="nc" id="L159">        super.close();</span>
+<span class="nc" id="L160">    }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

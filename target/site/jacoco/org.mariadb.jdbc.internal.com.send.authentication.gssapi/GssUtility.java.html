@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GssUtility.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.send.authentication.gssapi</a> &gt; <span class="el_source">GssUtility.java</span></div><h1>GssUtility.java</h1><pre class="source lang-java linenums">package org.mariadb.jdbc.internal.com.send.authentication.gssapi;
+
+import com.sun.jna.Platform;
+
+<span class="nc" id="L5">public class GssUtility {</span>
+
+  /**
+   * Get authentication method according to classpath. Windows native authentication is using
+   * Waffle-jna.
+   *
+   * @return authentication method
+   */
+  public static GssapiAuth getAuthenticationMethod() {
+    try {
+      //Waffle-jna has jna as dependency, so if not available on classpath, just use standard authentication
+<span class="nc bnc" id="L16" title="All 2 branches missed.">      if (Platform.isWindows()) {</span>
+        try {
+<span class="nc" id="L18">          Class.forName(&quot;waffle.windows.auth.impl.WindowsAuthProviderImpl&quot;);</span>
+<span class="nc" id="L19">          return new WindowsNativeSspiAuthentication();</span>
+<span class="nc" id="L20">        } catch (ClassNotFoundException cle) {</span>
+          //waffle not in the classpath
+        }
+      }
+<span class="nc" id="L24">    } catch (Throwable cle) {</span>
+      //jna jar's are not in classpath
+<span class="nc" id="L26">    }</span>
+<span class="nc" id="L27">    return new StandardGssapiAuthentication();</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

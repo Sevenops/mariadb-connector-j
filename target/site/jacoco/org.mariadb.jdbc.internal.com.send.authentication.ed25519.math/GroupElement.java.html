@@ -1,0 +1,1076 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GroupElement.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.send.authentication.ed25519.math</a> &gt; <span class="el_source">GroupElement.java</span></div><h1>GroupElement.java</h1><pre class="source lang-java linenums">/**
+ * EdDSA-Java by str4d
+ * &lt;p&gt;
+ * To the extent possible under law, the person who associated CC0 with EdDSA-Java has waived all
+ * copyright and related or neighboring rights to EdDSA-Java.
+ * &lt;p&gt;
+ * You should have received a copy of the CC0 legalcode along with this work. If not, see
+ * &lt;https://creativecommons.org/publicdomain/zero/1.0/&gt;.
+ */
+package org.mariadb.jdbc.internal.com.send.authentication.ed25519.math;
+
+import java.io.Serializable;
+import java.util.Arrays;
+import org.mariadb.jdbc.internal.com.send.authentication.ed25519.Utils;
+
+/**
+ * A point $(x,y)$ on an EdDSA curve.
+ * &lt;p&gt;
+ * Reviewed/commented by Bloody Rookie (nemproject@gmx.de)
+ * &lt;p&gt;
+ * Literature:&lt;br&gt; [1] Daniel J. Bernstein, Niels Duif, Tanja Lange, Peter Schwabe and Bo-Yin Yang :
+ * High-speed high-security signatures&lt;br&gt; [2] Huseyin Hisil, Kenneth Koon-Ho Wong, Gary Carter, Ed
+ * Dawson: Twisted Edwards Curves Revisited&lt;br&gt; [3] Daniel J. Bernsteina, Tanja Lange: A complete
+ * set of addition laws for incomplete Edwards curves&lt;br&gt; [4] Daniel J. Bernstein, Peter Birkner,
+ * Marc Joye, Tanja Lange and Christiane Peters: Twisted Edwards Curves&lt;br&gt; [5] Christiane Pascale
+ * Peters: Curves, Codes, and Cryptography (PhD thesis)&lt;br&gt; [6] Daniel J. Bernstein, Peter Birkner,
+ * Tanja Lange and Christiane Peters: Optimizing double-base elliptic-curve single-scalar
+ * multiplication&lt;br&gt;
+ *
+ * @author str4d
+ */
+public class GroupElement implements Serializable {
+
+  private static final long serialVersionUID = 2395879087349587L;
+  /**
+   * Variable is package private only so that tests run.
+   */
+  final Curve curve;
+  /**
+   * Variable is package private only so that tests run.
+   */
+  final Representation repr;
+  /**
+   * Variable is package private only so that tests run.
+   */
+  final FieldElement X;
+  /**
+   * Variable is package private only so that tests run.
+   */
+  final FieldElement Y;
+  /**
+   * Variable is package private only so that tests run.
+   */
+  final FieldElement Z;
+  /**
+   * Variable is package private only so that tests run.
+   */
+  final FieldElement T;
+  /**
+   * Precomputed table for {@link #scalarMultiply(byte[])}, filled if necessary.
+   * &lt;p&gt;
+   * Variable is package private only so that tests run.
+   */
+  org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement[][] precmp;
+  /**
+   * Precomputed table for {@link #doubleScalarMultiplyVariableTime(org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement,
+   * byte[], byte[])}, filled if necessary.
+   * &lt;p&gt;
+   * Variable is package private only so that tests run.
+   */
+  org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement[] dblPrecmp;
+
+  /**
+   * Creates a group element for a curve.
+   *
+   * @param curve The curve.
+   * @param repr  The representation used to represent the group element.
+   * @param X     The $X$ coordinate.
+   * @param Y     The $Y$ coordinate.
+   * @param Z     The $Z$ coordinate.
+   * @param T     The $T$ coordinate.
+   */
+  public GroupElement(
+      final Curve curve,
+      final Representation repr,
+      final FieldElement X,
+      final FieldElement Y,
+      final FieldElement Z,
+<span class="nc" id="L89">      final FieldElement T) {</span>
+<span class="nc" id="L90">    this.curve = curve;</span>
+<span class="nc" id="L91">    this.repr = repr;</span>
+<span class="nc" id="L92">    this.X = X;</span>
+<span class="nc" id="L93">    this.Y = Y;</span>
+<span class="nc" id="L94">    this.Z = Z;</span>
+<span class="nc" id="L95">    this.T = T;</span>
+<span class="nc" id="L96">  }</span>
+
+  /**
+   * Creates a group element for a curve from a given encoded point.
+   * &lt;p&gt;
+   * A point $(x,y)$ is encoded by storing $y$ in bit 0 to bit 254 and the sign of $x$ in bit 255.
+   * $x$ is recovered in the following way:
+   * &lt;/p&gt;&lt;ul&gt;
+   * &lt;li&gt;$x = sign(x) * \sqrt{(y^2 - 1) / (d * y^2 + 1)} = sign(x) * \sqrt{u / v}$ with $u = y^2 -
+   * 1$ and $v = d * y^2 + 1$.
+   * &lt;li&gt;Setting $β = (u * v^3) * (u * v^7)^{((q - 5) / 8)}$ one has $β^2 = \pm(u / v)$.
+   * &lt;li&gt;If $v * β = -u$ multiply $β$ with $i=\sqrt{-1}$.
+   * &lt;li&gt;Set $x := β$.
+   * &lt;li&gt;If $sign(x) \ne$ bit 255 of $s$ then negate $x$.
+   * &lt;/ul&gt;
+   *
+   * @param curve The curve.
+   * @param s     The encoded point.
+   */
+<span class="nc" id="L115">  public GroupElement(final Curve curve, final byte[] s) {</span>
+    FieldElement x, y, yy, u, v, v3, vxx, check;
+<span class="nc" id="L117">    y = curve.getField().fromByteArray(s);</span>
+<span class="nc" id="L118">    yy = y.square();</span>
+
+    // u = y^2-1
+<span class="nc" id="L121">    u = yy.subtractOne();</span>
+
+    // v = dy^2+1
+<span class="nc" id="L124">    v = yy.multiply(curve.getD()).addOne();</span>
+
+    // v3 = v^3
+<span class="nc" id="L127">    v3 = v.square().multiply(v);</span>
+
+    // x = (v3^2)vu, aka x = uv^7
+<span class="nc" id="L130">    x = v3.square().multiply(v).multiply(u);</span>
+
+    //  x = (uv^7)^((q-5)/8)
+<span class="nc" id="L133">    x = x.pow22523();</span>
+
+    // x = uv^3(uv^7)^((q-5)/8)
+<span class="nc" id="L136">    x = v3.multiply(u).multiply(x);</span>
+
+<span class="nc" id="L138">    vxx = x.square().multiply(v);</span>
+<span class="nc" id="L139">    check = vxx.subtract(u);            // vx^2-u</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">    if (check.isNonZero()) {</span>
+<span class="nc" id="L141">      check = vxx.add(u);             // vx^2+u</span>
+
+<span class="nc bnc" id="L143" title="All 2 branches missed.">      if (check.isNonZero()) {</span>
+<span class="nc" id="L144">        throw new IllegalArgumentException(&quot;not a valid GroupElement&quot;);</span>
+      }
+<span class="nc" id="L146">      x = x.multiply(curve.getI());</span>
+    }
+
+<span class="nc bnc" id="L149" title="All 4 branches missed.">    if ((x.isNegative() ? 1 : 0) != Utils.bit(s, curve.getField().getb() - 1)) {</span>
+<span class="nc" id="L150">      x = x.negate();</span>
+    }
+
+<span class="nc" id="L153">    this.curve = curve;</span>
+<span class="nc" id="L154">    this.repr = Representation.P3;</span>
+<span class="nc" id="L155">    this.X = x;</span>
+<span class="nc" id="L156">    this.Y = y;</span>
+<span class="nc" id="L157">    this.Z = curve.getField().ONE;</span>
+<span class="nc" id="L158">    this.T = this.X.multiply(this.Y);</span>
+<span class="nc" id="L159">  }</span>
+
+  /**
+   * Creates a new group element in P2 representation.
+   *
+   * @param curve The curve.
+   * @param X     The $X$ coordinate.
+   * @param Y     The $Y$ coordinate.
+   * @param Z     The $Z$ coordinate.
+   * @return The group element in P2 representation.
+   */
+  public static org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement p2(
+      final Curve curve,
+      final FieldElement X,
+      final FieldElement Y,
+      final FieldElement Z) {
+<span class="nc" id="L175">    return new org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement(curve,</span>
+        Representation.P2, X, Y, Z, null);
+  }
+
+  /**
+   * Creates a new group element in P3 representation.
+   *
+   * @param curve The curve.
+   * @param X     The $X$ coordinate.
+   * @param Y     The $Y$ coordinate.
+   * @param Z     The $Z$ coordinate.
+   * @param T     The $T$ coordinate.
+   * @return The group element in P3 representation.
+   */
+  public static org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement p3(
+      final Curve curve,
+      final FieldElement X,
+      final FieldElement Y,
+      final FieldElement Z,
+      final FieldElement T) {
+<span class="nc" id="L195">    return new org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement(curve,</span>
+        Representation.P3, X, Y, Z, T);
+  }
+
+  /**
+   * Creates a new group element in P1P1 representation.
+   *
+   * @param curve The curve.
+   * @param X     The $X$ coordinate.
+   * @param Y     The $Y$ coordinate.
+   * @param Z     The $Z$ coordinate.
+   * @param T     The $T$ coordinate.
+   * @return The group element in P1P1 representation.
+   */
+  public static org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement p1p1(
+      final Curve curve,
+      final FieldElement X,
+      final FieldElement Y,
+      final FieldElement Z,
+      final FieldElement T) {
+<span class="nc" id="L215">    return new org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement(curve,</span>
+        Representation.P1P1, X, Y, Z, T);
+  }
+
+  /**
+   * Creates a new group element in PRECOMP representation.
+   *
+   * @param curve The curve.
+   * @param ypx   The $y + x$ value.
+   * @param ymx   The $y - x$ value.
+   * @param xy2d  The $2 * d * x * y$ value.
+   * @return The group element in PRECOMP representation.
+   */
+  public static org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement precomp(
+      final Curve curve,
+      final FieldElement ypx,
+      final FieldElement ymx,
+      final FieldElement xy2d) {
+<span class="nc" id="L233">    return new org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement(curve,</span>
+        Representation.PRECOMP, ypx, ymx, xy2d, null);
+  }
+
+  /**
+   * Creates a new group element in CACHED representation.
+   *
+   * @param curve The curve.
+   * @param YpX   The $Y + X$ value.
+   * @param YmX   The $Y - X$ value.
+   * @param Z     The $Z$ coordinate.
+   * @param T2d   The $2 * d * T$ value.
+   * @return The group element in CACHED representation.
+   */
+  public static org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement cached(
+      final Curve curve,
+      final FieldElement YpX,
+      final FieldElement YmX,
+      final FieldElement Z,
+      final FieldElement T2d) {
+<span class="nc" id="L253">    return new org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement(curve,</span>
+        Representation.CACHED, YpX, YmX, Z, T2d);
+  }
+
+  /**
+   * Convert a to radix 16.
+   * &lt;p&gt;
+   * Method is package private only so that tests run.
+   *
+   * @param a $= a[0]+256*a[1]+...+256^{31} a[31]$
+   * @return 64 bytes, each between -8 and 7
+   */
+  static byte[] toRadix16(final byte[] a) {
+<span class="nc" id="L266">    final byte[] e = new byte[64];</span>
+    int i;
+    // Radix 16 notation
+<span class="nc bnc" id="L269" title="All 2 branches missed.">    for (i = 0; i &lt; 32; i++) {</span>
+<span class="nc" id="L270">      e[2 * i + 0] = (byte) (a[i] &amp; 15);</span>
+<span class="nc" id="L271">      e[2 * i + 1] = (byte) ((a[i] &gt;&gt; 4) &amp; 15);</span>
+    }
+    /* each e[i] is between 0 and 15 */
+    /* e[63] is between 0 and 7 */
+<span class="nc" id="L275">    int carry = 0;</span>
+<span class="nc bnc" id="L276" title="All 2 branches missed.">    for (i = 0; i &lt; 63; i++) {</span>
+<span class="nc" id="L277">      e[i] += carry;</span>
+<span class="nc" id="L278">      carry = e[i] + 8;</span>
+<span class="nc" id="L279">      carry &gt;&gt;= 4;</span>
+<span class="nc" id="L280">      e[i] -= carry &lt;&lt; 4;</span>
+    }
+<span class="nc" id="L282">    e[63] += carry;</span>
+    /* each e[i] is between -8 and 7 */
+<span class="nc" id="L284">    return e;</span>
+  }
+
+  /**
+   * Calculates a sliding-windows base 2 representation for a given value $a$. To learn more about
+   * it see [6] page 8.
+   * &lt;p&gt;
+   * Output: $r$ which satisfies $a = r0 * 2^0 + r1 * 2^1 + \dots + r255 * 2^{255}$ with $ri$ in
+   * $\{-15, -13, -11, -9, -7, -5, -3, -1, 0, 1, 3, 5, 7, 9, 11, 13, 15\}$
+   * &lt;p&gt;
+   * Method is package private only so that tests run.
+   *
+   * @param a $= a[0]+256*a[1]+\dots+256^{31} a[31]$.
+   * @return The byte array $r$ in the above described form.
+   */
+  static byte[] slide(final byte[] a) {
+<span class="nc" id="L300">    byte[] r = new byte[256];</span>
+
+    // Put each bit of 'a' into a separate byte, 0 or 1
+<span class="nc bnc" id="L303" title="All 2 branches missed.">    for (int i = 0; i &lt; 256; ++i) {</span>
+<span class="nc" id="L304">      r[i] = (byte) (1 &amp; (a[i &gt;&gt; 3] &gt;&gt; (i &amp; 7)));</span>
+    }
+
+    // Note: r[i] will always be odd.
+<span class="nc bnc" id="L308" title="All 2 branches missed.">    for (int i = 0; i &lt; 256; ++i) {</span>
+<span class="nc bnc" id="L309" title="All 2 branches missed.">      if (r[i] != 0) {</span>
+<span class="nc bnc" id="L310" title="All 4 branches missed.">        for (int b = 1; b &lt;= 6 &amp;&amp; i + b &lt; 256; ++b) {</span>
+          // Accumulate bits if possible
+<span class="nc bnc" id="L312" title="All 2 branches missed.">          if (r[i + b] != 0) {</span>
+<span class="nc bnc" id="L313" title="All 2 branches missed.">            if (r[i] + (r[i + b] &lt;&lt; b) &lt;= 15) {</span>
+<span class="nc" id="L314">              r[i] += r[i + b] &lt;&lt; b;</span>
+<span class="nc" id="L315">              r[i + b] = 0;</span>
+<span class="nc bnc" id="L316" title="All 2 branches missed.">            } else if (r[i] - (r[i + b] &lt;&lt; b) &gt;= -15) {</span>
+<span class="nc" id="L317">              r[i] -= r[i + b] &lt;&lt; b;</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">              for (int k = i + b; k &lt; 256; ++k) {</span>
+<span class="nc bnc" id="L319" title="All 2 branches missed.">                if (r[k] == 0) {</span>
+<span class="nc" id="L320">                  r[k] = 1;</span>
+<span class="nc" id="L321">                  break;</span>
+                }
+<span class="nc" id="L323">                r[k] = 0;</span>
+              }
+            } else {
+              break;
+            }
+          }
+        }
+      }
+    }
+
+<span class="nc" id="L333">    return r;</span>
+  }
+
+  /**
+   * Gets the curve of the group element.
+   *
+   * @return The curve.
+   */
+  public Curve getCurve() {
+<span class="nc" id="L342">    return this.curve;</span>
+  }
+
+  /**
+   * Gets the representation of the group element.
+   *
+   * @return The representation.
+   */
+  public Representation getRepresentation() {
+<span class="nc" id="L351">    return this.repr;</span>
+  }
+
+  /**
+   * Gets the $X$ value of the group element. This is for most representation the projective $X$
+   * coordinate.
+   *
+   * @return The $X$ value.
+   */
+  public FieldElement getX() {
+<span class="nc" id="L361">    return this.X;</span>
+  }
+
+  /**
+   * Gets the $Y$ value of the group element. This is for most representation the projective $Y$
+   * coordinate.
+   *
+   * @return The $Y$ value.
+   */
+  public FieldElement getY() {
+<span class="nc" id="L371">    return this.Y;</span>
+  }
+
+  /**
+   * Gets the $Z$ value of the group element. This is for most representation the projective $Z$
+   * coordinate.
+   *
+   * @return The $Z$ value.
+   */
+  public FieldElement getZ() {
+<span class="nc" id="L381">    return this.Z;</span>
+  }
+
+  /**
+   * Gets the $T$ value of the group element. This is for most representation the projective $T$
+   * coordinate.
+   *
+   * @return The $T$ value.
+   */
+  public FieldElement getT() {
+<span class="nc" id="L391">    return this.T;</span>
+  }
+
+  /**
+   * Converts the group element to an encoded point on the curve.
+   *
+   * @return The encoded point as byte array.
+   */
+  public byte[] toByteArray() {
+<span class="nc bnc" id="L400" title="All 2 branches missed.">    switch (this.repr) {</span>
+      case P2:
+      case P3:
+<span class="nc" id="L403">        FieldElement recip = Z.invert();</span>
+<span class="nc" id="L404">        FieldElement x = X.multiply(recip);</span>
+<span class="nc" id="L405">        FieldElement y = Y.multiply(recip);</span>
+<span class="nc" id="L406">        byte[] s = y.toByteArray();</span>
+<span class="nc bnc" id="L407" title="All 2 branches missed.">        s[s.length - 1] |= (x.isNegative() ? (byte) 0x80 : 0);</span>
+<span class="nc" id="L408">        return s;</span>
+      default:
+<span class="nc" id="L410">        return toP2().toByteArray();</span>
+    }
+  }
+
+  /**
+   * Converts the group element to the P2 representation.
+   *
+   * @return The group element in the P2 representation.
+   */
+  public org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement toP2() {
+<span class="nc" id="L420">    return toRep(Representation.P2);</span>
+  }
+
+  /**
+   * Converts the group element to the P3 representation.
+   *
+   * @return The group element in the P3 representation.
+   */
+  public org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement toP3() {
+<span class="nc" id="L429">    return toRep(Representation.P3);</span>
+  }
+
+  /**
+   * Converts the group element to the CACHED representation.
+   *
+   * @return The group element in the CACHED representation.
+   */
+  public org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement toCached() {
+<span class="nc" id="L438">    return toRep(Representation.CACHED);</span>
+  }
+
+  /**
+   * Convert a GroupElement from one Representation to another. TODO-CR: Add additional conversion?
+   * $r = p$
+   * &lt;p&gt;
+   * Supported conversions:
+   * &lt;p&gt;&lt;ul&gt;
+   * &lt;li&gt;P3 $\rightarrow$ P2
+   * &lt;li&gt;P3 $\rightarrow$ CACHED (1 multiply, 1 add, 1 subtract)
+   * &lt;li&gt;P1P1 $\rightarrow$ P2 (3 multiply)
+   * &lt;li&gt;P1P1 $\rightarrow$ P3 (4 multiply)
+   *
+   * @param repr The representation to convert to.
+   * @return A new group element in the given representation.
+   */
+  private org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement toRep(
+      final Representation repr) {
+<span class="nc bnc" id="L457" title="All 6 branches missed.">    switch (this.repr) {</span>
+      case P2:
+<span class="nc bnc" id="L459" title="All 2 branches missed.">        switch (repr) {</span>
+          case P2:
+<span class="nc" id="L461">            return p2(this.curve, this.X, this.Y, this.Z);</span>
+          default:
+<span class="nc" id="L463">            throw new IllegalArgumentException();</span>
+        }
+      case P3:
+<span class="nc bnc" id="L466" title="All 4 branches missed.">        switch (repr) {</span>
+          case P2:
+<span class="nc" id="L468">            return p2(this.curve, this.X, this.Y, this.Z);</span>
+          case P3:
+<span class="nc" id="L470">            return p3(this.curve, this.X, this.Y, this.Z, this.T);</span>
+          case CACHED:
+<span class="nc" id="L472">            return cached(this.curve, this.Y.add(this.X), this.Y.subtract(this.X), this.Z,</span>
+<span class="nc" id="L473">                this.T.multiply(this.curve.get2D()));</span>
+          default:
+<span class="nc" id="L475">            throw new IllegalArgumentException();</span>
+        }
+      case P1P1:
+<span class="nc bnc" id="L478" title="All 4 branches missed.">        switch (repr) {</span>
+          case P2:
+<span class="nc" id="L480">            return p2(this.curve, this.X.multiply(this.T), Y.multiply(this.Z),</span>
+<span class="nc" id="L481">                this.Z.multiply(this.T));</span>
+          case P3:
+<span class="nc" id="L483">            return p3(this.curve, this.X.multiply(this.T), Y.multiply(this.Z),</span>
+<span class="nc" id="L484">                this.Z.multiply(this.T), this.X.multiply(this.Y));</span>
+          case P1P1:
+<span class="nc" id="L486">            return p1p1(this.curve, this.X, this.Y, this.Z, this.T);</span>
+          default:
+<span class="nc" id="L488">            throw new IllegalArgumentException();</span>
+        }
+      case PRECOMP:
+<span class="nc bnc" id="L491" title="All 2 branches missed.">        switch (repr) {</span>
+          case PRECOMP:
+<span class="nc" id="L493">            return precomp(this.curve, this.X, this.Y, this.Z);</span>
+          default:
+<span class="nc" id="L495">            throw new IllegalArgumentException();</span>
+        }
+      case CACHED:
+<span class="nc bnc" id="L498" title="All 2 branches missed.">        switch (repr) {</span>
+          case CACHED:
+<span class="nc" id="L500">            return cached(this.curve, this.X, this.Y, this.Z, this.T);</span>
+          default:
+<span class="nc" id="L502">            throw new IllegalArgumentException();</span>
+        }
+      default:
+<span class="nc" id="L505">        throw new UnsupportedOperationException();</span>
+    }
+  }
+
+  /**
+   * Precomputes several tables.
+   * &lt;p&gt;
+   * The precomputed tables are used for {@link #scalarMultiply(byte[])} and {@link
+   * #doubleScalarMultiplyVariableTime(org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement,
+   * byte[], byte[])}.
+   *
+   * @param precomputeSingle should the matrix for scalarMultiply() be precomputed?
+   */
+  public synchronized void precompute(final boolean precomputeSingle) {
+    org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement Bi;
+
+<span class="nc bnc" id="L521" title="All 4 branches missed.">    if (precomputeSingle &amp;&amp; this.precmp == null) {</span>
+      // Precomputation for single scalar multiplication.
+<span class="nc" id="L523">      this.precmp = new org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement[32][8];</span>
+      // TODO-CR BR: check that this == base point when the method is called.
+<span class="nc" id="L525">      Bi = this;</span>
+<span class="nc bnc" id="L526" title="All 2 branches missed.">      for (int i = 0; i &lt; 32; i++) {</span>
+<span class="nc" id="L527">        org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement Bij = Bi;</span>
+<span class="nc bnc" id="L528" title="All 2 branches missed.">        for (int j = 0; j &lt; 8; j++) {</span>
+<span class="nc" id="L529">          final FieldElement recip = Bij.Z.invert();</span>
+<span class="nc" id="L530">          final FieldElement x = Bij.X.multiply(recip);</span>
+<span class="nc" id="L531">          final FieldElement y = Bij.Y.multiply(recip);</span>
+<span class="nc" id="L532">          this.precmp[i][j] = precomp(this.curve, y.add(x), y.subtract(x),</span>
+<span class="nc" id="L533">              x.multiply(y).multiply(this.curve.get2D()));</span>
+<span class="nc" id="L534">          Bij = Bij.add(Bi.toCached()).toP3();</span>
+        }
+        // Only every second summand is precomputed (16^2 = 256)
+<span class="nc bnc" id="L537" title="All 2 branches missed.">        for (int k = 0; k &lt; 8; k++) {</span>
+<span class="nc" id="L538">          Bi = Bi.add(Bi.toCached()).toP3();</span>
+        }
+      }
+    }
+
+    // Precomputation for double scalar multiplication.
+    // P,3P,5P,7P,9P,11P,13P,15P
+<span class="nc bnc" id="L545" title="All 2 branches missed.">    if (this.dblPrecmp != null) {</span>
+<span class="nc" id="L546">      return;</span>
+    }
+<span class="nc" id="L548">    this.dblPrecmp = new org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement[8];</span>
+<span class="nc" id="L549">    Bi = this;</span>
+<span class="nc bnc" id="L550" title="All 2 branches missed.">    for (int i = 0; i &lt; 8; i++) {</span>
+<span class="nc" id="L551">      final FieldElement recip = Bi.Z.invert();</span>
+<span class="nc" id="L552">      final FieldElement x = Bi.X.multiply(recip);</span>
+<span class="nc" id="L553">      final FieldElement y = Bi.Y.multiply(recip);</span>
+<span class="nc" id="L554">      this.dblPrecmp[i] = precomp(this.curve, y.add(x), y.subtract(x),</span>
+<span class="nc" id="L555">          x.multiply(y).multiply(this.curve.get2D()));</span>
+      // Bi = edwards(B,edwards(B,Bi))
+<span class="nc" id="L557">      Bi = this.add(this.add(Bi.toCached()).toP3().toCached()).toP3();</span>
+    }
+<span class="nc" id="L559">  }</span>
+
+  /**
+   * Doubles a given group element $p$ in $P^2$ or $P^3$ representation and returns the result in $P
+   * \times P$ representation. $r = 2 * p$ where $p = (X : Y : Z)$ or $p = (X : Y : Z : T)$
+   * &lt;p&gt;
+   * $r$ in $P \times P$ representation:
+   * &lt;p&gt;
+   * $r = ((X' : Z'), (Y' : T'))$ where
+   * &lt;/p&gt;&lt;ul&gt;
+   * &lt;li&gt;$X' = (X + Y)^2 - (Y^2 + X^2)$
+   * &lt;li&gt;$Y' = Y^2 + X^2$
+   * &lt;li&gt;$Z' = y^2 - X^2$
+   * &lt;li&gt;$T' = 2 * Z^2 - (y^2 - X^2)$
+   * &lt;/ul&gt;&lt;p&gt;
+   * $r$ converted from $P \times P$ to $P^2$ representation:
+   * &lt;p&gt;
+   * $r = (X'' : Y'' : Z'')$ where
+   * &lt;/p&gt;&lt;ul&gt;
+   * &lt;li&gt;$X'' = X' * Z' = ((X + Y)^2 - Y^2 - X^2) * (2 * Z^2 - (y^2 - X^2))$
+   * &lt;li&gt;$Y'' = Y' * T' = (Y^2 + X^2) * (2 * Z^2 - (y^2 - X^2))$
+   * &lt;li&gt;$Z'' = Z' * T' = (y^2 - X^2) * (2 * Z^2 - (y^2 - X^2))$
+   * &lt;/ul&gt;&lt;p&gt;
+   * Formula for the $P^2$ representation is in agreement with the formula given in [4] page 12
+   * (with $a = -1$) up to a common factor -1 which does not matter:
+   * &lt;p&gt;
+   * $$ B = (X + Y)^2; C = X^2; D = Y^2; E = -C = -X^2; F := E + D = Y^2 - X^2; H = Z^2; J = F − 2 *
+   * H; \\ X3 = (B − C − D) · J = X' * (-T'); \\ Y3 = F · (E − D) = Z' * (-Y'); \\ Z3 = F · J = Z' *
+   * (-T'). $$
+   *
+   * @return The P1P1 representation
+   */
+  public org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement dbl() {
+<span class="nc bnc" id="L592" title="All 2 branches missed.">    switch (this.repr) {</span>
+      case P2:
+      case P3: // Ignore T for P3 representation
+        FieldElement XX, YY, B, A, AA, Yn, Zn;
+<span class="nc" id="L596">        XX = this.X.square();</span>
+<span class="nc" id="L597">        YY = this.Y.square();</span>
+<span class="nc" id="L598">        B = this.Z.squareAndDouble();</span>
+<span class="nc" id="L599">        A = this.X.add(this.Y);</span>
+<span class="nc" id="L600">        AA = A.square();</span>
+<span class="nc" id="L601">        Yn = YY.add(XX);</span>
+<span class="nc" id="L602">        Zn = YY.subtract(XX);</span>
+<span class="nc" id="L603">        return p1p1(this.curve, AA.subtract(Yn), Yn, Zn, B.subtract(Zn));</span>
+      default:
+<span class="nc" id="L605">        throw new UnsupportedOperationException();</span>
+    }
+  }
+
+  /**
+   * GroupElement addition using the twisted Edwards addition law with extended coordinates
+   * (Hisil2008).
+   * &lt;p&gt;
+   * this must be in $P^3$ representation and $q$ in PRECOMP representation. $r = p + q$ where $p =
+   * this = (X1 : Y1 : Z1 : T1), q = (q.X, q.Y, q.Z) = (Y2/Z2 + X2/Z2, Y2/Z2 - X2/Z2, 2 * d * X2/Z2
+   * * Y2/Z2)$
+   * &lt;p&gt;
+   * $r$ in $P \times P$ representation:
+   * &lt;p&gt;
+   * $r = ((X' : Z'), (Y' : T'))$ where
+   * &lt;p&gt;&lt;ul&gt;
+   * &lt;li&gt;$X' = (Y1 + X1) * q.X - (Y1 - X1) * q.Y = ((Y1 + X1) * (Y2 + X2) - (Y1 - X1) * (Y2 - X2))
+   * * 1/Z2$
+   * &lt;li&gt;$Y' = (Y1 + X1) * q.X + (Y1 - X1) * q.Y = ((Y1 + X1) * (Y2 + X2) + (Y1 - X1) * (Y2 - X2))
+   * * 1/Z2$
+   * &lt;li&gt;$Z' = 2 * Z1 + T1 * q.Z = 2 * Z1 + T1 * 2 * d * X2 * Y2 * 1/Z2^2 = (2 * Z1 * Z2 + 2 * d *
+   * T1 * T2) * 1/Z2$
+   * &lt;li&gt;$T' = 2 * Z1 - T1 * q.Z = 2 * Z1 - T1 * 2 * d * X2 * Y2 * 1/Z2^2 = (2 * Z1 * Z2 - 2 * d *
+   * T1 * T2) * 1/Z2$
+   * &lt;/ul&gt;&lt;p&gt;
+   * Setting $A = (Y1 - X1) * (Y2 - X2), B = (Y1 + X1) * (Y2 + X2), C = 2 * d * T1 * T2, D = 2 * Z1
+   * * Z2$ we get
+   * &lt;p&gt;&lt;ul&gt;
+   * &lt;li&gt;$X' = (B - A) * 1/Z2$
+   * &lt;li&gt;$Y' = (B + A) * 1/Z2$
+   * &lt;li&gt;$Z' = (D + C) * 1/Z2$
+   * &lt;li&gt;$T' = (D - C) * 1/Z2$
+   * &lt;/ul&gt;&lt;p&gt;
+   * $r$ converted from $P \times P$ to $P^2$ representation:
+   * &lt;p&gt;
+   * $r = (X'' : Y'' : Z'' : T'')$ where
+   * &lt;p&gt;&lt;ul&gt;
+   * &lt;li&gt;$X'' = X' * Z' = (B - A) * (D + C) * 1/Z2^2$
+   * &lt;li&gt;$Y'' = Y' * T' = (B + A) * (D - C) * 1/Z2^2$
+   * &lt;li&gt;$Z'' = Z' * T' = (D + C) * (D - C) * 1/Z2^2$
+   * &lt;li&gt;$T'' = X' * Y' = (B - A) * (B + A) * 1/Z2^2$
+   * &lt;/ul&gt;&lt;p&gt;
+   * TODO-CR BR: Formula for the $P^2$ representation is not in agreement with the formula given in
+   * [2] page 6&lt;br&gt; TODO-CR BR: (the common factor $1/Z2^2$ does not matter):&lt;br&gt; $$ E = B - A, F =
+   * D - C, G = D + C, H = B + A \\ X3 = E * F = (B - A) * (D - C); \\ Y3 = G * H = (D + C) * (B +
+   * A); \\ Z3 = F * G = (D - C) * (D + C); \\ T3 = E * H = (B - A) * (B + A); $$
+   *
+   * @param q the PRECOMP representation of the GroupElement to add.
+   * @return the P1P1 representation of the result.
+   */
+  private org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement madd(
+      org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement q) {
+<span class="nc bnc" id="L657" title="All 2 branches missed.">    if (this.repr != Representation.P3) {</span>
+<span class="nc" id="L658">      throw new UnsupportedOperationException();</span>
+    }
+<span class="nc bnc" id="L660" title="All 2 branches missed.">    if (q.repr != Representation.PRECOMP) {</span>
+<span class="nc" id="L661">      throw new IllegalArgumentException();</span>
+    }
+
+    FieldElement YpX, YmX, A, B, C, D;
+<span class="nc" id="L665">    YpX = this.Y.add(this.X);</span>
+<span class="nc" id="L666">    YmX = this.Y.subtract(this.X);</span>
+<span class="nc" id="L667">    A = YpX.multiply(q.X); // q-&gt;y+x</span>
+<span class="nc" id="L668">    B = YmX.multiply(q.Y); // q-&gt;y-x</span>
+<span class="nc" id="L669">    C = q.Z.multiply(this.T); // q-&gt;2dxy</span>
+<span class="nc" id="L670">    D = this.Z.add(this.Z);</span>
+<span class="nc" id="L671">    return p1p1(this.curve, A.subtract(B), A.add(B), D.add(C), D.subtract(C));</span>
+  }
+
+  /**
+   * GroupElement subtraction using the twisted Edwards addition law with extended coordinates
+   * (Hisil2008).
+   * &lt;p&gt;
+   * this must be in $P^3$ representation and $q$ in PRECOMP representation. $r = p - q$ where $p =
+   * this = (X1 : Y1 : Z1 : T1), q = (q.X, q.Y, q.Z) = (Y2/Z2 + X2/Z2, Y2/Z2 - X2/Z2, 2 * d * X2/Z2
+   * * Y2/Z2)$
+   * &lt;p&gt;
+   * Negating $q$ means negating the value of $X2$ and $T2$ (the latter is irrelevant here). The
+   * formula is in accordance to {@link #madd the above addition}.
+   *
+   * @param q the PRECOMP representation of the GroupElement to subtract.
+   * @return the P1P1 representation of the result.
+   */
+  private org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement msub(
+      org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement q) {
+<span class="nc bnc" id="L690" title="All 2 branches missed.">    if (this.repr != Representation.P3) {</span>
+<span class="nc" id="L691">      throw new UnsupportedOperationException();</span>
+    }
+<span class="nc bnc" id="L693" title="All 2 branches missed.">    if (q.repr != Representation.PRECOMP) {</span>
+<span class="nc" id="L694">      throw new IllegalArgumentException();</span>
+    }
+
+    FieldElement YpX, YmX, A, B, C, D;
+<span class="nc" id="L698">    YpX = this.Y.add(this.X);</span>
+<span class="nc" id="L699">    YmX = this.Y.subtract(this.X);</span>
+<span class="nc" id="L700">    A = YpX.multiply(q.Y); // q-&gt;y-x</span>
+<span class="nc" id="L701">    B = YmX.multiply(q.X); // q-&gt;y+x</span>
+<span class="nc" id="L702">    C = q.Z.multiply(this.T); // q-&gt;2dxy</span>
+<span class="nc" id="L703">    D = this.Z.add(this.Z);</span>
+<span class="nc" id="L704">    return p1p1(this.curve, A.subtract(B), A.add(B), D.subtract(C), D.add(C));</span>
+  }
+
+  /**
+   * GroupElement addition using the twisted Edwards addition law with extended coordinates
+   * (Hisil2008).
+   * &lt;p&gt;
+   * this must be in $P^3$ representation and $q$ in CACHED representation. $r = p + q$ where $p =
+   * this = (X1 : Y1 : Z1 : T1), q = (q.X, q.Y, q.Z, q.T) = (Y2 + X2, Y2 - X2, Z2, 2 * d * T2)$
+   * &lt;p&gt;
+   * $r$ in $P \times P$ representation:
+   * &lt;/p&gt;&lt;ul&gt;
+   * &lt;li&gt;$X' = (Y1 + X1) * (Y2 + X2) - (Y1 - X1) * (Y2 - X2)$
+   * &lt;li&gt;$Y' = (Y1 + X1) * (Y2 + X2) + (Y1 - X1) * (Y2 - X2)$
+   * &lt;li&gt;$Z' = 2 * Z1 * Z2 + 2 * d * T1 * T2$
+   * &lt;li&gt;$T' = 2 * Z1 * T2 - 2 * d * T1 * T2$
+   * &lt;/ul&gt;&lt;p&gt;
+   * Setting $A = (Y1 - X1) * (Y2 - X2), B = (Y1 + X1) * (Y2 + X2), C = 2 * d * T1 * T2, D = 2 * Z1
+   * * Z2$ we get
+   * &lt;/p&gt;&lt;ul&gt;
+   * &lt;li&gt;$X' = (B - A)$
+   * &lt;li&gt;$Y' = (B + A)$
+   * &lt;li&gt;$Z' = (D + C)$
+   * &lt;li&gt;$T' = (D - C)$
+   * &lt;/ul&gt;&lt;p&gt;
+   * Same result as in {@link #madd} (up to a common factor which does not matter).
+   *
+   * @param q the CACHED representation of the GroupElement to add.
+   * @return the P1P1 representation of the result.
+   */
+  public org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement add(
+      org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement q) {
+<span class="nc bnc" id="L736" title="All 2 branches missed.">    if (this.repr != Representation.P3) {</span>
+<span class="nc" id="L737">      throw new UnsupportedOperationException();</span>
+    }
+<span class="nc bnc" id="L739" title="All 2 branches missed.">    if (q.repr != Representation.CACHED) {</span>
+<span class="nc" id="L740">      throw new IllegalArgumentException();</span>
+    }
+
+    FieldElement YpX, YmX, A, B, C, ZZ, D;
+<span class="nc" id="L744">    YpX = this.Y.add(this.X);</span>
+<span class="nc" id="L745">    YmX = this.Y.subtract(this.X);</span>
+<span class="nc" id="L746">    A = YpX.multiply(q.X); // q-&gt;Y+X</span>
+<span class="nc" id="L747">    B = YmX.multiply(q.Y); // q-&gt;Y-X</span>
+<span class="nc" id="L748">    C = q.T.multiply(this.T); // q-&gt;2dT</span>
+<span class="nc" id="L749">    ZZ = this.Z.multiply(q.Z);</span>
+<span class="nc" id="L750">    D = ZZ.add(ZZ);</span>
+<span class="nc" id="L751">    return p1p1(this.curve, A.subtract(B), A.add(B), D.add(C), D.subtract(C));</span>
+  }
+
+  /**
+   * GroupElement subtraction using the twisted Edwards addition law with extended coordinates
+   * (Hisil2008).
+   * &lt;p&gt;
+   * $r = p - q$
+   * &lt;p&gt;
+   * Negating $q$ means negating the value of the coordinate $X2$ and $T2$. The formula is in
+   * accordance to {@link #add the above addition}.
+   *
+   * @param q the PRECOMP representation of the GroupElement to subtract.
+   * @return the P1P1 representation of the result.
+   */
+  public org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement sub(
+      org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement q) {
+<span class="nc bnc" id="L768" title="All 2 branches missed.">    if (this.repr != Representation.P3) {</span>
+<span class="nc" id="L769">      throw new UnsupportedOperationException();</span>
+    }
+<span class="nc bnc" id="L771" title="All 2 branches missed.">    if (q.repr != Representation.CACHED) {</span>
+<span class="nc" id="L772">      throw new IllegalArgumentException();</span>
+    }
+
+    FieldElement YpX, YmX, A, B, C, ZZ, D;
+<span class="nc" id="L776">    YpX = Y.add(X);</span>
+<span class="nc" id="L777">    YmX = Y.subtract(X);</span>
+<span class="nc" id="L778">    A = YpX.multiply(q.Y); // q-&gt;Y-X</span>
+<span class="nc" id="L779">    B = YmX.multiply(q.X); // q-&gt;Y+X</span>
+<span class="nc" id="L780">    C = q.T.multiply(T); // q-&gt;2dT</span>
+<span class="nc" id="L781">    ZZ = Z.multiply(q.Z);</span>
+<span class="nc" id="L782">    D = ZZ.add(ZZ);</span>
+<span class="nc" id="L783">    return p1p1(curve, A.subtract(B), A.add(B), D.subtract(C), D.add(C));</span>
+  }
+
+  /**
+   * Negates this group element by subtracting it from the neutral group element.
+   * &lt;p&gt;
+   * TODO-CR BR: why not simply negate the coordinates $X$ and $T$?
+   *
+   * @return The negative of this group element.
+   */
+  public org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement negate() {
+<span class="nc bnc" id="L794" title="All 2 branches missed.">    if (this.repr != Representation.P3) {</span>
+<span class="nc" id="L795">      throw new UnsupportedOperationException();</span>
+    }
+<span class="nc" id="L797">    return this.curve.getZero(Representation.P3).sub(toCached()).toP3();</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L802">    return Arrays.hashCode(this.toByteArray());</span>
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+<span class="nc bnc" id="L807" title="All 2 branches missed.">    if (obj == this) {</span>
+<span class="nc" id="L808">      return true;</span>
+    }
+<span class="nc bnc" id="L810" title="All 2 branches missed.">    if (!(obj instanceof org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement)) {</span>
+<span class="nc" id="L811">      return false;</span>
+    }
+<span class="nc" id="L813">    org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement ge = (org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement) obj;</span>
+<span class="nc bnc" id="L814" title="All 2 branches missed.">    if (!this.repr.equals(ge.repr)) {</span>
+      try {
+<span class="nc" id="L816">        ge = ge.toRep(this.repr);</span>
+<span class="nc" id="L817">      } catch (RuntimeException e) {</span>
+<span class="nc" id="L818">        return false;</span>
+<span class="nc" id="L819">      }</span>
+    }
+<span class="nc bnc" id="L821" title="All 5 branches missed.">    switch (this.repr) {</span>
+      case P2:
+      case P3:
+        // Try easy way first
+<span class="nc bnc" id="L825" title="All 2 branches missed.">        if (this.Z.equals(ge.Z)) {</span>
+<span class="nc bnc" id="L826" title="All 4 branches missed.">          return this.X.equals(ge.X) &amp;&amp; this.Y.equals(ge.Y);</span>
+        }
+        // X1/Z1 = X2/Z2 --&gt; X1*Z2 = X2*Z1
+<span class="nc" id="L829">        final FieldElement x1 = this.X.multiply(ge.Z);</span>
+<span class="nc" id="L830">        final FieldElement y1 = this.Y.multiply(ge.Z);</span>
+<span class="nc" id="L831">        final FieldElement x2 = ge.X.multiply(this.Z);</span>
+<span class="nc" id="L832">        final FieldElement y2 = ge.Y.multiply(this.Z);</span>
+<span class="nc bnc" id="L833" title="All 4 branches missed.">        return x1.equals(x2) &amp;&amp; y1.equals(y2);</span>
+      case P1P1:
+<span class="nc" id="L835">        return toP2().equals(ge);</span>
+      case PRECOMP:
+        // Compare directly, PRECOMP is derived directly from x and y
+<span class="nc bnc" id="L838" title="All 6 branches missed.">        return this.X.equals(ge.X) &amp;&amp; this.Y.equals(ge.Y) &amp;&amp; this.Z.equals(ge.Z);</span>
+      case CACHED:
+        // Try easy way first
+<span class="nc bnc" id="L841" title="All 2 branches missed.">        if (this.Z.equals(ge.Z)) {</span>
+<span class="nc bnc" id="L842" title="All 6 branches missed.">          return this.X.equals(ge.X) &amp;&amp; this.Y.equals(ge.Y) &amp;&amp; this.T.equals(ge.T);</span>
+        }
+        // (Y+X)/Z = y+x etc.
+<span class="nc" id="L845">        final FieldElement x3 = this.X.multiply(ge.Z);</span>
+<span class="nc" id="L846">        final FieldElement y3 = this.Y.multiply(ge.Z);</span>
+<span class="nc" id="L847">        final FieldElement t3 = this.T.multiply(ge.Z);</span>
+<span class="nc" id="L848">        final FieldElement x4 = ge.X.multiply(this.Z);</span>
+<span class="nc" id="L849">        final FieldElement y4 = ge.Y.multiply(this.Z);</span>
+<span class="nc" id="L850">        final FieldElement t4 = ge.T.multiply(this.Z);</span>
+<span class="nc bnc" id="L851" title="All 6 branches missed.">        return x3.equals(x4) &amp;&amp; y3.equals(y4) &amp;&amp; t3.equals(t4);</span>
+      default:
+<span class="nc" id="L853">        return false;</span>
+    }
+  }
+
+  /**
+   * Constant-time conditional move.
+   * &lt;p&gt;
+   * Replaces this with $u$ if $b == 1$.&lt;br&gt; Replaces this with this if $b == 0$.
+   * &lt;p&gt;
+   * Method is package private only so that tests run.
+   *
+   * @param u The group element to return if $b == 1$.
+   * @param b in $\{0, 1\}$
+   * @return $u$ if $b == 1$; this if $b == 0$. Results undefined if $b$ is not in $\{0, 1\}$.
+   */
+  org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement cmov(
+          final org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement u, final int b) {
+<span class="nc" id="L870">    return precomp(curve, X.cmov(u.X, b), Y.cmov(u.Y, b), Z.cmov(u.Z, b));</span>
+  }
+
+  /**
+   * Look up $16^i r_i B$ in the precomputed table.
+   * &lt;p&gt;
+   * No secret array indices, no secret branching. Constant time.
+   * &lt;p&gt;
+   * Must have previously precomputed.
+   * &lt;p&gt;
+   * Method is package private only so that tests run.
+   *
+   * @param pos $= i/2$ for $i$ in $\{0, 2, 4,..., 62\}$
+   * @param b   $= r_i$
+   * @return the GroupElement
+   */
+  org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement select(final int pos, final int b) {
+    // Is r_i negative?
+<span class="nc" id="L888">    final int bnegative = Utils.negative(b);</span>
+    // |r_i|
+<span class="nc" id="L890">    final int babs = b - (((-bnegative) &amp; b) &lt;&lt; 1);</span>
+
+    // 16^i |r_i| B
+<span class="nc" id="L893">    final org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement t = this.curve</span>
+<span class="nc" id="L894">        .getZero(Representation.PRECOMP)</span>
+<span class="nc" id="L895">        .cmov(this.precmp[pos][0], Utils.equal(babs, 1))</span>
+<span class="nc" id="L896">        .cmov(this.precmp[pos][1], Utils.equal(babs, 2))</span>
+<span class="nc" id="L897">        .cmov(this.precmp[pos][2], Utils.equal(babs, 3))</span>
+<span class="nc" id="L898">        .cmov(this.precmp[pos][3], Utils.equal(babs, 4))</span>
+<span class="nc" id="L899">        .cmov(this.precmp[pos][4], Utils.equal(babs, 5))</span>
+<span class="nc" id="L900">        .cmov(this.precmp[pos][5], Utils.equal(babs, 6))</span>
+<span class="nc" id="L901">        .cmov(this.precmp[pos][6], Utils.equal(babs, 7))</span>
+<span class="nc" id="L902">        .cmov(this.precmp[pos][7], Utils.equal(babs, 8));</span>
+    // -16^i |r_i| B
+<span class="nc" id="L904">    final org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement tminus = precomp(curve, t.Y,</span>
+<span class="nc" id="L905">        t.X, t.Z.negate());</span>
+    // 16^i r_i B
+<span class="nc" id="L907">    return t.cmov(tminus, bnegative);</span>
+  }
+
+  /**
+   * $h = a * B$ where $a = a[0]+256*a[1]+\dots+256^{31} a[31]$ and $B$ is this point. If its lookup
+   * table has not been precomputed, it will be at the start of the method (and cached for later
+   * calls). Constant time.
+   * &lt;p&gt;
+   * Preconditions: (TODO: Check this applies here) $a[31] \le 127$
+   *
+   * @param a $= a[0]+256*a[1]+\dots+256^{31} a[31]$
+   * @return the GroupElement
+   */
+  public org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement scalarMultiply(
+      final byte[] a) {
+    org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement t;
+    int i;
+
+<span class="nc" id="L925">    final byte[] e = toRadix16(a);</span>
+
+<span class="nc" id="L927">    org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement h = this.curve</span>
+<span class="nc" id="L928">        .getZero(Representation.P3);</span>
+<span class="nc" id="L929">    synchronized (this) {</span>
+      // TODO: Get opinion from a crypto professional.
+      // This should in practice never be necessary, the only point that
+      // this should get called on is EdDSA's B.
+      //precompute();
+<span class="nc bnc" id="L934" title="All 2 branches missed.">      for (i = 1; i &lt; 64; i += 2) {</span>
+<span class="nc" id="L935">        t = select(i / 2, e[i]);</span>
+<span class="nc" id="L936">        h = h.madd(t).toP3();</span>
+      }
+
+<span class="nc" id="L939">      h = h.dbl().toP2().dbl().toP2().dbl().toP2().dbl().toP3();</span>
+
+<span class="nc bnc" id="L941" title="All 2 branches missed.">      for (i = 0; i &lt; 64; i += 2) {</span>
+<span class="nc" id="L942">        t = select(i / 2, e[i]);</span>
+<span class="nc" id="L943">        h = h.madd(t).toP3();</span>
+      }
+<span class="nc" id="L945">    }</span>
+
+<span class="nc" id="L947">    return h;</span>
+  }
+
+  /**
+   * $r = a * A + b * B$ where $a = a[0]+256*a[1]+\dots+256^{31} a[31]$, $b =
+   * b[0]+256*b[1]+\dots+256^{31} b[31]$ and $B$ is this point.
+   * &lt;p&gt;
+   * $A$ must have been previously precomputed.
+   *
+   * @param A in P3 representation.
+   * @param a $= a[0]+256*a[1]+\dots+256^{31} a[31]$
+   * @param b $= b[0]+256*b[1]+\dots+256^{31} b[31]$
+   * @return the GroupElement
+   */
+  public org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement doubleScalarMultiplyVariableTime(
+          final org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement A, final byte[] a,
+          final byte[] b) {
+    // TODO-CR BR: A check that this is the base point is needed.
+<span class="nc" id="L965">    final byte[] aslide = slide(a);</span>
+<span class="nc" id="L966">    final byte[] bslide = slide(b);</span>
+
+<span class="nc" id="L968">    org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement r = this.curve</span>
+<span class="nc" id="L969">        .getZero(Representation.P2);</span>
+
+    int i;
+<span class="nc bnc" id="L972" title="All 2 branches missed.">    for (i = 255; i &gt;= 0; --i) {</span>
+<span class="nc bnc" id="L973" title="All 4 branches missed.">      if (aslide[i] != 0 || bslide[i] != 0) {</span>
+<span class="nc" id="L974">        break;</span>
+      }
+    }
+
+<span class="nc" id="L978">    synchronized (this) {</span>
+      // TODO-CR BR strange comment below.
+      // TODO: Get opinion from a crypto professional.
+      // This should in practice never be necessary, the only point that
+      // this should get called on is EdDSA's B.
+      //precompute();
+<span class="nc bnc" id="L984" title="All 2 branches missed.">      for (; i &gt;= 0; --i) {</span>
+<span class="nc" id="L985">        org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement t = r.dbl();</span>
+
+<span class="nc bnc" id="L987" title="All 2 branches missed.">        if (aslide[i] &gt; 0) {</span>
+<span class="nc" id="L988">          t = t.toP3().madd(A.dblPrecmp[aslide[i] / 2]);</span>
+<span class="nc bnc" id="L989" title="All 2 branches missed.">        } else if (aslide[i] &lt; 0) {</span>
+<span class="nc" id="L990">          t = t.toP3().msub(A.dblPrecmp[(-aslide[i]) / 2]);</span>
+        }
+
+<span class="nc bnc" id="L993" title="All 2 branches missed.">        if (bslide[i] &gt; 0) {</span>
+<span class="nc" id="L994">          t = t.toP3().madd(this.dblPrecmp[bslide[i] / 2]);</span>
+<span class="nc bnc" id="L995" title="All 2 branches missed.">        } else if (bslide[i] &lt; 0) {</span>
+<span class="nc" id="L996">          t = t.toP3().msub(this.dblPrecmp[(-bslide[i]) / 2]);</span>
+        }
+
+<span class="nc" id="L999">        r = t.toP2();</span>
+      }
+<span class="nc" id="L1001">    }</span>
+
+<span class="nc" id="L1003">    return r;</span>
+  }
+
+  /**
+   * Verify that a point is on its curve.
+   *
+   * @return true if the point lies on its curve.
+   */
+  public boolean isOnCurve() {
+<span class="nc" id="L1012">    return isOnCurve(curve);</span>
+  }
+
+  /**
+   * Verify that a point is on the curve.
+   *
+   * @param curve The curve to check.
+   * @return true if the point lies on the curve.
+   */
+  public boolean isOnCurve(Curve curve) {
+<span class="nc bnc" id="L1022" title="All 2 branches missed.">    switch (repr) {</span>
+      case P2:
+      case P3:
+<span class="nc" id="L1025">        FieldElement recip = Z.invert();</span>
+<span class="nc" id="L1026">        FieldElement x = X.multiply(recip);</span>
+<span class="nc" id="L1027">        FieldElement y = Y.multiply(recip);</span>
+<span class="nc" id="L1028">        FieldElement xx = x.square();</span>
+<span class="nc" id="L1029">        FieldElement yy = y.square();</span>
+<span class="nc" id="L1030">        FieldElement dxxyy = curve.getD().multiply(xx).multiply(yy);</span>
+<span class="nc" id="L1031">        return curve.getField().ONE.add(dxxyy).add(xx).equals(yy);</span>
+
+      default:
+<span class="nc" id="L1034">        return toP2().isOnCurve(curve);</span>
+    }
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L1040">    return &quot;[GroupElement\nX=&quot; + X + &quot;\nY=&quot; + Y + &quot;\nZ=&quot; + Z + &quot;\nT=&quot; + T + &quot;\n]&quot;;</span>
+  }
+
+  /**
+   * Available representations for a group element.
+   * &lt;ul&gt;
+   * &lt;li&gt;P2: Projective representation $(X:Y:Z)$ satisfying $x=X/Z, y=Y/Z$.
+   * &lt;li&gt;P3: Extended projective representation $(X:Y:Z:T)$ satisfying $x=X/Z, y=Y/Z, XY=ZT$.
+   * &lt;li&gt;P1P1: Completed representation $((X:Z), (Y:T))$ satisfying $x=X/Z, y=Y/T$.
+   * &lt;li&gt;PRECOMP: Precomputed representation $(y+x, y-x, 2dxy)$.
+   * &lt;li&gt;CACHED: Cached representation $(Y+X, Y-X, Z, 2dT)$
+   * &lt;/ul&gt;
+   */
+<span class="nc" id="L1053">  public enum Representation {</span>
+    /**
+     * Projective ($P^2$): $(X:Y:Z)$ satisfying $x=X/Z, y=Y/Z$
+     */
+<span class="nc" id="L1057">    P2,</span>
+    /**
+     * Extended ($P^3$): $(X:Y:Z:T)$ satisfying $x=X/Z, y=Y/Z, XY=ZT$
+     */
+<span class="nc" id="L1061">    P3,</span>
+    /**
+     * Completed ($P \times P$): $((X:Z),(Y:T))$ satisfying $x=X/Z, y=Y/T$
+     */
+<span class="nc" id="L1065">    P1P1,</span>
+    /**
+     * Precomputed (Duif): $(y+x,y-x,2dxy)$
+     */
+<span class="nc" id="L1069">    PRECOMP,</span>
+    /**
+     * Cached: $(Y+X,Y-X,Z,2dT)$
+     */
+<span class="nc" id="L1073">    CACHED</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FieldElement.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.send.authentication.ed25519.math</a> &gt; <span class="el_source">FieldElement.java</span></div><h1>FieldElement.java</h1><pre class="source lang-java linenums">/**
+ * EdDSA-Java by str4d
+ * &lt;p&gt;
+ * To the extent possible under law, the person who associated CC0 with EdDSA-Java has waived all
+ * copyright and related or neighboring rights to EdDSA-Java.
+ * &lt;p&gt;
+ * You should have received a copy of the CC0 legalcode along with this work. If not, see
+ * &lt;https://creativecommons.org/publicdomain/zero/1.0/&gt;.
+ */
+package org.mariadb.jdbc.internal.com.send.authentication.ed25519.math;
+
+import java.io.Serializable;
+
+/**
+ * Note: concrete subclasses must implement hashCode() and equals()
+ */
+public abstract class FieldElement implements Serializable {
+
+  private static final long serialVersionUID = 1239527465875676L;
+
+  protected final Field f;
+
+<span class="nc" id="L23">  public FieldElement(Field f) {</span>
+<span class="nc bnc" id="L24" title="All 2 branches missed.">    if (null == f) {</span>
+<span class="nc" id="L25">      throw new IllegalArgumentException(&quot;field cannot be null&quot;);</span>
+    }
+<span class="nc" id="L27">    this.f = f;</span>
+<span class="nc" id="L28">  }</span>
+
+  /**
+   * Encode a FieldElement in its $(b-1)$-bit encoding.
+   *
+   * @return the $(b-1)$-bit encoding of this FieldElement.
+   */
+  public byte[] toByteArray() {
+<span class="nc" id="L36">    return f.getEncoding().encode(this);</span>
+  }
+
+  public abstract boolean isNonZero();
+
+  public boolean isNegative() {
+<span class="nc" id="L42">    return f.getEncoding().isNegative(this);</span>
+  }
+
+  public abstract FieldElement add(FieldElement val);
+
+  public FieldElement addOne() {
+<span class="nc" id="L48">    return add(f.ONE);</span>
+  }
+
+  public abstract FieldElement subtract(FieldElement val);
+
+  public FieldElement subtractOne() {
+<span class="nc" id="L54">    return subtract(f.ONE);</span>
+  }
+
+  public abstract FieldElement negate();
+
+  public FieldElement divide(FieldElement val) {
+<span class="nc" id="L60">    return multiply(val.invert());</span>
+  }
+
+  public abstract FieldElement multiply(FieldElement val);
+
+  public abstract FieldElement square();
+
+  public abstract FieldElement squareAndDouble();
+
+  public abstract FieldElement invert();
+
+  public abstract FieldElement pow22523();
+
+  public abstract FieldElement cmov(FieldElement val, final int b);
+
+  // Note: concrete subclasses must implement hashCode() and equals()
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

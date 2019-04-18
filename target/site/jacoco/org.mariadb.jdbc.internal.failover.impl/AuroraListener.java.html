@@ -1,0 +1,490 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AuroraListener.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.failover.impl</a> &gt; <span class="el_source">AuroraListener.java</span></div><h1>AuroraListener.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.failover.impl;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.mariadb.jdbc.HostAddress;
+import org.mariadb.jdbc.UrlParser;
+import org.mariadb.jdbc.internal.com.read.dao.Results;
+import org.mariadb.jdbc.internal.failover.tools.SearchFilter;
+import org.mariadb.jdbc.internal.protocol.AuroraProtocol;
+import org.mariadb.jdbc.internal.protocol.Protocol;
+import org.mariadb.jdbc.internal.util.Utils;
+import org.mariadb.jdbc.internal.util.dao.ReconnectDuringTransactionException;
+import org.mariadb.jdbc.internal.util.pool.GlobalStateInfo;
+
+public class AuroraListener extends MastersSlavesListener {
+
+<span class="nc" id="L76">  private static final Logger logger = Logger.getLogger(AuroraListener.class.getName());</span>
+<span class="nc" id="L77">  private final Pattern auroraDnsPattern = Pattern</span>
+<span class="nc" id="L78">      .compile(&quot;(.+)\\.(cluster-)?([a-zA-Z0-9]+\\.[a-zA-Z0-9\\-]+\\.rds\\.amazonaws\\.com)&quot;,</span>
+          Pattern.CASE_INSENSITIVE);
+  private final HostAddress clusterHostAddress;
+<span class="nc" id="L81">  private String clusterDnsSuffix = null;</span>
+
+  /**
+   * Constructor for Aurora. This differ from standard failover because : - we don't know current
+   * master, we must check that after initial connection - master can change after he has a
+   * failover
+   *
+   * @param urlParser  connection information
+   * @param globalInfo server global variables information
+   * @throws SQLException when connection string contain host with different cluster
+   */
+  public AuroraListener(UrlParser urlParser, final GlobalStateInfo globalInfo) throws SQLException {
+<span class="nc" id="L93">    super(urlParser, globalInfo);</span>
+<span class="nc" id="L94">    masterProtocol = null;</span>
+<span class="nc" id="L95">    secondaryProtocol = null;</span>
+<span class="nc" id="L96">    clusterHostAddress = findClusterHostAddress(urlParser);</span>
+<span class="nc" id="L97">  }</span>
+
+  /**
+   * Retrieves the cluster host address from the UrlParser instance.
+   *
+   * @param urlParser object that holds the connection information
+   * @return cluster host address
+   */
+  private HostAddress findClusterHostAddress(UrlParser urlParser) throws SQLException {
+<span class="nc" id="L106">    List&lt;HostAddress&gt; hostAddresses = urlParser.getHostAddresses();</span>
+    Matcher matcher;
+<span class="nc bnc" id="L108" title="All 2 branches missed.">    for (HostAddress hostAddress : hostAddresses) {</span>
+<span class="nc" id="L109">      matcher = auroraDnsPattern.matcher(hostAddress.host);</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">      if (matcher.find()) {</span>
+
+<span class="nc bnc" id="L112" title="All 2 branches missed.">        if (clusterDnsSuffix != null) {</span>
+          //ensure there is only one cluster
+<span class="nc bnc" id="L114" title="All 2 branches missed.">          if (!clusterDnsSuffix.equalsIgnoreCase(matcher.group(3))) {</span>
+<span class="nc" id="L115">            throw new SQLException(&quot;Connection string must contain only one aurora cluster. &quot;</span>
+                + &quot;'&quot; + hostAddress.host + &quot;' doesn't correspond to DNS prefix '&quot; + clusterDnsSuffix
+                + &quot;'&quot;);
+          }
+        } else {
+<span class="nc" id="L120">          clusterDnsSuffix = matcher.group(3);</span>
+        }
+
+<span class="nc bnc" id="L123" title="All 4 branches missed.">        if (matcher.group(2) != null &amp;&amp; !matcher.group(2).isEmpty()) {</span>
+          //not just an instance entry-point, but cluster entrypoint.
+<span class="nc" id="L125">          return hostAddress;</span>
+        }
+      } else {
+<span class="nc bnc" id="L128" title="All 2 branches missed.">        if (clusterDnsSuffix == null</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">            &amp;&amp; hostAddress.host.contains(&quot;.&quot;)</span>
+<span class="nc bnc" id="L130" title="All 2 branches missed.">            &amp;&amp; !Utils.isIPv4(hostAddress.host)</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">            &amp;&amp; !Utils.isIPv6(hostAddress.host)) {</span>
+<span class="nc" id="L132">          clusterDnsSuffix = hostAddress.host.substring(hostAddress.host.indexOf(&quot;.&quot;) + 1);</span>
+        }
+      }
+<span class="nc" id="L135">    }</span>
+<span class="nc" id="L136">    return null;</span>
+  }
+
+  public HostAddress getClusterHostAddress() {
+<span class="nc" id="L140">    return clusterHostAddress;</span>
+  }
+
+  /**
+   * Search a valid connection for failed one. A Node can be a master or a replica depending on the
+   * cluster state. so search for each host until found all the failed connection. By default,
+   * search for the host not down, and recheck the down one after if not found valid connections.
+   *
+   * @param initialSearchFilter initial search filter
+   * @throws SQLException if a connection asked is not found
+   */
+  @Override
+  public void reconnectFailedConnection(SearchFilter initialSearchFilter) throws SQLException {
+<span class="nc" id="L153">    SearchFilter searchFilter = initialSearchFilter;</span>
+<span class="nc bnc" id="L154" title="All 2 branches missed.">    if (!searchFilter.isInitialConnection()</span>
+<span class="nc bnc" id="L155" title="All 2 branches missed.">        &amp;&amp; (isExplicitClosed()</span>
+<span class="nc bnc" id="L156" title="All 4 branches missed.">        || (searchFilter.isFineIfFoundOnlyMaster() &amp;&amp; !isMasterHostFail())</span>
+<span class="nc bnc" id="L157" title="All 4 branches missed.">        || searchFilter.isFineIfFoundOnlySlave() &amp;&amp; !isSecondaryHostFail())) {</span>
+<span class="nc" id="L158">      return;</span>
+    }
+
+<span class="nc bnc" id="L161" title="All 2 branches missed.">    if (!searchFilter.isFailoverLoop()) {</span>
+      try {
+<span class="nc" id="L163">        checkWaitingConnection();</span>
+<span class="nc bnc" id="L164" title="All 4 branches missed.">        if ((searchFilter.isFineIfFoundOnlyMaster() &amp;&amp; !isMasterHostFail())</span>
+<span class="nc bnc" id="L165" title="All 4 branches missed.">            || searchFilter.isFineIfFoundOnlySlave() &amp;&amp; !isSecondaryHostFail()) {</span>
+<span class="nc" id="L166">          return;</span>
+        }
+<span class="nc" id="L168">      } catch (ReconnectDuringTransactionException e) {</span>
+        //don't throw an exception for this specific exception
+<span class="nc" id="L170">        return;</span>
+<span class="nc" id="L171">      }</span>
+    }
+
+<span class="nc" id="L174">    currentConnectionAttempts.incrementAndGet();</span>
+
+<span class="nc" id="L176">    resetOldsBlackListHosts();</span>
+
+    //put the list in the following order
+    // - random order not connected host and not blacklisted
+    // - random blacklisted host
+    // - connected host at end.
+<span class="nc" id="L182">    List&lt;HostAddress&gt; loopAddress = new LinkedList&lt;&gt;(urlParser.getHostAddresses());</span>
+<span class="nc" id="L183">    loopAddress.removeAll(getBlacklistKeys());</span>
+<span class="nc" id="L184">    Collections.shuffle(loopAddress);</span>
+<span class="nc" id="L185">    List&lt;HostAddress&gt; blacklistShuffle = new LinkedList&lt;&gt;(getBlacklistKeys());</span>
+<span class="nc" id="L186">    blacklistShuffle.retainAll(urlParser.getHostAddresses());</span>
+<span class="nc" id="L187">    Collections.shuffle(blacklistShuffle);</span>
+<span class="nc" id="L188">    loopAddress.addAll(blacklistShuffle);</span>
+
+    //put connected at end
+<span class="nc bnc" id="L191" title="All 4 branches missed.">    if (masterProtocol != null &amp;&amp; !isMasterHostFail()) {</span>
+<span class="nc" id="L192">      loopAddress.remove(masterProtocol.getHostAddress());</span>
+<span class="nc" id="L193">      loopAddress.add(masterProtocol.getHostAddress());</span>
+    }
+
+<span class="nc bnc" id="L196" title="All 4 branches missed.">    if (!isSecondaryHostFail() &amp;&amp; secondaryProtocol != null) {</span>
+<span class="nc" id="L197">      loopAddress.remove(secondaryProtocol.getHostAddress());</span>
+<span class="nc" id="L198">      loopAddress.add(secondaryProtocol.getHostAddress());</span>
+    }
+
+<span class="nc bnc" id="L201" title="All 2 branches missed.">    if (urlParser.getHostAddresses().size() &lt;= 1) {</span>
+<span class="nc" id="L202">      searchFilter = new SearchFilter(true, false);</span>
+    }
+<span class="nc bnc" id="L204" title="All 4 branches missed.">    if ((isMasterHostFail() || isSecondaryHostFail())</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">        || searchFilter.isInitialConnection()) {</span>
+      //while permit to avoid case when succeeded creating a new Master connection
+      //and ping master connection fail a few milliseconds after,
+      //resulting a masterConnection not initialized.
+      do {
+<span class="nc" id="L210">        AuroraProtocol.loop(this, globalInfo, loopAddress, searchFilter);</span>
+<span class="nc bnc" id="L211" title="All 2 branches missed.">        if (!searchFilter.isFailoverLoop()) {</span>
+          try {
+<span class="nc" id="L213">            checkWaitingConnection();</span>
+<span class="nc" id="L214">          } catch (ReconnectDuringTransactionException e) {</span>
+            //don't throw an exception for this specific exception
+<span class="nc" id="L216">          }</span>
+        }
+<span class="nc bnc" id="L218" title="All 4 branches missed.">      } while (searchFilter.isInitialConnection()</span>
+<span class="nc bnc" id="L219" title="All 4 branches missed.">          &amp;&amp; !(masterProtocol != null || (urlParser.getOptions().allowMasterDownConnection</span>
+          &amp;&amp; secondaryProtocol != null)));
+    }
+
+    //When reconnecting, search if replicas list has change since first initialisation
+<span class="nc bnc" id="L224" title="All 4 branches missed.">    if (getCurrentProtocol() != null &amp;&amp; !getCurrentProtocol().isClosed()) {</span>
+<span class="nc" id="L225">      retrieveAllEndpointsAndSet(getCurrentProtocol());</span>
+    }
+
+<span class="nc bnc" id="L228" title="All 6 branches missed.">    if (searchFilter.isInitialConnection() &amp;&amp; masterProtocol == null &amp;&amp; !currentReadOnlyAsked) {</span>
+<span class="nc" id="L229">      currentProtocol = this.secondaryProtocol;</span>
+<span class="nc" id="L230">      currentReadOnlyAsked = true;</span>
+    }
+<span class="nc" id="L232">  }</span>
+
+  /**
+   * Retrieves the information necessary to add a new endpoint. Calls the methods that retrieves the
+   * instance identifiers and sets urlParser accordingly.
+   *
+   * @param protocol current protocol connected to
+   * @throws SQLException if connection error occur
+   */
+  public void retrieveAllEndpointsAndSet(Protocol protocol) throws SQLException {
+    // For a given cluster, same port for all endpoints and same end host address
+<span class="nc bnc" id="L243" title="All 2 branches missed.">    if (clusterDnsSuffix != null) {</span>
+<span class="nc" id="L244">      List&lt;String&gt; endpoints = getCurrentEndpointIdentifiers(protocol);</span>
+<span class="nc" id="L245">      setUrlParserFromEndpoints(endpoints, protocol.getPort());</span>
+    }
+
+<span class="nc" id="L248">  }</span>
+
+  /**
+   * Retrieves all endpoints of a cluster from the appropriate database table.
+   *
+   * @param protocol current protocol connected to
+   * @return instance endpoints of the cluster
+   * @throws SQLException if connection error occur
+   */
+  private List&lt;String&gt; getCurrentEndpointIdentifiers(Protocol protocol) throws SQLException {
+<span class="nc" id="L258">    List&lt;String&gt; endpoints = new ArrayList&lt;&gt;();</span>
+    try {
+<span class="nc" id="L260">      proxy.lock.lock();</span>
+      try {
+        // Deleted instance may remain in db for 24 hours so ignoring instances that have had no change
+        // for 3 minutes
+<span class="nc" id="L264">        Results results = new Results();</span>
+<span class="nc" id="L265">        protocol.executeQuery(false, results,</span>
+            &quot;select server_id, session_id from information_schema.replica_host_status &quot;
+                + &quot;where last_update_timestamp &gt; now() - INTERVAL 3 MINUTE&quot;);
+<span class="nc" id="L268">        results.commandEnd();</span>
+<span class="nc" id="L269">        ResultSet resultSet = results.getResultSet();</span>
+
+<span class="nc bnc" id="L271" title="All 2 branches missed.">        while (resultSet.next()) {</span>
+<span class="nc" id="L272">          endpoints.add(resultSet.getString(1) + &quot;.&quot; + clusterDnsSuffix);</span>
+        }
+
+        //randomize order for distributed load-balancing
+<span class="nc" id="L276">        Collections.shuffle(endpoints);</span>
+
+      } finally {
+<span class="nc" id="L279">        proxy.lock.unlock();</span>
+      }
+<span class="nc" id="L281">    } catch (SQLException qe) {</span>
+<span class="nc" id="L282">      logger.warning(&quot;SQL exception occurred: &quot; + qe.getMessage());</span>
+<span class="nc bnc" id="L283" title="All 2 branches missed.">      if (protocol.getProxy().hasToHandleFailover(qe)) {</span>
+<span class="nc bnc" id="L284" title="All 4 branches missed.">        if (masterProtocol == null || masterProtocol.equals(protocol)) {</span>
+<span class="nc" id="L285">          setMasterHostFail();</span>
+<span class="nc bnc" id="L286" title="All 2 branches missed.">        } else if (secondaryProtocol.equals(protocol)) {</span>
+<span class="nc" id="L287">          setSecondaryHostFail();</span>
+        }
+<span class="nc" id="L289">        addToBlacklist(protocol.getHostAddress());</span>
+<span class="nc" id="L290">        reconnectFailedConnection(new SearchFilter(isMasterHostFail(), isSecondaryHostFail()));</span>
+      }
+<span class="nc" id="L292">    }</span>
+
+<span class="nc" id="L294">    return endpoints;</span>
+  }
+
+  /**
+   * Sets urlParser accordingly to discovered hosts.
+   *
+   * @param endpoints instance identifiers
+   * @param port      port that is common to all endpoints
+   */
+  private void setUrlParserFromEndpoints(List&lt;String&gt; endpoints, int port) {
+<span class="nc" id="L304">    List&lt;HostAddress&gt; addresses = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">    for (String endpoint : endpoints) {</span>
+<span class="nc" id="L306">      HostAddress newHostAddress = new HostAddress(endpoint, port, null);</span>
+<span class="nc" id="L307">      addresses.add(newHostAddress);</span>
+<span class="nc" id="L308">    }</span>
+
+<span class="nc" id="L310">    synchronized (urlParser) {</span>
+<span class="nc" id="L311">      urlParser.setHostAddresses(addresses);</span>
+<span class="nc" id="L312">    }</span>
+<span class="nc" id="L313">  }</span>
+
+  /**
+   * Looks for the current master/writer instance via the secondary protocol if it is found within 3
+   * attempts. Should it not be able to connect, the host is blacklisted and null is returned.
+   * Otherwise, it will open a new connection to the cluster endpoint and retrieve the data from
+   * there.
+   *
+   * @param secondaryProtocol the current secondary protocol
+   * @param loopAddress       list of possible hosts
+   * @return the probable master address or null if not found
+   */
+  public HostAddress searchByStartName(Protocol secondaryProtocol, List&lt;HostAddress&gt; loopAddress) {
+<span class="nc bnc" id="L326" title="All 2 branches missed.">    if (!isSecondaryHostFail()) {</span>
+<span class="nc" id="L327">      int checkWriterAttempts = 3;</span>
+<span class="nc" id="L328">      HostAddress currentWriter = null;</span>
+
+      do {
+        try {
+<span class="nc" id="L332">          currentWriter = searchForMasterHostAddress(secondaryProtocol, loopAddress);</span>
+<span class="nc" id="L333">        } catch (SQLException qe) {</span>
+<span class="nc bnc" id="L334" title="All 4 branches missed.">          if (proxy.hasToHandleFailover(qe) &amp;&amp; setSecondaryHostFail()) {</span>
+<span class="nc" id="L335">            addToBlacklist(secondaryProtocol.getHostAddress());</span>
+<span class="nc" id="L336">            return null;</span>
+          }
+<span class="nc" id="L338">        }</span>
+<span class="nc" id="L339">        checkWriterAttempts--;</span>
+<span class="nc bnc" id="L340" title="All 4 branches missed.">      } while (currentWriter == null &amp;&amp; checkWriterAttempts &gt; 0);</span>
+
+      // Handling special case where no writer is found from secondaryProtocol
+<span class="nc bnc" id="L343" title="All 4 branches missed.">      if (currentWriter == null &amp;&amp; getClusterHostAddress() != null) {</span>
+<span class="nc" id="L344">        AuroraProtocol possibleMasterProtocol = AuroraProtocol</span>
+<span class="nc" id="L345">            .getNewProtocol(getProxy(), globalInfo, getUrlParser());</span>
+<span class="nc" id="L346">        possibleMasterProtocol.setHostAddress(getClusterHostAddress());</span>
+        try {
+<span class="nc" id="L348">          possibleMasterProtocol.connect();</span>
+<span class="nc bnc" id="L349" title="All 2 branches missed.">          if (possibleMasterProtocol.isMasterConnection()) {</span>
+<span class="nc" id="L350">            possibleMasterProtocol.setMustBeMasterConnection(true);</span>
+<span class="nc" id="L351">            foundActiveMaster(possibleMasterProtocol);</span>
+          } else {
+<span class="nc" id="L353">            possibleMasterProtocol.setMustBeMasterConnection(false);</span>
+          }
+<span class="nc" id="L355">        } catch (SQLException qe) {</span>
+<span class="nc bnc" id="L356" title="All 2 branches missed.">          if (proxy.hasToHandleFailover(qe)) {</span>
+<span class="nc" id="L357">            addToBlacklist(possibleMasterProtocol.getHostAddress());</span>
+          }
+<span class="nc" id="L359">        }</span>
+      }
+
+<span class="nc" id="L362">      return currentWriter;</span>
+    }
+<span class="nc" id="L364">    return null;</span>
+  }
+
+  /**
+   * Aurora replica doesn't have the master endpoint but the master instance name. since the end
+   * point normally use the instance name like &quot;instance-name.some_unique_string.region.rds.amazonaws.com&quot;,
+   * if an endpoint start with this instance name, it will be checked first. Otherwise, the endpoint
+   * ending string is extracted and used since the writer was newly created.
+   *
+   * @param protocol    current protocol
+   * @param loopAddress list of possible hosts
+   * @return the probable host address or null if no valid endpoint found
+   * @throws SQLException if any connection error occur
+   */
+  private HostAddress searchForMasterHostAddress(Protocol protocol, List&lt;HostAddress&gt; loopAddress)
+      throws SQLException {
+    String masterHostName;
+<span class="nc" id="L381">    proxy.lock.lock();</span>
+    try {
+<span class="nc" id="L383">      Results results = new Results();</span>
+<span class="nc" id="L384">      protocol.executeQuery(false, results,</span>
+          &quot;select server_id from information_schema.replica_host_status &quot;
+              + &quot;where session_id = 'MASTER_SESSION_ID' &quot;
+              + &quot;and last_update_timestamp &gt; now() - INTERVAL 3 MINUTE &quot;
+              + &quot;ORDER BY last_update_timestamp DESC LIMIT 1&quot;);
+<span class="nc" id="L389">      results.commandEnd();</span>
+<span class="nc" id="L390">      ResultSet queryResult = results.getResultSet();</span>
+
+<span class="nc bnc" id="L392" title="All 2 branches missed.">      if (!queryResult.isBeforeFirst()) {</span>
+<span class="nc" id="L393">        return null;</span>
+      } else {
+<span class="nc" id="L395">        queryResult.next();</span>
+<span class="nc" id="L396">        masterHostName = queryResult.getString(1);</span>
+      }
+    } finally {
+<span class="nc" id="L399">      proxy.lock.unlock();</span>
+    }
+
+    Matcher matcher;
+<span class="nc bnc" id="L403" title="All 2 branches missed.">    if (masterHostName != null) {</span>
+<span class="nc bnc" id="L404" title="All 2 branches missed.">      for (HostAddress hostAddress : loopAddress) {</span>
+<span class="nc" id="L405">        matcher = auroraDnsPattern.matcher(hostAddress.host);</span>
+<span class="nc bnc" id="L406" title="All 4 branches missed.">        if (hostAddress.host.startsWith(masterHostName) &amp;&amp; !matcher.find()) {</span>
+<span class="nc" id="L407">          return hostAddress;</span>
+        }
+<span class="nc" id="L409">      }</span>
+
+      HostAddress masterHostAddress;
+<span class="nc bnc" id="L412" title="All 4 branches missed.">      if (clusterDnsSuffix == null &amp;&amp; protocol.getHost().contains(&quot;.&quot;)) {</span>
+<span class="nc" id="L413">        clusterDnsSuffix = protocol.getHost().substring(protocol.getHost().indexOf(&quot;.&quot;) + 1);</span>
+      } else {
+<span class="nc" id="L415">        return null;</span>
+      }
+
+<span class="nc" id="L418">      masterHostAddress = new HostAddress(masterHostName + &quot;.&quot; + clusterDnsSuffix,</span>
+<span class="nc" id="L419">          protocol.getPort(), null);</span>
+<span class="nc" id="L420">      loopAddress.add(masterHostAddress);</span>
+<span class="nc" id="L421">      urlParser.setHostAddresses(loopAddress);</span>
+<span class="nc" id="L422">      return masterHostAddress;</span>
+    }
+
+<span class="nc" id="L425">    return null;</span>
+  }
+
+  @Override
+  public boolean checkMasterStatus(SearchFilter searchFilter) {
+<span class="nc bnc" id="L430" title="All 2 branches missed.">    if (!isMasterHostFail()) {</span>
+      try {
+<span class="nc bnc" id="L432" title="All 4 branches missed.">        if (masterProtocol != null &amp;&amp; !masterProtocol.checkIfMaster()) {</span>
+          //master has been demote, is now secondary
+<span class="nc" id="L434">          setMasterHostFail();</span>
+<span class="nc bnc" id="L435" title="All 2 branches missed.">          if (isSecondaryHostFail()) {</span>
+<span class="nc" id="L436">            foundActiveSecondary(masterProtocol);</span>
+          }
+<span class="nc" id="L438">          return true;</span>
+        }
+<span class="nc" id="L440">      } catch (SQLException e) {</span>
+        try {
+<span class="nc" id="L442">          masterProtocol.ping();</span>
+<span class="nc" id="L443">        } catch (SQLException ee) {</span>
+<span class="nc" id="L444">          proxy.lock.lock();</span>
+          try {
+<span class="nc" id="L446">            masterProtocol.close();</span>
+          } finally {
+<span class="nc" id="L448">            proxy.lock.unlock();</span>
+          }
+<span class="nc bnc" id="L450" title="All 2 branches missed.">          if (setMasterHostFail()) {</span>
+<span class="nc" id="L451">            addToBlacklist(masterProtocol.getHostAddress());</span>
+          }
+<span class="nc" id="L453">        }</span>
+<span class="nc" id="L454">        return true;</span>
+<span class="nc" id="L455">      }</span>
+    }
+
+<span class="nc bnc" id="L458" title="All 2 branches missed.">    if (!isSecondaryHostFail()) {</span>
+      try {
+<span class="nc bnc" id="L460" title="All 4 branches missed.">        if (secondaryProtocol != null &amp;&amp; secondaryProtocol.checkIfMaster()) {</span>
+          //secondary has been promoted to master
+<span class="nc" id="L462">          setSecondaryHostFail();</span>
+<span class="nc bnc" id="L463" title="All 2 branches missed.">          if (isMasterHostFail()) {</span>
+<span class="nc" id="L464">            foundActiveMaster(secondaryProtocol);</span>
+          }
+<span class="nc" id="L466">          return true;</span>
+        }
+<span class="nc" id="L468">      } catch (SQLException e) {</span>
+        try {
+<span class="nc" id="L470">          this.secondaryProtocol.ping();</span>
+<span class="nc" id="L471">        } catch (Exception ee) {</span>
+<span class="nc" id="L472">          proxy.lock.lock();</span>
+          try {
+<span class="nc" id="L474">            secondaryProtocol.close();</span>
+          } finally {
+<span class="nc" id="L476">            proxy.lock.unlock();</span>
+          }
+<span class="nc bnc" id="L478" title="All 2 branches missed.">          if (setSecondaryHostFail()) {</span>
+<span class="nc" id="L479">            addToBlacklist(this.secondaryProtocol.getHostAddress());</span>
+          }
+<span class="nc" id="L481">          return true;</span>
+<span class="nc" id="L482">        }</span>
+<span class="nc" id="L483">      }</span>
+    }
+
+<span class="nc" id="L486">    return false;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

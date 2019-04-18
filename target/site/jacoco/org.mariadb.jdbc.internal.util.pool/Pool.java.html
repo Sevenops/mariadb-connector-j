@@ -1,0 +1,663 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Pool.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.util.pool</a> &gt; <span class="el_source">Pool.java</span></div><h1>Pool.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ */
+
+package org.mariadb.jdbc.internal.util.pool;
+
+import java.lang.management.ManagementFactory;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.text.NumberFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
+import javax.sql.ConnectionEvent;
+import javax.sql.ConnectionEventListener;
+import org.mariadb.jdbc.MariaDbConnection;
+import org.mariadb.jdbc.MariaDbPooledConnection;
+import org.mariadb.jdbc.UrlParser;
+import org.mariadb.jdbc.internal.logging.Logger;
+import org.mariadb.jdbc.internal.logging.LoggerFactory;
+import org.mariadb.jdbc.internal.protocol.Protocol;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.Utils;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+import org.mariadb.jdbc.internal.util.scheduler.MariaDbThreadFactory;
+
+public class Pool implements AutoCloseable, PoolMBean {
+
+<span class="nc" id="L61">  private static final Logger logger = LoggerFactory.getLogger(Pool.class);</span>
+
+  private static final int POOL_STATE_OK = 0;
+  private static final int POOL_STATE_CLOSING = 1;
+
+<span class="nc" id="L66">  private final AtomicInteger poolState = new AtomicInteger();</span>
+
+  private final UrlParser urlParser;
+  private final Options options;
+<span class="nc" id="L70">  private final AtomicInteger pendingRequestNumber = new AtomicInteger();</span>
+<span class="nc" id="L71">  private final AtomicInteger totalConnection = new AtomicInteger();</span>
+
+  private final LinkedBlockingDeque&lt;MariaDbPooledConnection&gt; idleConnections;
+  private final ThreadPoolExecutor connectionAppender;
+  private final BlockingQueue&lt;Runnable&gt; connectionAppenderQueue;
+
+  private final String poolTag;
+  private final ScheduledThreadPoolExecutor poolExecutor;
+  private final ScheduledFuture scheduledFuture;
+  private GlobalStateInfo globalInfo;
+
+  private int maxIdleTime;
+  private long timeToConnectNanos;
+<span class="nc" id="L84">  private long connectionTime = 0;</span>
+
+  /**
+   * Create pool from configuration.
+   *
+   * @param urlParser    configuration parser
+   * @param poolIndex    pool index to permit distinction of thread name
+   * @param poolExecutor pools common executor
+   */
+<span class="nc" id="L93">  public Pool(UrlParser urlParser, int poolIndex, ScheduledThreadPoolExecutor poolExecutor) {</span>
+
+<span class="nc" id="L95">    this.urlParser = urlParser;</span>
+<span class="nc" id="L96">    options = urlParser.getOptions();</span>
+<span class="nc" id="L97">    this.maxIdleTime = options.maxIdleTime;</span>
+<span class="nc" id="L98">    poolTag = generatePoolTag(poolIndex);</span>
+
+    //one thread to add new connection to pool.
+<span class="nc" id="L101">    connectionAppenderQueue = new ArrayBlockingQueue&lt;&gt;(options.maxPoolSize);</span>
+<span class="nc" id="L102">    connectionAppender = new ThreadPoolExecutor(1, 1, 10, TimeUnit.SECONDS,</span>
+        connectionAppenderQueue, new MariaDbThreadFactory(poolTag + &quot;-appender&quot;));
+<span class="nc" id="L104">    connectionAppender.allowCoreThreadTimeOut(true);</span>
+    //create workers, since driver only interact with queue after that (i.e. not using .execute() )
+<span class="nc" id="L106">    connectionAppender.prestartCoreThread();</span>
+
+<span class="nc" id="L108">    idleConnections = new LinkedBlockingDeque&lt;&gt;();</span>
+
+<span class="nc" id="L110">    int scheduleDelay = Math.min(30, maxIdleTime / 2);</span>
+<span class="nc" id="L111">    this.poolExecutor = poolExecutor;</span>
+<span class="nc" id="L112">    scheduledFuture = poolExecutor</span>
+<span class="nc" id="L113">        .scheduleAtFixedRate(this::removeIdleTimeoutConnection, scheduleDelay, scheduleDelay,</span>
+            TimeUnit.SECONDS);
+
+<span class="nc bnc" id="L116" title="All 2 branches missed.">    if (options.registerJmxPool) {</span>
+      try {
+<span class="nc" id="L118">        registerJmx();</span>
+<span class="nc" id="L119">      } catch (Exception ex) {</span>
+<span class="nc" id="L120">        logger.error(&quot;pool &quot; + poolTag + &quot; not registered due to exception : &quot; + ex.getMessage());</span>
+<span class="nc" id="L121">      }</span>
+    }
+
+    //create minimal connection in pool
+    try {
+<span class="nc bnc" id="L126" title="All 2 branches missed.">      for (int i = 0; i &lt; options.minPoolSize; i++) {</span>
+<span class="nc" id="L127">        addConnection();</span>
+      }
+<span class="nc" id="L129">    } catch (SQLException sqle) {</span>
+<span class="nc" id="L130">      logger.error(&quot;error initializing pool connection&quot;, sqle);</span>
+<span class="nc" id="L131">    }</span>
+
+<span class="nc" id="L133">  }</span>
+
+
+  /**
+   * Add new connection if needed. Only one thread create new connection, so new connection request
+   * will wait to newly created connection or for a released connection.
+   */
+  private void addConnectionRequest() {
+<span class="nc bnc" id="L141" title="All 4 branches missed.">    if (totalConnection.get() &lt; options.maxPoolSize &amp;&amp; poolState.get() == POOL_STATE_OK) {</span>
+
+      //ensure to have one worker if was timeout
+<span class="nc" id="L144">      connectionAppender.prestartCoreThread();</span>
+<span class="nc" id="L145">      connectionAppenderQueue.offer(() -&gt; {</span>
+
+<span class="nc bnc" id="L147" title="All 4 branches missed.">        if ((totalConnection.get() &lt; options.minPoolSize || pendingRequestNumber.get() &gt; 0)</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">            &amp;&amp; totalConnection.get() &lt; options.maxPoolSize) {</span>
+          try {
+<span class="nc" id="L150">            addConnection();</span>
+<span class="nc" id="L151">          } catch (SQLException sqle) {</span>
+            //eat
+<span class="nc" id="L153">          }</span>
+        }
+<span class="nc" id="L155">      });</span>
+    }
+<span class="nc" id="L157">  }</span>
+
+  /**
+   * Removing idle connection.
+   * Close them and recreate connection to reach minimal number of connection.
+   */
+  private void removeIdleTimeoutConnection() {
+
+    //descending iterator since first from queue are the first to be used
+<span class="nc" id="L166">    Iterator&lt;MariaDbPooledConnection&gt; iterator = idleConnections.descendingIterator();</span>
+
+    MariaDbPooledConnection item;
+
+<span class="nc bnc" id="L170" title="All 2 branches missed.">    while (iterator.hasNext()) {</span>
+<span class="nc" id="L171">      item = iterator.next();</span>
+
+<span class="nc" id="L173">      long idleTime = System.nanoTime() - item.getLastUsed().get();</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">      boolean timedOut = idleTime &gt; TimeUnit.SECONDS.toNanos(maxIdleTime);</span>
+
+<span class="nc" id="L176">      boolean shouldBeReleased = false;</span>
+
+<span class="nc bnc" id="L178" title="All 2 branches missed.">      if (globalInfo != null) {</span>
+
+        // idle time is reaching server @@wait_timeout
+<span class="nc bnc" id="L181" title="All 2 branches missed.">        if (idleTime &gt; TimeUnit.SECONDS.toNanos(globalInfo.getWaitTimeout() - 45)) {</span>
+<span class="nc" id="L182">          shouldBeReleased = true;</span>
+        }
+
+        //  idle has reach option maxIdleTime value and pool has more connections than minPoolSiz
+<span class="nc bnc" id="L186" title="All 4 branches missed.">        if (timedOut &amp;&amp; totalConnection.get() &gt; options.minPoolSize) {</span>
+<span class="nc" id="L187">          shouldBeReleased = true;</span>
+        }
+
+<span class="nc bnc" id="L190" title="All 2 branches missed.">      } else if (timedOut) {</span>
+<span class="nc" id="L191">        shouldBeReleased = true;</span>
+      }
+
+<span class="nc bnc" id="L194" title="All 4 branches missed.">      if (shouldBeReleased &amp;&amp; idleConnections.remove(item)) {</span>
+
+<span class="nc" id="L196">        totalConnection.decrementAndGet();</span>
+<span class="nc" id="L197">        silentCloseConnection(item);</span>
+<span class="nc" id="L198">        addConnectionRequest();</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">        if (logger.isDebugEnabled()) {</span>
+<span class="nc" id="L200">          logger.debug(</span>
+              &quot;pool {} connection removed due to inactivity (total:{}, active:{}, pending:{})&quot;,
+<span class="nc" id="L202">              poolTag, totalConnection.get(), getActiveConnections(), pendingRequestNumber.get());</span>
+        }
+
+      }
+<span class="nc" id="L206">    }</span>
+
+<span class="nc" id="L208">  }</span>
+
+  /**
+   * Create new connection.
+   *
+   * @throws SQLException if connection creation failed
+   */
+  private void addConnection() throws SQLException {
+
+    //create new connection
+<span class="nc" id="L218">    Protocol protocol = Utils.retrieveProxy(urlParser, globalInfo);</span>
+<span class="nc" id="L219">    MariaDbConnection connection = new MariaDbConnection(protocol);</span>
+<span class="nc" id="L220">    MariaDbPooledConnection pooledConnection = createPoolConnection(connection);</span>
+
+<span class="nc bnc" id="L222" title="All 2 branches missed.">    if (options.staticGlobal) {</span>
+      //on first connection load initial state
+<span class="nc bnc" id="L224" title="All 2 branches missed.">      if (globalInfo == null) {</span>
+<span class="nc" id="L225">        initializePoolGlobalState(connection);</span>
+      }
+      //set default transaction isolation level to permit resetting to initial state
+<span class="nc" id="L228">      connection.setDefaultTransactionIsolation(globalInfo.getDefaultTransactionIsolation());</span>
+    } else {
+      //set default transaction isolation level to permit resetting to initial state
+<span class="nc" id="L231">      connection.setDefaultTransactionIsolation(connection.getTransactionIsolation());</span>
+    }
+
+<span class="nc bnc" id="L234" title="All 2 branches missed.">    if (poolState.get() == POOL_STATE_OK</span>
+<span class="nc bnc" id="L235" title="All 2 branches missed.">        &amp;&amp; totalConnection.incrementAndGet() &lt;= options.maxPoolSize) {</span>
+<span class="nc" id="L236">      idleConnections.addFirst(pooledConnection);</span>
+
+<span class="nc bnc" id="L238" title="All 2 branches missed.">      if (logger.isDebugEnabled()) {</span>
+<span class="nc" id="L239">        logger.debug(&quot;pool {} new physical connection created (total:{}, active:{}, pending:{})&quot;,</span>
+<span class="nc" id="L240">            poolTag, totalConnection.get(), getActiveConnections(), pendingRequestNumber.get());</span>
+      }
+<span class="nc" id="L242">      return;</span>
+    }
+
+<span class="nc" id="L245">    silentCloseConnection(pooledConnection);</span>
+<span class="nc" id="L246">  }</span>
+
+  private MariaDbPooledConnection getIdleConnection() throws InterruptedException {
+<span class="nc" id="L249">    return getIdleConnection(0, TimeUnit.NANOSECONDS);</span>
+  }
+
+  /**
+   * Get an existing idle connection in pool.
+   *
+   * @return an IDLE connection.
+   */
+  private MariaDbPooledConnection getIdleConnection(long timeout, TimeUnit timeUnit)
+      throws InterruptedException {
+
+    while (true) {
+      MariaDbPooledConnection item =
+<span class="nc bnc" id="L262" title="All 2 branches missed.">              (timeout == 0) ? idleConnections.pollFirst() : idleConnections.pollFirst(timeout, timeUnit);</span>
+
+<span class="nc bnc" id="L264" title="All 2 branches missed.">      if (item != null) {</span>
+<span class="nc" id="L265">        MariaDbConnection connection = item.getConnection();</span>
+        try {
+<span class="nc bnc" id="L267" title="All 2 branches missed.">          if (TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - item.getLastUsed().get())</span>
+                  &gt; options.poolValidMinDelay) {
+
+            //validate connection
+<span class="nc bnc" id="L271" title="All 2 branches missed.">            if (connection.isValid(10)) { //10 seconds timeout</span>
+<span class="nc" id="L272">              item.lastUsedToNow();</span>
+<span class="nc" id="L273">              return item;</span>
+            }
+
+          } else {
+
+            // connection has been retrieved recently -&gt; skip connection validation
+<span class="nc" id="L279">            item.lastUsedToNow();</span>
+<span class="nc" id="L280">            return item;</span>
+
+          }
+
+<span class="nc" id="L284">        } catch (SQLException sqle) {</span>
+          //eat
+<span class="nc" id="L286">        }</span>
+
+<span class="nc" id="L288">        totalConnection.decrementAndGet();</span>
+
+        // validation failed
+<span class="nc" id="L291">        silentAbortConnection(item);</span>
+<span class="nc" id="L292">        addConnectionRequest();</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">        if (logger.isDebugEnabled()) {</span>
+<span class="nc" id="L294">          logger.debug(</span>
+                  &quot;pool {} connection removed from pool due to failed validation (total:{}, active:{}, pending:{})&quot;,
+<span class="nc" id="L296">                  poolTag, totalConnection.get(), getActiveConnections(), pendingRequestNumber.get());</span>
+        }
+        continue;
+      }
+
+<span class="nc" id="L301">      return null;</span>
+
+    }
+  }
+
+  private void silentCloseConnection(MariaDbPooledConnection item) {
+    try {
+<span class="nc" id="L308">      item.close();</span>
+<span class="nc" id="L309">    } catch (SQLException ex) {</span>
+      //eat exception
+<span class="nc" id="L311">    }</span>
+<span class="nc" id="L312">  }</span>
+
+  private void silentAbortConnection(MariaDbPooledConnection item) {
+    try {
+<span class="nc" id="L316">      item.abort(poolExecutor);</span>
+<span class="nc" id="L317">    } catch (SQLException ex) {</span>
+      //eat exception
+<span class="nc" id="L319">    }</span>
+<span class="nc" id="L320">  }</span>
+
+  private MariaDbPooledConnection createPoolConnection(MariaDbConnection connection) {
+<span class="nc" id="L323">    MariaDbPooledConnection pooledConnection = new MariaDbPooledConnection(connection);</span>
+<span class="nc" id="L324">    pooledConnection.addConnectionEventListener(new ConnectionEventListener() {</span>
+
+      @Override
+      public void connectionClosed(ConnectionEvent event) {
+<span class="nc" id="L328">        MariaDbPooledConnection item = (MariaDbPooledConnection) event.getSource();</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">        if (poolState.get() == POOL_STATE_OK) {</span>
+          try {
+<span class="nc bnc" id="L331" title="All 2 branches missed.">            if (!idleConnections.contains(item)) {</span>
+<span class="nc" id="L332">              item.getConnection().reset();</span>
+<span class="nc" id="L333">              idleConnections.addFirst(item);</span>
+            }
+<span class="nc" id="L335">          } catch (SQLException sqle) {</span>
+
+            //sql exception during reset, removing connection from pool
+<span class="nc" id="L338">            totalConnection.decrementAndGet();</span>
+<span class="nc" id="L339">            silentCloseConnection(item);</span>
+<span class="nc" id="L340">            logger.debug(&quot;connection removed from pool {} due to error during reset&quot;, poolTag);</span>
+
+<span class="nc" id="L342">          }</span>
+        } else {
+          //pool is closed, should then not be render to pool, but closed.
+          try {
+<span class="nc" id="L346">            item.close();</span>
+<span class="nc" id="L347">          } catch (SQLException sqle) {</span>
+            //eat
+<span class="nc" id="L349">          }</span>
+<span class="nc" id="L350">          totalConnection.decrementAndGet();</span>
+        }
+<span class="nc" id="L352">      }</span>
+
+      @Override
+      public void connectionErrorOccurred(ConnectionEvent event) {
+
+<span class="nc" id="L357">        MariaDbPooledConnection item = ((MariaDbPooledConnection) event.getSource());</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">        if (idleConnections.remove(item)) {</span>
+<span class="nc" id="L359">          totalConnection.decrementAndGet();</span>
+        }
+<span class="nc" id="L361">        silentCloseConnection(item);</span>
+<span class="nc" id="L362">        addConnectionRequest();</span>
+<span class="nc" id="L363">        logger.debug(&quot;connection {} removed from pool {} due to having throw a Connection exception (total:{}, active:{}, pending:{})&quot;,</span>
+<span class="nc" id="L364">                item.getConnection().getServerThreadId(), poolTag, totalConnection.get(), getActiveConnections(), pendingRequestNumber.get());</span>
+
+<span class="nc" id="L366">      }</span>
+
+    });
+<span class="nc" id="L369">    return pooledConnection;</span>
+  }
+
+  /**
+   * Retrieve new connection. If possible return idle connection, if not, stack connection query,
+   * ask for a connection creation, and loop until a connection become idle / a new connection is
+   * created.
+   *
+   * @return a connection object
+   * @throws SQLException if no connection is created when reaching timeout (connectTimeout option)
+   **/
+  public MariaDbConnection getConnection() throws SQLException {
+
+<span class="nc" id="L382">    pendingRequestNumber.incrementAndGet();</span>
+
+    MariaDbPooledConnection pooledConnection;
+
+    try {
+
+      //try to get Idle connection if any (with a very small timeout)
+<span class="nc bnc" id="L389" title="All 4 branches missed.">      if ((pooledConnection = getIdleConnection(totalConnection.get() &gt; 4 ? 0 : 50,</span>
+          TimeUnit.MICROSECONDS)) != null) {
+<span class="nc" id="L391">        return pooledConnection.getConnection();</span>
+      }
+
+      // ask for new connection creation if max is not reached
+<span class="nc" id="L395">      addConnectionRequest();</span>
+
+      //try to create new connection if semaphore permit it
+<span class="nc bnc" id="L398" title="All 2 branches missed.">      if ((pooledConnection = getIdleConnection(</span>
+<span class="nc" id="L399">          TimeUnit.MILLISECONDS.toNanos(options.connectTimeout),</span>
+          TimeUnit.NANOSECONDS)) != null) {
+<span class="nc" id="L401">        return pooledConnection.getConnection();</span>
+      }
+
+<span class="nc" id="L404">      throw ExceptionMapper.connException(&quot;No connection available within the specified time &quot;</span>
+<span class="nc" id="L405">          + &quot;(option 'connectTimeout': &quot; + NumberFormat.getInstance().format(options.connectTimeout)</span>
+          + &quot; ms)&quot;);
+
+<span class="nc" id="L408">    } catch (InterruptedException interrupted) {</span>
+<span class="nc" id="L409">      throw ExceptionMapper.connException(&quot;Thread was interrupted&quot;, interrupted);</span>
+    } finally {
+<span class="nc" id="L411">      pendingRequestNumber.decrementAndGet();</span>
+    }
+
+  }
+
+  /**
+   * Get new connection from pool if user and password correspond to pool. If username and password
+   * are different from pool, will return a dedicated connection.
+   *
+   * @param username username
+   * @param password password
+   * @return connection
+   * @throws SQLException if any error occur during connection
+   */
+  public MariaDbConnection getConnection(String username, String password) throws SQLException {
+
+    try {
+
+<span class="nc bnc" id="L429" title="All 6 branches missed.">      if ((urlParser.getUsername() != null ? urlParser.getUsername().equals(username)</span>
+          : username == null)
+<span class="nc bnc" id="L431" title="All 6 branches missed.">          &amp;&amp; (urlParser.getPassword() != null ? urlParser.getPassword().equals(password)</span>
+          : password == null)) {
+<span class="nc" id="L433">        return getConnection();</span>
+      }
+
+<span class="nc" id="L436">      UrlParser tmpUrlParser = (UrlParser) urlParser.clone();</span>
+<span class="nc" id="L437">      tmpUrlParser.setUsername(username);</span>
+<span class="nc" id="L438">      tmpUrlParser.setPassword(password);</span>
+<span class="nc" id="L439">      Protocol protocol = Utils.retrieveProxy(tmpUrlParser, globalInfo);</span>
+<span class="nc" id="L440">      return new MariaDbConnection(protocol);</span>
+
+<span class="nc" id="L442">    } catch (CloneNotSupportedException cloneException) {</span>
+      //cannot occur
+<span class="nc" id="L444">      throw new SQLException(&quot;Error getting connection, parameters cannot be cloned&quot;,</span>
+          cloneException);
+    }
+  }
+
+  private String generatePoolTag(int poolIndex) {
+<span class="nc bnc" id="L450" title="All 2 branches missed.">    if (options.poolName == null) {</span>
+<span class="nc" id="L451">      options.poolName = &quot;MariaDB-pool&quot;;</span>
+    }
+<span class="nc" id="L453">    return options.poolName + &quot;-&quot; + poolIndex;</span>
+  }
+
+  public UrlParser getUrlParser() {
+<span class="nc" id="L457">    return urlParser;</span>
+  }
+
+  /**
+   * Close pool and underlying connections.
+   *
+   * @throws InterruptedException if interrupted
+   */
+  public void close() throws InterruptedException {
+<span class="nc" id="L466">    synchronized (this) {</span>
+<span class="nc" id="L467">      Pools.remove(this);</span>
+<span class="nc" id="L468">      poolState.set(POOL_STATE_CLOSING);</span>
+<span class="nc" id="L469">      pendingRequestNumber.set(0);</span>
+
+<span class="nc" id="L471">      scheduledFuture.cancel(false);</span>
+<span class="nc" id="L472">      connectionAppender.shutdown();</span>
+
+      try {
+<span class="nc" id="L475">        connectionAppender.awaitTermination(10, TimeUnit.SECONDS);</span>
+<span class="nc" id="L476">      } catch (InterruptedException i) {</span>
+        //eat
+<span class="nc" id="L478">      }</span>
+
+<span class="nc bnc" id="L480" title="All 2 branches missed.">      if (logger.isInfoEnabled()) {</span>
+<span class="nc" id="L481">        logger.info(&quot;closing pool {} (total:{}, active:{}, pending:{})&quot;,</span>
+<span class="nc" id="L482">            poolTag, totalConnection.get(), getActiveConnections(), pendingRequestNumber.get());</span>
+      }
+
+<span class="nc" id="L485">      ExecutorService connectionRemover = new ThreadPoolExecutor(totalConnection.get(),</span>
+          options.maxPoolSize, 10, TimeUnit.SECONDS,
+          new LinkedBlockingQueue&lt;&gt;(options.maxPoolSize),
+          new MariaDbThreadFactory(poolTag + &quot;-destroyer&quot;));
+
+      //loop for up to 10 seconds to close not used connection
+<span class="nc" id="L491">      long start = System.nanoTime();</span>
+      do {
+<span class="nc" id="L493">        closeAll(connectionRemover, idleConnections);</span>
+<span class="nc bnc" id="L494" title="All 2 branches missed.">        if (totalConnection.get() &gt; 0) {</span>
+<span class="nc" id="L495">          Thread.sleep(0, 10_00);</span>
+        }
+<span class="nc bnc" id="L497" title="All 2 branches missed.">      } while (totalConnection.get() &gt; 0</span>
+<span class="nc bnc" id="L498" title="All 2 branches missed.">          &amp;&amp; TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start) &lt; 10);</span>
+
+      //after having wait for 10 seconds, force removal, even if used connections
+<span class="nc bnc" id="L501" title="All 4 branches missed.">      if (totalConnection.get() &gt; 0 || idleConnections.isEmpty()) {</span>
+<span class="nc" id="L502">        closeAll(connectionRemover, idleConnections);</span>
+      }
+
+<span class="nc" id="L505">      connectionRemover.shutdown();</span>
+      try {
+<span class="nc" id="L507">        unRegisterJmx();</span>
+<span class="nc" id="L508">      } catch (Exception exception) {</span>
+        //eat
+<span class="nc" id="L510">      }</span>
+<span class="nc" id="L511">      connectionRemover.awaitTermination(10, TimeUnit.SECONDS);</span>
+<span class="nc" id="L512">    }</span>
+<span class="nc" id="L513">  }</span>
+
+  private void closeAll(ExecutorService connectionRemover,
+      Collection&lt;MariaDbPooledConnection&gt; collection) {
+<span class="nc" id="L517">    synchronized (collection) { //synchronized mandatory to iterate Collections.synchronizedList()</span>
+<span class="nc bnc" id="L518" title="All 2 branches missed.">      for (MariaDbPooledConnection item : collection) {</span>
+<span class="nc" id="L519">        collection.remove(item);</span>
+<span class="nc" id="L520">        totalConnection.decrementAndGet();</span>
+        try {
+<span class="nc" id="L522">          item.abort(connectionRemover);</span>
+<span class="nc" id="L523">        } catch (SQLException ex) {</span>
+          //eat exception
+<span class="nc" id="L525">        }</span>
+<span class="nc" id="L526">      }</span>
+<span class="nc" id="L527">    }</span>
+<span class="nc" id="L528">  }</span>
+
+  private void initializePoolGlobalState(MariaDbConnection connection) throws SQLException {
+<span class="nc" id="L531">    try (Statement stmt = connection.createStatement()) {</span>
+<span class="nc" id="L532">      String sql = &quot;SELECT @@max_allowed_packet,&quot;</span>
+          + &quot;@@wait_timeout,&quot;
+          + &quot;@@autocommit,&quot;
+          + &quot;@@auto_increment_increment,&quot;
+          + &quot;@@time_zone,&quot;
+          + &quot;@@system_time_zone,&quot;
+          + &quot;@@tx_isolation&quot;;
+<span class="nc bnc" id="L539" title="All 2 branches missed.">      if (!connection.isServerMariaDb()) {</span>
+<span class="nc" id="L540">        int major = connection.getMetaData().getDatabaseMajorVersion();</span>
+<span class="nc bnc" id="L541" title="All 6 branches missed.">        if ((major &gt;= 8 &amp;&amp; connection.versionGreaterOrEqual(8, 0, 3))</span>
+<span class="nc bnc" id="L542" title="All 2 branches missed.">            || (major &lt; 8 &amp;&amp; connection.versionGreaterOrEqual(5, 7, 20))) {</span>
+<span class="nc" id="L543">          sql = &quot;SELECT @@max_allowed_packet,&quot;</span>
+              + &quot;@@wait_timeout,&quot;
+              + &quot;@@autocommit,&quot;
+              + &quot;@@auto_increment_increment,&quot;
+              + &quot;@@time_zone,&quot;
+              + &quot;@@system_time_zone,&quot;
+              + &quot;@@transaction_isolation&quot;;
+        }
+      }
+
+<span class="nc" id="L553">      try (ResultSet rs = stmt.executeQuery(sql)) {</span>
+
+<span class="nc" id="L555">        rs.next();</span>
+
+<span class="nc" id="L557">        int transactionIsolation = Utils.transactionFromString(rs.getString(7)); // tx_isolation</span>
+
+<span class="nc" id="L559">        globalInfo = new GlobalStateInfo(</span>
+<span class="nc" id="L560">            rs.getLong(1),      // max_allowed_packet</span>
+<span class="nc" id="L561">            rs.getInt(2),       // wait_timeout</span>
+<span class="nc" id="L562">            rs.getBoolean(3),   // autocommit</span>
+<span class="nc" id="L563">            rs.getInt(4),       // autoIncrementIncrement</span>
+<span class="nc" id="L564">            rs.getString(5),    // time_zone</span>
+<span class="nc" id="L565">            rs.getString(6),    // system_time_zone</span>
+            transactionIsolation);
+
+        //ensure that the options &quot;maxIdleTime&quot; is not &gt; to server wait_timeout
+        //removing 45s since scheduler check  status every 30s
+<span class="nc" id="L570">        maxIdleTime = Math.min(options.maxIdleTime, globalInfo.getWaitTimeout() - 45);</span>
+      }
+    }
+<span class="nc" id="L573">  }</span>
+
+  public String getPoolTag() {
+<span class="nc" id="L576">    return poolTag;</span>
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+<span class="nc bnc" id="L581" title="All 2 branches missed.">    if (this == obj) {</span>
+<span class="nc" id="L582">      return true;</span>
+    }
+<span class="nc bnc" id="L584" title="All 4 branches missed.">    if (obj == null || getClass() != obj.getClass()) {</span>
+<span class="nc" id="L585">      return false;</span>
+    }
+
+<span class="nc" id="L588">    Pool pool = (Pool) obj;</span>
+
+<span class="nc" id="L590">    return poolTag.equals(pool.poolTag);</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L595">    return poolTag.hashCode();</span>
+  }
+
+  public GlobalStateInfo getGlobalInfo() {
+<span class="nc" id="L599">    return globalInfo;</span>
+  }
+
+  @Override
+  public long getActiveConnections() {
+<span class="nc" id="L604">    return totalConnection.get() - idleConnections.size();</span>
+  }
+
+  @Override
+  public long getTotalConnections() {
+<span class="nc" id="L609">    return totalConnection.get();</span>
+  }
+
+  @Override
+  public long getIdleConnections() {
+<span class="nc" id="L614">    return idleConnections.size();</span>
+  }
+
+  public long getConnectionRequests() {
+<span class="nc" id="L618">    return pendingRequestNumber.get();</span>
+  }
+
+
+  private void registerJmx() throws Exception {
+<span class="nc" id="L623">    MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();</span>
+<span class="nc" id="L624">    String jmxName = poolTag.replace(&quot;:&quot;, &quot;_&quot;);</span>
+<span class="nc" id="L625">    ObjectName name = new ObjectName(&quot;org.mariadb.jdbc.pool:type=&quot; + jmxName);</span>
+
+<span class="nc bnc" id="L627" title="All 2 branches missed.">    if (!mbs.isRegistered(name)) {</span>
+<span class="nc" id="L628">      mbs.registerMBean(this, name);</span>
+    }
+<span class="nc" id="L630">  }</span>
+
+  private void unRegisterJmx() throws Exception {
+<span class="nc" id="L633">    MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();</span>
+<span class="nc" id="L634">    String jmxName = poolTag.replace(&quot;:&quot;, &quot;_&quot;);</span>
+<span class="nc" id="L635">    ObjectName name = new ObjectName(&quot;org.mariadb.jdbc.pool:type=&quot; + jmxName);</span>
+
+<span class="nc bnc" id="L637" title="All 2 branches missed.">    if (mbs.isRegistered(name)) {</span>
+<span class="nc" id="L638">      mbs.unregisterMBean(name);</span>
+    }
+<span class="nc" id="L640">  }</span>
+
+  /**
+   * For testing purpose only.
+   *
+   * @return current thread id's
+   */
+  public List&lt;Long&gt; testGetConnectionIdleThreadIds() {
+<span class="nc" id="L648">    List&lt;Long&gt; threadIds = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L649" title="All 2 branches missed.">    for (MariaDbPooledConnection pooledConnection : idleConnections) {</span>
+<span class="nc" id="L650">      threadIds.add(pooledConnection.getConnection().getServerThreadId());</span>
+<span class="nc" id="L651">    }</span>
+<span class="nc" id="L652">    return threadIds;</span>
+  }
+
+  /**
+   * JMX method to remove state (will be reinitialized on next connection creation).
+   */
+  public void resetStaticGlobal() {
+<span class="nc" id="L659">    globalInfo = null;</span>
+<span class="nc" id="L660">  }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

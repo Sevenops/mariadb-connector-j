@@ -1,0 +1,430 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MariaDbBlob.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">MariaDbBlob.java</span></div><h1>MariaDbBlob.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
+import java.io.Serializable;
+import java.sql.Blob;
+import java.sql.SQLException;
+import java.util.Arrays;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+
+public class MariaDbBlob implements Blob, Serializable {
+
+  private static final long serialVersionUID = -4736603161284649490L;
+  protected byte[] data;
+  protected transient int offset;
+  protected transient int length;
+
+  /**
+   * Creates an empty blob.
+   */
+<span class="nc" id="L78">  public MariaDbBlob() {</span>
+<span class="nc" id="L79">    data = new byte[0];</span>
+<span class="nc" id="L80">    offset = 0;</span>
+<span class="nc" id="L81">    length = 0;</span>
+<span class="nc" id="L82">  }</span>
+
+  /**
+   * Creates a blob with content.
+   *
+   * @param bytes the content for the blob.
+   */
+<span class="nc" id="L89">  public MariaDbBlob(byte[] bytes) {</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">    if (bytes == null) {</span>
+<span class="nc" id="L91">      throw new NullPointerException(&quot;byte array is null&quot;);</span>
+    }
+<span class="nc" id="L93">    data = bytes;</span>
+<span class="nc" id="L94">    offset = 0;</span>
+<span class="nc" id="L95">    length = bytes.length;</span>
+<span class="nc" id="L96">  }</span>
+
+  /**
+   * Creates a blob with content.
+   *
+   * @param bytes  the content for the blob.
+   * @param offset offset
+   * @param length length
+   */
+<span class="nc" id="L105">  public MariaDbBlob(byte[] bytes, int offset, int length) {</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">    if (bytes == null) {</span>
+<span class="nc" id="L107">      throw new NullPointerException(&quot;byte array is null&quot;);</span>
+    }
+<span class="nc" id="L109">    data = bytes;</span>
+<span class="nc" id="L110">    this.offset = offset;</span>
+<span class="nc" id="L111">    this.length = Math.min(bytes.length - offset, length);</span>
+<span class="nc" id="L112">  }</span>
+
+  private void writeObject(ObjectOutputStream out)
+      throws IOException {
+<span class="nc bnc" id="L116" title="All 4 branches missed.">    if (offset != 0 || data.length != length) {</span>
+<span class="nc" id="L117">      data = Arrays.copyOfRange(data, offset, offset + length);</span>
+<span class="nc" id="L118">      offset = 0;</span>
+<span class="nc" id="L119">      length = 0;</span>
+    }
+<span class="nc" id="L121">    out.defaultWriteObject();</span>
+<span class="nc" id="L122">  }</span>
+
+  private void readObject(ObjectInputStream in)
+      throws IOException, ClassNotFoundException {
+<span class="nc" id="L126">    in.defaultReadObject();</span>
+<span class="nc" id="L127">    offset = 0;</span>
+<span class="nc" id="L128">    length = data.length;</span>
+<span class="nc" id="L129">  }</span>
+
+  /**
+   * Returns the number of bytes in the &lt;code&gt;BLOB&lt;/code&gt; value designated by this &lt;code&gt;Blob&lt;/code&gt;
+   * object.
+   *
+   * @return length of the &lt;code&gt;BLOB&lt;/code&gt; in bytes
+   */
+  public long length() {
+<span class="nc" id="L138">    return length;</span>
+  }
+
+  /**
+   * Retrieves all or part of the &lt;code&gt;BLOB&lt;/code&gt; value that this &lt;code&gt;Blob&lt;/code&gt; object
+   * represents, as an array of bytes.  This &lt;code&gt;byte&lt;/code&gt; array contains up to
+   * &lt;code&gt;length&lt;/code&gt; consecutive bytes starting at position
+   * &lt;code&gt;pos&lt;/code&gt;.
+   *
+   * @param pos    the ordinal position of the first byte in the &lt;code&gt;BLOB&lt;/code&gt; value to be
+   *               extracted; the first byte is at position 1
+   * @param length the number of consecutive bytes to be copied; the value for length must be 0 or
+   *               greater
+   * @return a byte array containing up to &lt;code&gt;length&lt;/code&gt; consecutive bytes from the
+   *     &lt;code&gt;BLOB&lt;/code&gt; value designated by this &lt;code&gt;Blob&lt;/code&gt; object, starting with the
+   *     byte at position &lt;code&gt;pos&lt;/code&gt;
+   * @throws SQLException if there is an error accessing the &lt;code&gt;BLOB&lt;/code&gt; value; if pos is less
+   *                      than 1 or length is less than 0
+   * @see #setBytes
+   * @since 1.2
+   */
+  public byte[] getBytes(final long pos, final int length) throws SQLException {
+<span class="nc bnc" id="L160" title="All 2 branches missed.">    if (pos &lt; 1) {</span>
+<span class="nc" id="L161">      throw ExceptionMapper.getSqlException(&quot;Pos starts at 1&quot;);</span>
+    }
+<span class="nc" id="L163">    final int offset = this.offset + (int) (pos - 1);</span>
+<span class="nc" id="L164">    byte[] result = new byte[length];</span>
+<span class="nc" id="L165">    System.arraycopy(data, offset, result, 0, Math.min(this.length - (int) (pos - 1), length));</span>
+<span class="nc" id="L166">    return result;</span>
+  }
+
+  /**
+   * Retrieves the &lt;code&gt;BLOB&lt;/code&gt; value designated by this &lt;code&gt;Blob&lt;/code&gt; instance as a
+   * stream.
+   *
+   * @return a stream containing the &lt;code&gt;BLOB&lt;/code&gt; data
+   * @throws SQLException if something went wrong
+   * @see #setBinaryStream
+   */
+  public InputStream getBinaryStream() throws SQLException {
+<span class="nc" id="L178">    return getBinaryStream(1, length);</span>
+  }
+
+  /**
+   * Returns an &lt;code&gt;InputStream&lt;/code&gt; object that contains a partial &lt;code&gt;Blob&lt;/code&gt; value,
+   * starting  with the byte specified by pos, which is length bytes in length.
+   *
+   * @param pos    the offset to the first byte of the partial value to be retrieved. The first byte
+   *               in the
+   *               &lt;code&gt;Blob&lt;/code&gt; is at position 1
+   * @param length the length in bytes of the partial value to be retrieved
+   * @return &lt;code&gt;InputStream&lt;/code&gt; through which the partial &lt;code&gt;Blob&lt;/code&gt; value can be read.
+   * @throws SQLException if pos is less than 1 or if pos is greater than the number of bytes in
+   *                      the
+   *                      &lt;code&gt;Blob&lt;/code&gt; or if pos + length is greater than the number of bytes
+   *                      in the
+   *                      &lt;code&gt;Blob&lt;/code&gt;
+   */
+  public InputStream getBinaryStream(final long pos, final long length) throws SQLException {
+<span class="nc bnc" id="L197" title="All 2 branches missed.">    if (pos &lt; 1) {</span>
+<span class="nc" id="L198">      throw ExceptionMapper.getSqlException(&quot;Out of range (position should be &gt; 0)&quot;);</span>
+    }
+<span class="nc bnc" id="L200" title="All 2 branches missed.">    if (pos - 1 &gt; this.length) {</span>
+<span class="nc" id="L201">      throw ExceptionMapper.getSqlException(&quot;Out of range (position &gt; stream size)&quot;);</span>
+    }
+<span class="nc bnc" id="L203" title="All 2 branches missed.">    if (pos + length - 1 &gt; this.length) {</span>
+<span class="nc" id="L204">      throw ExceptionMapper.getSqlException(&quot;Out of range (position + length - 1 &gt; streamSize)&quot;);</span>
+    }
+
+<span class="nc" id="L207">    return new ByteArrayInputStream(data, this.offset + (int) pos - 1, (int) length);</span>
+  }
+
+  /**
+   * Retrieves the byte position at which the specified byte array &lt;code&gt;pattern&lt;/code&gt; begins
+   * within the
+   * &lt;code&gt;BLOB&lt;/code&gt; value that this &lt;code&gt;Blob&lt;/code&gt; object represents.  The search for
+   * &lt;code&gt;pattern&lt;/code&gt;
+   * begins at position &lt;code&gt;start&lt;/code&gt;.
+   *
+   * @param pattern the byte array for which to search
+   * @param start   the position at which to begin searching; the first position is 1
+   * @return the position at which the pattern appears, else -1
+   */
+  public long position(final byte[] pattern, final long start) throws SQLException {
+<span class="nc bnc" id="L222" title="All 2 branches missed.">    if (start &lt; 1) {</span>
+<span class="nc" id="L223">      throw ExceptionMapper.getSqlException(&quot;Start should be &gt; 0, first position is 1.&quot;);</span>
+    }
+<span class="nc bnc" id="L225" title="All 2 branches missed.">    if (start &gt; this.length) {</span>
+<span class="nc" id="L226">      throw ExceptionMapper.getSqlException(&quot;Start should be &lt;= &quot; + this.length);</span>
+    }
+<span class="nc" id="L228">    final long actualStart = offset + start - 1;</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">    for (int i = (int) actualStart; i &lt; offset + this.length; i++) {</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">      if (data[i] == pattern[0]) {</span>
+<span class="nc" id="L231">        boolean isEqual = true;</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">        for (int j = 1; j &lt; pattern.length; j++) {</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">          if (i + j &gt;= offset + this.length) {</span>
+<span class="nc" id="L234">            return -1;</span>
+          }
+<span class="nc bnc" id="L236" title="All 2 branches missed.">          if (data[i + j] != pattern[j]) {</span>
+<span class="nc" id="L237">            isEqual = false;</span>
+          }
+        }
+<span class="nc bnc" id="L240" title="All 2 branches missed.">        if (isEqual) {</span>
+<span class="nc" id="L241">          return i + 1 - offset;</span>
+        }
+      }
+    }
+<span class="nc" id="L245">    return -1;</span>
+  }
+
+  /**
+   * Retrieves the byte position in the &lt;code&gt;BLOB&lt;/code&gt; value designated by this &lt;code&gt;Blob&lt;/code&gt;
+   * object at which
+   * &lt;code&gt;pattern&lt;/code&gt; begins.  The search begins at position &lt;code&gt;start&lt;/code&gt;.
+   *
+   * @param pattern the &lt;code&gt;Blob&lt;/code&gt; object designating the &lt;code&gt;BLOB&lt;/code&gt; value for which
+   *                to search
+   * @param start   the position in the &lt;code&gt;BLOB&lt;/code&gt; value at which to begin searching; the
+   *                first position is 1
+   * @return the position at which the pattern begins, else -1
+   */
+  public long position(final Blob pattern, final long start) throws SQLException {
+<span class="nc" id="L260">    return position(pattern.getBytes(1, (int) pattern.length()), start);</span>
+  }
+
+  /**
+   * Writes the given array of bytes to the &lt;code&gt;BLOB&lt;/code&gt; value that this &lt;code&gt;Blob&lt;/code&gt;
+   * object represents, starting at position &lt;code&gt;pos&lt;/code&gt;, and returns the number of bytes
+   * written. The array of bytes will overwrite the existing bytes in the &lt;code&gt;Blob&lt;/code&gt; object
+   * starting at the position &lt;code&gt;pos&lt;/code&gt;.  If the end of the
+   * &lt;code&gt;Blob&lt;/code&gt; value is reached while writing the array of bytes, then the length of the
+   * &lt;code&gt;Blob&lt;/code&gt;
+   * value will be increased to accommodate the extra bytes.
+   *
+   * @param pos   the position in the &lt;code&gt;BLOB&lt;/code&gt; object at which to start writing; the first
+   *              position is 1
+   * @param bytes the array of bytes to be written to the &lt;code&gt;BLOB&lt;/code&gt; value that this
+   *              &lt;code&gt;Blob&lt;/code&gt; object represents
+   * @return the number of bytes written
+   * @see #getBytes
+   */
+  public int setBytes(final long pos, final byte[] bytes) throws SQLException {
+<span class="nc bnc" id="L280" title="All 2 branches missed.">    if (pos &lt; 1) {</span>
+<span class="nc" id="L281">      throw ExceptionMapper.getSqlException(&quot;pos should be &gt; 0, first position is 1.&quot;);</span>
+    }
+
+<span class="nc" id="L284">    final int arrayPos = (int) pos - 1;</span>
+
+<span class="nc bnc" id="L286" title="All 2 branches missed.">    if (length &gt; arrayPos + bytes.length) {</span>
+
+<span class="nc" id="L288">      System.arraycopy(bytes, 0, data, offset + arrayPos, bytes.length);</span>
+
+    } else {
+
+<span class="nc" id="L292">      byte[] newContent = new byte[arrayPos + bytes.length];</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">      if (Math.min(arrayPos, length) &gt; 0) {</span>
+<span class="nc" id="L294">        System.arraycopy(data, this.offset, newContent, 0, Math.min(arrayPos, length));</span>
+      }
+<span class="nc" id="L296">      System.arraycopy(bytes, 0, newContent, arrayPos, bytes.length);</span>
+<span class="nc" id="L297">      data = newContent;</span>
+<span class="nc" id="L298">      length = arrayPos + bytes.length;</span>
+<span class="nc" id="L299">      offset = 0;</span>
+
+    }
+<span class="nc" id="L302">    return bytes.length;</span>
+  }
+
+  /**
+   * Writes all or part of the given &lt;code&gt;byte&lt;/code&gt; array to the &lt;code&gt;BLOB&lt;/code&gt; value that
+   * this
+   * &lt;code&gt;Blob&lt;/code&gt; object represents and returns the number of bytes written. Writing starts at
+   * position
+   * &lt;code&gt;pos&lt;/code&gt; in the &lt;code&gt;BLOB&lt;/code&gt; value; &lt;code&gt;len&lt;/code&gt; bytes from the given byte
+   * array are written. The array of bytes will overwrite the existing bytes in the
+   * &lt;code&gt;Blob&lt;/code&gt; object starting at the position
+   * &lt;code&gt;pos&lt;/code&gt;.  If the end of the &lt;code&gt;Blob&lt;/code&gt; value is reached while writing the
+   * array of bytes, then the length of the &lt;code&gt;Blob&lt;/code&gt; value will be increased to accommodate
+   * the extra bytes.
+   *
+   * &lt;p&gt;&lt;b&gt;Note:&lt;/b&gt; If the value specified for &lt;code&gt;pos&lt;/code&gt; is greater then the length+1 of the
+   * &lt;code&gt;BLOB&lt;/code&gt;
+   * value then the behavior is undefined. Some JDBC drivers may throw a &lt;code&gt;SQLException&lt;/code&gt;
+   * while other drivers may support this operation.&lt;/p&gt;
+   *
+   * @param pos    the position in the &lt;code&gt;BLOB&lt;/code&gt; object at which to start writing; the first
+   *               position is 1
+   * @param bytes  the array of bytes to be written to this &lt;code&gt;BLOB&lt;/code&gt; object
+   * @param offset the offset into the array &lt;code&gt;bytes&lt;/code&gt; at which to start reading the bytes
+   *               to be set
+   * @param len    the number of bytes to be written to the &lt;code&gt;BLOB&lt;/code&gt; value from the array
+   *               of bytes
+   *               &lt;code&gt;bytes&lt;/code&gt;
+   * @return the number of bytes written
+   * @throws SQLException if there is an error accessing the &lt;code&gt;BLOB&lt;/code&gt; value or if pos is
+   *                      less than 1
+   * @see #getBytes
+   */
+  public int setBytes(final long pos,
+      final byte[] bytes,
+      final int offset,
+      final int len) throws SQLException {
+
+<span class="nc bnc" id="L340" title="All 2 branches missed.">    if (pos &lt; 1) {</span>
+<span class="nc" id="L341">      throw ExceptionMapper.getSqlException(&quot;pos should be &gt; 0, first position is 1.&quot;);</span>
+    }
+
+<span class="nc" id="L344">    final int arrayPos = (int) pos - 1;</span>
+<span class="nc" id="L345">    final int byteToWrite = Math.min(bytes.length - offset, len);</span>
+
+<span class="nc bnc" id="L347" title="All 2 branches missed.">    if (length &gt; arrayPos + byteToWrite) {</span>
+
+<span class="nc" id="L349">      System.arraycopy(bytes, offset, data, this.offset + arrayPos, byteToWrite);</span>
+
+    } else {
+
+<span class="nc" id="L353">      byte[] newContent = new byte[arrayPos + byteToWrite];</span>
+<span class="nc bnc" id="L354" title="All 2 branches missed.">      if (Math.min(arrayPos, length) &gt; 0) {</span>
+<span class="nc" id="L355">        System.arraycopy(data, this.offset, newContent, 0, Math.min(arrayPos, length));</span>
+      }
+<span class="nc" id="L357">      System.arraycopy(bytes, offset, newContent, arrayPos, byteToWrite);</span>
+<span class="nc" id="L358">      data = newContent;</span>
+<span class="nc" id="L359">      length = arrayPos + byteToWrite;</span>
+<span class="nc" id="L360">      this.offset = 0;</span>
+    }
+
+<span class="nc" id="L363">    return byteToWrite;</span>
+  }
+
+  /**
+   * Retrieves a stream that can be used to write to the &lt;code&gt;BLOB&lt;/code&gt; value that this
+   * &lt;code&gt;Blob&lt;/code&gt; object represents.  The stream begins at position &lt;code&gt;pos&lt;/code&gt;. The
+   * bytes written to the stream will overwrite the existing bytes in the &lt;code&gt;Blob&lt;/code&gt; object
+   * starting at the position &lt;code&gt;pos&lt;/code&gt;.  If the end of the
+   * &lt;code&gt;Blob&lt;/code&gt; value is reached while writing to the stream, then the length of the
+   * &lt;code&gt;Blob&lt;/code&gt; value
+   * will be increased to accommodate the extra bytes.
+   *
+   * &lt;p&gt;&lt;b&gt;Note:&lt;/b&gt; If the value specified for &lt;code&gt;pos&lt;/code&gt; is greater then the length+1 of the
+   * &lt;code&gt;BLOB&lt;/code&gt;
+   * value then the behavior is undefined. Some JDBC drivers may throw a &lt;code&gt;SQLException&lt;/code&gt;
+   * while other drivers may support this operation.&lt;/p&gt;
+   *
+   * @param pos the position in the &lt;code&gt;BLOB&lt;/code&gt; value at which to start writing; the first
+   *            position is 1
+   * @return a &lt;code&gt;java.io.OutputStream&lt;/code&gt; object to which data can be written
+   * @throws SQLException if there is an error accessing the &lt;code&gt;BLOB&lt;/code&gt; value or if pos is
+   *                      less than 1
+   * @see #getBinaryStream
+   * @since 1.4
+   */
+  public OutputStream setBinaryStream(final long pos) throws SQLException {
+<span class="nc bnc" id="L389" title="All 2 branches missed.">    if (pos &lt; 1) {</span>
+<span class="nc" id="L390">      throw ExceptionMapper.getSqlException(&quot;Invalid position in blob&quot;);</span>
+    }
+<span class="nc bnc" id="L392" title="All 2 branches missed.">    if (offset &gt; 0) {</span>
+<span class="nc" id="L393">      byte[] tmp = new byte[length];</span>
+<span class="nc" id="L394">      System.arraycopy(data, offset, tmp, 0, length);</span>
+<span class="nc" id="L395">      data = tmp;</span>
+<span class="nc" id="L396">      offset = 0;</span>
+    }
+<span class="nc" id="L398">    return new BlobOutputStream(this, (int) (pos - 1) + offset);</span>
+  }
+
+  /**
+   * Truncates the &lt;code&gt;BLOB&lt;/code&gt; value that this &lt;code&gt;Blob&lt;/code&gt; object represents to be
+   * &lt;code&gt;len&lt;/code&gt; bytes in length.
+   *
+   * @param len the length, in bytes, to which the &lt;code&gt;BLOB&lt;/code&gt; value that this
+   *            &lt;code&gt;Blob&lt;/code&gt; object represents should be truncated
+   */
+  public void truncate(final long len) {
+<span class="nc bnc" id="L409" title="All 4 branches missed.">    if (len &gt;= 0 &amp;&amp; len &lt; this.length) {</span>
+<span class="nc" id="L410">      this.length = (int) len;</span>
+    }
+<span class="nc" id="L412">  }</span>
+
+  /**
+   * This method frees the &lt;code&gt;Blob&lt;/code&gt; object and releases the resources that it holds. The
+   * object is invalid once the &lt;code&gt;free&lt;/code&gt; method is called.
+   *
+   * &lt;p&gt;After &lt;code&gt;free&lt;/code&gt; has been called, any attempt to invoke a method other than
+   * &lt;code&gt;free&lt;/code&gt; will result in a &lt;code&gt;SQLException&lt;/code&gt; being thrown.  If
+   * &lt;code&gt;free&lt;/code&gt; is called multiple times, the subsequent calls to &lt;code&gt;free&lt;/code&gt; are
+   * treated as a no-op.&lt;/p&gt;
+   */
+  public void free() {
+<span class="nc" id="L424">    this.data = new byte[0];</span>
+<span class="nc" id="L425">    this.offset = 0;</span>
+<span class="nc" id="L426">    this.length = 0;</span>
+<span class="nc" id="L427">  }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Pools.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.util.pool</a> &gt; <span class="el_source">Pools.java</span></div><h1>Pools.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ */
+
+package org.mariadb.jdbc.internal.util.pool;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.mariadb.jdbc.UrlParser;
+import org.mariadb.jdbc.internal.util.scheduler.MariaDbThreadFactory;
+
+<span class="nc" id="L33">public class Pools {</span>
+
+<span class="nc" id="L35">  private static final AtomicInteger poolIndex = new AtomicInteger();</span>
+<span class="nc" id="L36">  private static final Map&lt;UrlParser, Pool&gt; poolMap = new ConcurrentHashMap&lt;&gt;();</span>
+<span class="nc" id="L37">  private static ScheduledThreadPoolExecutor poolExecutor = null;</span>
+
+  /**
+   * Get existing pool for a configuration. Create it if doesn't exists.
+   *
+   * @param urlParser configuration parser
+   * @return pool
+   */
+  public static Pool retrievePool(UrlParser urlParser) {
+<span class="nc bnc" id="L46" title="All 2 branches missed.">    if (!poolMap.containsKey(urlParser)) {</span>
+<span class="nc" id="L47">      synchronized (poolMap) {</span>
+<span class="nc bnc" id="L48" title="All 2 branches missed.">        if (!poolMap.containsKey(urlParser)) {</span>
+<span class="nc bnc" id="L49" title="All 2 branches missed.">          if (poolExecutor == null) {</span>
+<span class="nc" id="L50">            poolExecutor = new ScheduledThreadPoolExecutor(1,</span>
+                new MariaDbThreadFactory(&quot;MariaDbPool-maxTimeoutIdle-checker&quot;));
+          }
+<span class="nc" id="L53">          Pool pool = new Pool(urlParser, poolIndex.incrementAndGet(), poolExecutor);</span>
+<span class="nc" id="L54">          poolMap.put(urlParser, pool);</span>
+<span class="nc" id="L55">          return pool;</span>
+        }
+<span class="nc" id="L57">      }</span>
+    }
+<span class="nc" id="L59">    return poolMap.get(urlParser);</span>
+  }
+
+  /**
+   * Remove pool.
+   *
+   * @param pool pool to remove
+   */
+  public static void remove(Pool pool) {
+<span class="nc bnc" id="L68" title="All 2 branches missed.">    if (poolMap.containsKey(pool.getUrlParser())) {</span>
+<span class="nc" id="L69">      synchronized (poolMap) {</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">        if (poolMap.containsKey(pool.getUrlParser())) {</span>
+<span class="nc" id="L71">          poolMap.remove(pool.getUrlParser());</span>
+<span class="nc" id="L72">          shutdownExecutor();</span>
+        }
+<span class="nc" id="L74">      }</span>
+    }
+<span class="nc" id="L76">  }</span>
+
+  /**
+   * Close all pools.
+   */
+  public static void close() {
+<span class="nc" id="L82">    synchronized (poolMap) {</span>
+<span class="nc bnc" id="L83" title="All 2 branches missed.">      for (Pool pool : poolMap.values()) {</span>
+        try {
+<span class="nc" id="L85">          pool.close();</span>
+<span class="nc" id="L86">        } catch (InterruptedException exception) {</span>
+          //eat
+<span class="nc" id="L88">        }</span>
+<span class="nc" id="L89">      }</span>
+<span class="nc" id="L90">      shutdownExecutor();</span>
+<span class="nc" id="L91">      poolMap.clear();</span>
+<span class="nc" id="L92">    }</span>
+<span class="nc" id="L93">  }</span>
+
+  /**
+   * Closing a pool with name defined in url.
+   *
+   * @param poolName the option &quot;poolName&quot; value
+   */
+  public static void close(String poolName) {
+<span class="nc bnc" id="L101" title="All 2 branches missed.">    if (poolName == null) {</span>
+<span class="nc" id="L102">      return;</span>
+    }
+<span class="nc" id="L104">    synchronized (poolMap) {</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">      for (Pool pool : poolMap.values()) {</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">        if (poolName.equals(pool.getUrlParser().getOptions().poolName)) {</span>
+          try {
+<span class="nc" id="L108">            pool.close();</span>
+<span class="nc" id="L109">          } catch (InterruptedException exception) {</span>
+            //eat
+<span class="nc" id="L111">          }</span>
+<span class="nc" id="L112">          poolMap.remove(pool.getUrlParser());</span>
+<span class="nc" id="L113">          return;</span>
+        }
+<span class="nc" id="L115">      }</span>
+
+<span class="nc bnc" id="L117" title="All 2 branches missed.">      if (poolMap.isEmpty()) {</span>
+<span class="nc" id="L118">        shutdownExecutor();</span>
+      }
+<span class="nc" id="L120">    }</span>
+<span class="nc" id="L121">  }</span>
+
+  private static void shutdownExecutor() {
+<span class="nc" id="L124">    poolExecutor.shutdown();</span>
+    try {
+<span class="nc" id="L126">      poolExecutor.awaitTermination(10, TimeUnit.SECONDS);</span>
+<span class="nc" id="L127">    } catch (InterruptedException interrupted) {</span>
+      //eat
+<span class="nc" id="L129">    }</span>
+<span class="nc" id="L130">    poolExecutor = null;</span>
+
+<span class="nc" id="L132">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

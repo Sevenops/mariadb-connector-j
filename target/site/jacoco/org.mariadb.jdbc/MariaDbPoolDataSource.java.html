@@ -1,0 +1,660 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MariaDbPoolDataSource.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">MariaDbPoolDataSource.java</span></div><h1>MariaDbPoolDataSource.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ */
+
+
+package org.mariadb.jdbc;
+
+import java.io.Closeable;
+import java.io.PrintWriter;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.util.Collections;
+import java.util.List;
+import java.util.Properties;
+import java.util.logging.Logger;
+import javax.sql.DataSource;
+import javax.sql.XAConnection;
+import javax.sql.XADataSource;
+import org.mariadb.jdbc.internal.util.DefaultOptions;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.constant.HaMode;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+import org.mariadb.jdbc.internal.util.pool.Pool;
+import org.mariadb.jdbc.internal.util.pool.Pools;
+
+
+public class MariaDbPoolDataSource implements DataSource, XADataSource, Closeable, AutoCloseable {
+
+  private UrlParser urlParser;
+  private Pool pool;
+
+  private String hostname;
+  private Integer port;
+  private Integer connectTimeout;
+  private String database;
+  private String url;
+  private String user;
+  private String password;
+  private String poolName;
+  private Integer maxPoolSize;
+  private Integer minPoolSize;
+  private Integer maxIdleTime;
+  private Boolean staticGlobal;
+  private Integer poolValidMinDelay;
+
+  /**
+   * Constructor.
+   *
+   * @param hostname hostname (ipv4, ipv6, dns name)
+   * @param port     server port
+   * @param database database name
+   */
+<span class="nc" id="L72">  public MariaDbPoolDataSource(String hostname, int port, String database) {</span>
+<span class="nc" id="L73">    this.hostname = hostname;</span>
+<span class="nc" id="L74">    this.port = port;</span>
+<span class="nc" id="L75">    this.database = database;</span>
+<span class="nc" id="L76">  }</span>
+
+<span class="nc" id="L78">  public MariaDbPoolDataSource(String url) {</span>
+<span class="nc" id="L79">    this.url = url;</span>
+<span class="nc" id="L80">  }</span>
+
+  /**
+   * Default constructor. hostname will be localhost, port 3306.
+   */
+<span class="nc" id="L85">  public MariaDbPoolDataSource() {</span>
+
+<span class="nc" id="L87">  }</span>
+
+  /**
+   * Gets the name of the database.
+   *
+   * @return the name of the database for this data source
+   */
+  public String getDatabaseName() {
+<span class="nc bnc" id="L95" title="All 2 branches missed.">    if (database != null) {</span>
+<span class="nc" id="L96">      return database;</span>
+    }
+<span class="nc bnc" id="L98" title="All 4 branches missed.">    return (urlParser != null &amp;&amp; urlParser.getDatabase() != null) ? urlParser.getDatabase() : &quot;&quot;;</span>
+  }
+
+  /**
+   * Sets the database name.
+   *
+   * @param database the name of the database
+   * @throws SQLException if error in URL
+   */
+  public void setDatabaseName(String database) throws SQLException {
+<span class="nc" id="L108">    checkNotInitialized();</span>
+<span class="nc" id="L109">    this.database = database;</span>
+<span class="nc" id="L110">  }</span>
+
+  private void checkNotInitialized() throws SQLException {
+<span class="nc bnc" id="L113" title="All 2 branches missed.">    if (pool != null) {</span>
+<span class="nc" id="L114">      throw new SQLException(&quot;can not perform a configuration change once initialized&quot;);</span>
+    }
+<span class="nc" id="L116">  }</span>
+
+  /**
+   * Gets the username.
+   *
+   * @return the username to use when connecting to the database
+   */
+  public String getUser() {
+<span class="nc bnc" id="L124" title="All 2 branches missed.">    if (user != null) {</span>
+<span class="nc" id="L125">      return user;</span>
+    }
+<span class="nc bnc" id="L127" title="All 2 branches missed.">    return urlParser != null ? urlParser.getUsername() : null;</span>
+  }
+
+  /**
+   * Sets the username.
+   *
+   * @param user the username
+   * @throws SQLException if error in URL
+   */
+  public void setUser(String user) throws SQLException {
+<span class="nc" id="L137">    checkNotInitialized();</span>
+<span class="nc" id="L138">    this.user = user;</span>
+<span class="nc" id="L139">  }</span>
+
+  /**
+   * Sets the password.
+   *
+   * @param password the password
+   * @throws SQLException if error in URL
+   */
+  public void setPassword(String password) throws SQLException {
+<span class="nc" id="L148">    checkNotInitialized();</span>
+<span class="nc" id="L149">    this.password = password;</span>
+<span class="nc" id="L150">  }</span>
+
+  /**
+   * Returns the port number.
+   *
+   * @return the port number
+   */
+  public int getPort() {
+<span class="nc bnc" id="L158" title="All 4 branches missed.">    if (port != null &amp;&amp; port != 0) {</span>
+<span class="nc" id="L159">      return port;</span>
+    }
+<span class="nc bnc" id="L161" title="All 2 branches missed.">    return urlParser != null ? urlParser.getHostAddresses().get(0).port : 3306;</span>
+  }
+
+  /**
+   * Sets the database port.
+   *
+   * @param port the port
+   * @throws SQLException if error in URL
+   */
+  public void setPort(int port) throws SQLException {
+<span class="nc" id="L171">    checkNotInitialized();</span>
+<span class="nc" id="L172">    this.port = port;</span>
+<span class="nc" id="L173">  }</span>
+
+  /**
+   * Returns the port number.
+   *
+   * @return the port number
+   */
+  public int getPortNumber() {
+<span class="nc" id="L181">    return getPort();</span>
+  }
+
+  /**
+   * Sets the port number.
+   *
+   * @param port the port
+   * @throws SQLException if error in URL
+   * @see #setPort
+   */
+  public void setPortNumber(int port) throws SQLException {
+<span class="nc" id="L192">    checkNotInitialized();</span>
+<span class="nc bnc" id="L193" title="All 2 branches missed.">    if (port &gt; 0) {</span>
+<span class="nc" id="L194">      setPort(port);</span>
+    }
+<span class="nc" id="L196">  }</span>
+
+  /**
+   * Sets the connection string URL.
+   *
+   * @param url the connection string
+   * @throws SQLException if error in URL
+   */
+  public void setUrl(String url) throws SQLException {
+<span class="nc" id="L205">    checkNotInitialized();</span>
+<span class="nc" id="L206">    this.url = url;</span>
+<span class="nc" id="L207">  }</span>
+
+  /**
+   * Returns the name of the database server.
+   *
+   * @return the name of the database server
+   */
+  public String getServerName() {
+<span class="nc bnc" id="L215" title="All 2 branches missed.">    if (hostname != null) {</span>
+<span class="nc" id="L216">      return hostname;</span>
+    }
+<span class="nc bnc" id="L218" title="All 4 branches missed.">    boolean hasHost = urlParser != null &amp;&amp; this.urlParser.getHostAddresses().get(0).host != null;</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">    return (hasHost) ? this.urlParser.getHostAddresses().get(0).host : &quot;localhost&quot;;</span>
+  }
+
+  /**
+   * Sets the server name.
+   *
+   * @param serverName the server name
+   * @throws SQLException if error in URL
+   **/
+  public void setServerName(String serverName) throws SQLException {
+<span class="nc" id="L229">    checkNotInitialized();</span>
+<span class="nc" id="L230">    hostname = serverName;</span>
+<span class="nc" id="L231">  }</span>
+
+  /**
+   * Attempts to establish a connection with the data source that this &lt;code&gt;DataSource&lt;/code&gt;
+   * object represents.
+   *
+   * @return a connection to the data source
+   * @throws SQLException if a database access error occurs
+   */
+  public Connection getConnection() throws SQLException {
+    try {
+<span class="nc bnc" id="L242" title="All 2 branches missed.">      if (pool == null) {</span>
+<span class="nc" id="L243">        initialize();</span>
+      }
+<span class="nc" id="L245">      return pool.getConnection();</span>
+<span class="nc" id="L246">    } catch (SQLException e) {</span>
+<span class="nc" id="L247">      throw ExceptionMapper.getException(e, null, null, false);</span>
+    }
+  }
+
+  /**
+   * Attempts to establish a connection with the data source that this &lt;code&gt;DataSource&lt;/code&gt;
+   * object represents.
+   *
+   * @param username the database user on whose behalf the connection is being made
+   * @param password the user's password
+   * @return a connection to the data source
+   * @throws SQLException if a database access error occurs
+   */
+  public Connection getConnection(final String username, final String password)
+      throws SQLException {
+    try {
+<span class="nc bnc" id="L263" title="All 2 branches missed.">      if (pool == null) {</span>
+<span class="nc" id="L264">        this.user = username;</span>
+<span class="nc" id="L265">        this.password = password;</span>
+
+<span class="nc" id="L267">        initialize();</span>
+<span class="nc" id="L268">        return pool.getConnection();</span>
+      }
+
+<span class="nc bnc" id="L271" title="All 6 branches missed.">      if ((urlParser.getUsername() != null ? urlParser.getUsername().equals(username)</span>
+          : username == null)
+<span class="nc bnc" id="L273" title="All 6 branches missed.">          &amp;&amp; (urlParser.getPassword() != null ? urlParser.getPassword().equals(password)</span>
+<span class="nc bnc" id="L274" title="All 2 branches missed.">          : (password == null || password.isEmpty()))) {</span>
+<span class="nc" id="L275">        return pool.getConnection();</span>
+      }
+
+      //username / password are different from the one already used to initialize pool
+      //-&gt; return a real new connection.
+
+<span class="nc" id="L281">      UrlParser urlParser = (UrlParser) this.urlParser.clone();</span>
+<span class="nc" id="L282">      urlParser.setUsername(username);</span>
+<span class="nc" id="L283">      urlParser.setPassword(password);</span>
+<span class="nc" id="L284">      return MariaDbConnection.newConnection(urlParser, pool.getGlobalInfo());</span>
+
+<span class="nc" id="L286">    } catch (SQLException e) {</span>
+<span class="nc" id="L287">      throw ExceptionMapper.getException(e, null, null, false);</span>
+<span class="nc" id="L288">    } catch (CloneNotSupportedException cloneException) {</span>
+<span class="nc" id="L289">      throw new SQLException(&quot;Error in configuration&quot;);</span>
+    }
+  }
+
+  /**
+   * Retrieves the log writer for this &lt;code&gt;DataSource&lt;/code&gt; object.
+   *
+   * &lt;p&gt;The log writer is a character output stream to which all logging and tracing messages for
+   * this data source will be printed.  This includes messages printed by the methods of this
+   * object, messages printed by methods of other objects manufactured by this object, and so on.
+   * Messages printed to a data source specific log writer are not printed to the log writer
+   * associated with the &lt;code&gt;java.sql.DriverManager&lt;/code&gt; class.&lt;/p&gt;
+   *
+   * &lt;p&gt;When a &lt;code&gt;DataSource&lt;/code&gt; object is created, the log writer is initially null; in other words,
+   * the default is for logging to be disabled.&lt;/p&gt;
+   *
+   * @return the log writer for this data source or null if logging is disabled
+   * @see #setLogWriter
+   */
+  public PrintWriter getLogWriter() {
+<span class="nc" id="L309">    return null;</span>
+  }
+
+  /**
+   * Sets the log writer for this &lt;code&gt;DataSource&lt;/code&gt; object to the given
+   * &lt;code&gt;java.io.PrintWriter&lt;/code&gt; object.
+   *
+   * &lt;p&gt;The log writer is a character output stream to which all logging and tracing messages for this
+   * data source will be printed.  This includes messages printed by the methods of this object,
+   * messages printed by methods of other objects manufactured by this object, and so on.  Messages
+   * printed to a data source- specific log writer are not printed to the log writer associated with
+   * the &lt;code&gt;java.sql.DriverManager&lt;/code&gt; class. When a
+   * &lt;code&gt;DataSource&lt;/code&gt; object is created the log writer is initially null; in other words,
+   * the default is for logging to be disabled.&lt;/p&gt;
+   *
+   * @param out the new log writer; to disable logging, set to null
+   * @see #getLogWriter
+   * @since 1.4
+   */
+  public void setLogWriter(final PrintWriter out) {
+    //not implemented
+<span class="nc" id="L330">  }</span>
+
+  /**
+   * Gets the maximum time in seconds that this data source can wait while attempting to connect to
+   * a database.  A value of zero means that the timeout is the default system timeout if there is
+   * one; otherwise, it means that there is no timeout. When a &lt;code&gt;DataSource&lt;/code&gt; object is
+   * created, the login timeout is initially zero.
+   *
+   * @return the data source login time limit
+   * @see #setLoginTimeout
+   * @since 1.4
+   */
+  public int getLoginTimeout() {
+<span class="nc bnc" id="L343" title="All 2 branches missed.">    if (connectTimeout != null) {</span>
+<span class="nc" id="L344">      return connectTimeout / 1000;</span>
+    }
+<span class="nc bnc" id="L346" title="All 2 branches missed.">    return (urlParser != null) ? urlParser.getOptions().connectTimeout / 1000 : 0;</span>
+  }
+
+  /**
+   * Sets the maximum time in seconds that this data source will wait while attempting to connect to
+   * a database.  A value of zero specifies that the timeout is the default system timeout if there
+   * is one; otherwise, it specifies that there is no timeout. When a &lt;code&gt;DataSource&lt;/code&gt; object
+   * is created, the login timeout is initially zero.
+   *
+   * @param seconds the data source login time limit
+   * @throws SQLException if a database access error occurs.
+   * @see #getLoginTimeout
+   * @since 1.4
+   */
+  @Override
+  public void setLoginTimeout(final int seconds) throws SQLException {
+<span class="nc" id="L362">    checkNotInitialized();</span>
+<span class="nc" id="L363">    connectTimeout = seconds * 1000;</span>
+<span class="nc" id="L364">  }</span>
+
+  /**
+   * Returns an object that implements the given interface to allow access to non-standard methods,
+   * or standard methods not exposed by the proxy.
+   *
+   * &lt;p&gt;If the receiver implements the interface then the result is the receiver or a proxy for the
+   * receiver. If the receiver is a wrapper and the wrapped object implements the interface then the
+   * result is the wrapped object or a proxy for the wrapped object. Otherwise return the the result
+   * of calling &lt;code&gt;unwrap&lt;/code&gt; recursively on the wrapped object or a proxy for that result. If
+   * the receiver is not a wrapper and does not implement the interface, then an
+   * &lt;code&gt;SQLException&lt;/code&gt; is thrown.&lt;/p&gt;
+   *
+   * @param iface A Class defining an interface that the result must implement.
+   * @return an object that implements the interface. May be a proxy for the actual implementing
+   *     object.
+   * @throws SQLException If no object found that implements the interface
+   * @since 1.6
+   */
+  public &lt;T&gt; T unwrap(final Class&lt;T&gt; iface) throws SQLException {
+    try {
+<span class="nc bnc" id="L385" title="All 2 branches missed.">      if (isWrapperFor(iface)) {</span>
+<span class="nc" id="L386">        return iface.cast(this);</span>
+      } else {
+<span class="nc" id="L388">        throw new SQLException(</span>
+            &quot;The receiver is not a wrapper and does not implement the interface&quot;);
+      }
+<span class="nc" id="L391">    } catch (Exception e) {</span>
+<span class="nc" id="L392">      throw new SQLException(&quot;The receiver is not a wrapper and does not implement the interface&quot;);</span>
+    }
+  }
+
+  /**
+   * Returns true if this either implements the interface argument or is directly or indirectly a
+   * wrapper for an object that does. Returns false otherwise. If this implements the interface then
+   * return true, else if this is a wrapper then return the result of recursively calling
+   * &lt;code&gt;isWrapperFor&lt;/code&gt; on the wrapped object. If this does not implement the interface and
+   * is not a wrapper, return false. This method should be implemented as a low-cost operation
+   * compared to &lt;code&gt;unwrap&lt;/code&gt; so that callers can use this method to avoid expensive
+   * &lt;code&gt;unwrap&lt;/code&gt; calls that may fail. If this method returns true then calling
+   * &lt;code&gt;unwrap&lt;/code&gt; with the
+   * same argument should succeed.
+   *
+   * @param interfaceOrWrapper a Class defining an interface.
+   * @return true if this implements the interface or directly or indirectly wraps an object that
+   *     does.
+   * @throws SQLException if an error occurs while determining whether this is a wrapper for an
+   *                      object with the given interface.
+   * @since 1.6
+   */
+  public boolean isWrapperFor(final Class&lt;?&gt; interfaceOrWrapper) throws SQLException {
+<span class="nc" id="L415">    return interfaceOrWrapper.isInstance(this);</span>
+  }
+
+  @Override
+  public XAConnection getXAConnection() throws SQLException {
+<span class="nc" id="L420">    return new MariaXaConnection((MariaDbConnection) getConnection());</span>
+  }
+
+  @Override
+  public XAConnection getXAConnection(String user, String password) throws SQLException {
+<span class="nc" id="L425">    return new MariaXaConnection((MariaDbConnection) getConnection(user, password));</span>
+  }
+
+  public Logger getParentLogger() {
+<span class="nc" id="L429">    return null;</span>
+  }
+
+  /**
+   * For testing purpose only.
+   *
+   * @return current url parser.
+   */
+  protected UrlParser getUrlParser() {
+<span class="nc" id="L438">    return urlParser;</span>
+  }
+
+  public String getPoolName() {
+<span class="nc bnc" id="L442" title="All 2 branches missed.">    return (pool != null) ? pool.getPoolTag() : poolName;</span>
+  }
+
+  public void setPoolName(String poolName) throws SQLException {
+<span class="nc" id="L446">    checkNotInitialized();</span>
+<span class="nc" id="L447">    this.poolName = poolName;</span>
+<span class="nc" id="L448">  }</span>
+
+  /**
+   * Pool maximum connection size.
+   *
+   * @return current value.
+   */
+  public int getMaxPoolSize() {
+<span class="nc bnc" id="L456" title="All 2 branches missed.">    if (maxPoolSize == null) {</span>
+<span class="nc" id="L457">      return 8;</span>
+    }
+<span class="nc" id="L459">    return maxPoolSize;</span>
+  }
+
+  public void setMaxPoolSize(int maxPoolSize) throws SQLException {
+<span class="nc" id="L463">    checkNotInitialized();</span>
+<span class="nc" id="L464">    this.maxPoolSize = maxPoolSize;</span>
+<span class="nc" id="L465">  }</span>
+
+  /**
+   * Get minimum pool size (pool will grow at creation untile reaching this size).
+   * Null mean use the pool maximum pool size.
+   *
+   * @return current value.
+   */
+  public int getMinPoolSize() {
+<span class="nc bnc" id="L474" title="All 2 branches missed.">    if (minPoolSize == null) {</span>
+<span class="nc" id="L475">      return getMaxPoolSize();</span>
+    }
+<span class="nc" id="L477">    return minPoolSize;</span>
+  }
+
+  public void setMinPoolSize(int minPoolSize) throws SQLException {
+<span class="nc" id="L481">    checkNotInitialized();</span>
+<span class="nc" id="L482">    this.minPoolSize = minPoolSize;</span>
+<span class="nc" id="L483">  }</span>
+
+  /**
+   * Max time a connection can be idle.
+   *
+   * @return current value.
+   */
+  public int getMaxIdleTime() {
+<span class="nc bnc" id="L491" title="All 2 branches missed.">    if (maxIdleTime == null) {</span>
+<span class="nc" id="L492">      return 600;</span>
+    }
+<span class="nc" id="L494">    return maxIdleTime;</span>
+  }
+
+  public void setMaxIdleTime(int maxIdleTime) throws SQLException {
+<span class="nc" id="L498">    checkNotInitialized();</span>
+<span class="nc" id="L499">    this.maxIdleTime = maxIdleTime;</span>
+<span class="nc" id="L500">  }</span>
+
+  public Boolean getStaticGlobal() {
+<span class="nc" id="L503">    return staticGlobal;</span>
+  }
+
+  public void setStaticGlobal(Boolean staticGlobal) {
+<span class="nc" id="L507">    this.staticGlobal = staticGlobal;</span>
+<span class="nc" id="L508">  }</span>
+
+  /**
+   * If connection has been used in less time than poolValidMinDelay, then no connection validation
+   * will be done (0=mean validation every time).
+   *
+   * @return current value of poolValidMinDelay
+   */
+  public Integer getPoolValidMinDelay() {
+<span class="nc bnc" id="L517" title="All 2 branches missed.">    if (poolValidMinDelay == null) {</span>
+<span class="nc" id="L518">      return 1000;</span>
+    }
+<span class="nc" id="L520">    return poolValidMinDelay;</span>
+  }
+
+  public void setPoolValidMinDelay(Integer poolValidMinDelay) {
+<span class="nc" id="L524">    this.poolValidMinDelay = poolValidMinDelay;</span>
+<span class="nc" id="L525">  }</span>
+
+  private synchronized void initializeUrlParser() throws SQLException {
+
+<span class="nc bnc" id="L529" title="All 4 branches missed.">    if (url != null &amp;&amp; !url.isEmpty()) {</span>
+<span class="nc" id="L530">      Properties props = new Properties();</span>
+<span class="nc" id="L531">      props.setProperty(&quot;pool&quot;, &quot;true&quot;);</span>
+<span class="nc bnc" id="L532" title="All 2 branches missed.">      if (user != null) {</span>
+<span class="nc" id="L533">        props.setProperty(&quot;user&quot;, user);</span>
+      }
+<span class="nc bnc" id="L535" title="All 2 branches missed.">      if (password != null) {</span>
+<span class="nc" id="L536">        props.setProperty(&quot;password&quot;, password);</span>
+      }
+<span class="nc bnc" id="L538" title="All 2 branches missed.">      if (poolName != null) {</span>
+<span class="nc" id="L539">        props.setProperty(&quot;poolName&quot;, poolName);</span>
+      }
+
+<span class="nc bnc" id="L542" title="All 2 branches missed.">      if (database != null) {</span>
+<span class="nc" id="L543">        props.setProperty(&quot;database&quot;, database);</span>
+      }
+<span class="nc bnc" id="L545" title="All 2 branches missed.">      if (maxPoolSize != null) {</span>
+<span class="nc" id="L546">        props.setProperty(&quot;maxPoolSize&quot;, String.valueOf(maxPoolSize));</span>
+      }
+<span class="nc bnc" id="L548" title="All 2 branches missed.">      if (minPoolSize != null) {</span>
+<span class="nc" id="L549">        props.setProperty(&quot;minPoolSize&quot;, String.valueOf(minPoolSize));</span>
+      }
+<span class="nc bnc" id="L551" title="All 2 branches missed.">      if (maxIdleTime != null) {</span>
+<span class="nc" id="L552">        props.setProperty(&quot;maxIdleTime&quot;, String.valueOf(maxIdleTime));</span>
+      }
+<span class="nc bnc" id="L554" title="All 2 branches missed.">      if (connectTimeout != null) {</span>
+<span class="nc" id="L555">        props.setProperty(&quot;connectTimeout&quot;, String.valueOf(connectTimeout));</span>
+      }
+<span class="nc bnc" id="L557" title="All 2 branches missed.">      if (staticGlobal != null) {</span>
+<span class="nc" id="L558">        props.setProperty(&quot;staticGlobal&quot;, String.valueOf(staticGlobal));</span>
+      }
+<span class="nc bnc" id="L560" title="All 2 branches missed.">      if (poolValidMinDelay != null) {</span>
+<span class="nc" id="L561">        props.setProperty(&quot;poolValidMinDelay&quot;, String.valueOf(poolValidMinDelay));</span>
+      }
+
+<span class="nc" id="L564">      urlParser = UrlParser.parse(url, props);</span>
+
+<span class="nc" id="L566">    } else {</span>
+
+<span class="nc" id="L568">      Options options = DefaultOptions.defaultValues(HaMode.NONE);</span>
+<span class="nc" id="L569">      options.pool = true;</span>
+<span class="nc" id="L570">      options.user = user;</span>
+<span class="nc" id="L571">      options.password = password;</span>
+<span class="nc" id="L572">      options.poolName = poolName;</span>
+
+<span class="nc bnc" id="L574" title="All 2 branches missed.">      if (maxPoolSize != null) {</span>
+<span class="nc" id="L575">        options.maxPoolSize = maxPoolSize;</span>
+      }
+<span class="nc bnc" id="L577" title="All 2 branches missed.">      if (minPoolSize != null) {</span>
+<span class="nc" id="L578">        options.minPoolSize = minPoolSize;</span>
+      }
+<span class="nc bnc" id="L580" title="All 2 branches missed.">      if (maxIdleTime != null) {</span>
+<span class="nc" id="L581">        options.maxIdleTime = maxIdleTime;</span>
+      }
+<span class="nc bnc" id="L583" title="All 2 branches missed.">      if (staticGlobal != null) {</span>
+<span class="nc" id="L584">        options.staticGlobal = staticGlobal;</span>
+      }
+<span class="nc bnc" id="L586" title="All 2 branches missed.">      if (connectTimeout != null) {</span>
+<span class="nc" id="L587">        options.connectTimeout = connectTimeout;</span>
+      }
+<span class="nc bnc" id="L589" title="All 2 branches missed.">      if (poolValidMinDelay != null) {</span>
+<span class="nc" id="L590">        options.poolValidMinDelay = poolValidMinDelay;</span>
+      }
+
+<span class="nc" id="L593">      urlParser = new UrlParser(database,</span>
+<span class="nc" id="L594">          Collections.singletonList(</span>
+              new HostAddress(
+<span class="nc bnc" id="L596" title="All 4 branches missed.">                  (hostname == null || hostname.isEmpty()) ? &quot;localhost&quot; : hostname,</span>
+<span class="nc bnc" id="L597" title="All 2 branches missed.">                  port == null ? 3306 : port)),</span>
+          options,
+          HaMode.NONE);
+    }
+<span class="nc" id="L601">  }</span>
+
+  /**
+   * Close datasource.
+   */
+  public void close() {
+    try {
+<span class="nc bnc" id="L608" title="All 2 branches missed.">      if (pool != null) {</span>
+<span class="nc" id="L609">        pool.close();</span>
+      }
+<span class="nc" id="L611">    } catch (InterruptedException interrupted) {</span>
+      //eat
+<span class="nc" id="L613">    }</span>
+<span class="nc" id="L614">  }</span>
+
+  /**
+   * Initialize pool.
+   *
+   * @throws SQLException if connection string has error
+   */
+  public synchronized void initialize() throws SQLException {
+<span class="nc bnc" id="L622" title="All 2 branches missed.">    if (pool == null) {</span>
+<span class="nc" id="L623">      initializeUrlParser();</span>
+<span class="nc" id="L624">      pool = Pools.retrievePool(urlParser);</span>
+    }
+<span class="nc" id="L626">  }</span>
+
+  /**
+   * Get current idle threads. !! For testing purpose only !!
+   *
+   * @return current thread id's
+   */
+  public List&lt;Long&gt; testGetConnectionIdleThreadIds() {
+<span class="nc" id="L634">    return pool.testGetConnectionIdleThreadIds();</span>
+  }
+
+  /**
+   * Permit to create test that doesn't wait for maxIdleTime minimum value of 60 seconds. !! For
+   * testing purpose only !!
+   *
+   * @param maxIdleTime forced value of maxIdleTime option.
+   * @throws SQLException if connection string has error
+   */
+  public void testForceMaxIdleTime(int maxIdleTime) throws SQLException {
+<span class="nc" id="L645">    initializeUrlParser();</span>
+<span class="nc" id="L646">    urlParser.getOptions().maxIdleTime = maxIdleTime;</span>
+<span class="nc" id="L647">    pool = Pools.retrievePool(urlParser);</span>
+<span class="nc" id="L648">  }</span>
+
+  /**
+   * Get pool. !! For testing purpose only !!
+   *
+   * @return pool
+   */
+  public Pool testGetPool() {
+<span class="nc" id="L656">    return pool;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

@@ -1,0 +1,392 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CallableParameterMetaData.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">CallableParameterMetaData.java</span></div><h1>CallableParameterMetaData.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc;
+
+import java.sql.ParameterMetaData;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.SQLSyntaxErrorException;
+import java.sql.Types;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class CallableParameterMetaData implements ParameterMetaData {
+
+<span class="nc" id="L69">  private static final Pattern PARAMETER_PATTERN =</span>
+<span class="nc" id="L70">      Pattern.compile(</span>
+          &quot;\\s*(IN\\s+|OUT\\s+|INOUT\\s+)?([\\w\\d]+)\\s+(UNSIGNED\\s+)?(\\w+)\\s*(\\([\\d,]+\\))?\\s*&quot;,
+          Pattern.CASE_INSENSITIVE);
+<span class="nc" id="L73">  private static final Pattern RETURN_PATTERN =</span>
+<span class="nc" id="L74">      Pattern.compile(&quot;\\s*(UNSIGNED\\s+)?(\\w+)\\s*(\\([\\d,]+\\))?\\s*(CHARSET\\s+)?(\\w+)?\\s*&quot;,</span>
+          Pattern.CASE_INSENSITIVE);
+  private final MariaDbConnection con;
+  private final String name;
+  private List&lt;CallParameter&gt; params;
+  private String database;
+  private boolean valid;
+  private boolean isFunction;
+
+  /**
+   * Retrieve Callable metaData.
+   *
+   * @param con        connection
+   * @param database   database name
+   * @param name       procedure/function name
+   * @param isFunction is it a function
+   */
+  public CallableParameterMetaData(MariaDbConnection con, String database, String name,
+<span class="nc" id="L92">      boolean isFunction) {</span>
+<span class="nc" id="L93">    this.params = null;</span>
+<span class="nc" id="L94">    this.con = con;</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">    if (database != null) {</span>
+<span class="nc" id="L96">      this.database = database.replace(&quot;`&quot;, &quot;&quot;);</span>
+    } else {
+<span class="nc" id="L98">      this.database = null;</span>
+    }
+<span class="nc" id="L100">    this.name = name.replace(&quot;`&quot;, &quot;&quot;);</span>
+<span class="nc" id="L101">    this.isFunction = isFunction;</span>
+<span class="nc" id="L102">  }</span>
+
+  /**
+   * Search metaData if not already loaded.
+   *
+   * @throws SQLException if error append during loading metaData
+   */
+  public void readMetadataFromDbIfRequired() throws SQLException {
+<span class="nc bnc" id="L110" title="All 2 branches missed.">    if (valid) {</span>
+<span class="nc" id="L111">      return;</span>
+    }
+<span class="nc" id="L113">    readMetadata();</span>
+<span class="nc" id="L114">    valid = true;</span>
+<span class="nc" id="L115">  }</span>
+
+  private int mapMariaDbTypeToJdbc(String str) {
+<span class="nc bnc" id="L118" title="All 34 branches missed.">    switch (str.toUpperCase(Locale.ROOT)) {</span>
+      case &quot;BIT&quot;:
+<span class="nc" id="L120">        return Types.BIT;</span>
+      case &quot;TINYINT&quot;:
+<span class="nc" id="L122">        return Types.TINYINT;</span>
+      case &quot;SMALLINT&quot;:
+<span class="nc" id="L124">        return Types.SMALLINT;</span>
+      case &quot;MEDIUMINT&quot;:
+<span class="nc" id="L126">        return Types.INTEGER;</span>
+      case &quot;INT&quot;:
+<span class="nc" id="L128">        return Types.INTEGER;</span>
+      case &quot;INTEGER&quot;:
+<span class="nc" id="L130">        return Types.INTEGER;</span>
+      case &quot;LONG&quot;:
+<span class="nc" id="L132">        return Types.INTEGER;</span>
+      case &quot;BIGINT&quot;:
+<span class="nc" id="L134">        return Types.BIGINT;</span>
+      case &quot;INT24&quot;:
+<span class="nc" id="L136">        return Types.INTEGER;</span>
+      case &quot;REAL&quot;:
+<span class="nc" id="L138">        return Types.DOUBLE;</span>
+      case &quot;FLOAT&quot;:
+<span class="nc" id="L140">        return Types.FLOAT;</span>
+      case &quot;DECIMAL&quot;:
+<span class="nc" id="L142">        return Types.DECIMAL;</span>
+      case &quot;NUMERIC&quot;:
+<span class="nc" id="L144">        return Types.NUMERIC;</span>
+      case &quot;DOUBLE&quot;:
+<span class="nc" id="L146">        return Types.DOUBLE;</span>
+      case &quot;CHAR&quot;:
+<span class="nc" id="L148">        return Types.CHAR;</span>
+      case &quot;VARCHAR&quot;:
+<span class="nc" id="L150">        return Types.VARCHAR;</span>
+      case &quot;DATE&quot;:
+<span class="nc" id="L152">        return Types.DATE;</span>
+      case &quot;TIME&quot;:
+<span class="nc" id="L154">        return Types.TIME;</span>
+      case &quot;YEAR&quot;:
+<span class="nc" id="L156">        return Types.SMALLINT;</span>
+      case &quot;TIMESTAMP&quot;:
+<span class="nc" id="L158">        return Types.TIMESTAMP;</span>
+      case &quot;DATETIME&quot;:
+<span class="nc" id="L160">        return Types.TIMESTAMP;</span>
+      case &quot;TINYBLOB&quot;:
+<span class="nc" id="L162">        return Types.BINARY;</span>
+      case &quot;BLOB&quot;:
+<span class="nc" id="L164">        return Types.LONGVARBINARY;</span>
+      case &quot;MEDIUMBLOB&quot;:
+<span class="nc" id="L166">        return Types.LONGVARBINARY;</span>
+      case &quot;LONGBLOB&quot;:
+<span class="nc" id="L168">        return Types.LONGVARBINARY;</span>
+      case &quot;TINYTEXT&quot;:
+<span class="nc" id="L170">        return Types.VARCHAR;</span>
+      case &quot;TEXT&quot;:
+<span class="nc" id="L172">        return Types.LONGVARCHAR;</span>
+      case &quot;MEDIUMTEXT&quot;:
+<span class="nc" id="L174">        return Types.LONGVARCHAR;</span>
+      case &quot;LONGTEXT&quot;:
+<span class="nc" id="L176">        return Types.LONGVARCHAR;</span>
+      case &quot;ENUM&quot;:
+<span class="nc" id="L178">        return Types.VARCHAR;</span>
+      case &quot;SET&quot;:
+<span class="nc" id="L180">        return Types.VARCHAR;</span>
+      case &quot;GEOMETRY&quot;:
+<span class="nc" id="L182">        return Types.LONGVARBINARY;</span>
+      case &quot;VARBINARY&quot;:
+<span class="nc" id="L184">        return Types.VARBINARY;</span>
+      default:
+<span class="nc" id="L186">        return Types.OTHER;</span>
+    }
+
+  }
+
+
+  private String[] queryMetaInfos(boolean isFunction) throws SQLException {
+    String paramList;
+    String functionReturn;
+<span class="nc" id="L195">    try (PreparedStatement preparedStatement = con.prepareStatement(</span>
+        &quot;select param_list, returns, db, type from mysql.proc where name=? and db=&quot;
+<span class="nc bnc" id="L197" title="All 2 branches missed.">            + (database != null ? &quot;?&quot; : &quot;DATABASE()&quot;))) {</span>
+
+<span class="nc" id="L199">      preparedStatement.setString(1, name);</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">      if (database != null) {</span>
+<span class="nc" id="L201">        preparedStatement.setString(2, database);</span>
+      }
+
+<span class="nc" id="L204">      try (ResultSet rs = preparedStatement.executeQuery()) {</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">        if (!rs.next()) {</span>
+<span class="nc" id="L206">          throw new SQLException(</span>
+<span class="nc bnc" id="L207" title="All 2 branches missed.">              (isFunction ? &quot;function&quot; : &quot;procedure&quot;) + &quot; `&quot; + name + &quot;` does not exist&quot;);</span>
+        }
+<span class="nc" id="L209">        paramList = rs.getString(1);</span>
+<span class="nc" id="L210">        functionReturn = rs.getString(2);</span>
+<span class="nc" id="L211">        database = rs.getString(3);</span>
+<span class="nc" id="L212">        this.isFunction = &quot;FUNCTION&quot;.equals(rs.getString(4));</span>
+<span class="nc" id="L213">        return new String[]{paramList, functionReturn};</span>
+      }
+
+<span class="nc" id="L216">    } catch (SQLSyntaxErrorException sqlSyntaxErrorException) {</span>
+<span class="nc" id="L217">      throw new SQLException(</span>
+          &quot;Access to metaData informations not granted for current user. Consider grant select access to mysql.proc &quot;
+              + &quot; or avoid using parameter by name&quot;, sqlSyntaxErrorException);
+    }
+
+  }
+
+  private void parseFunctionReturnParam(String functionReturn) throws SQLException {
+<span class="nc bnc" id="L225" title="All 4 branches missed.">    if (functionReturn == null || functionReturn.length() == 0) {</span>
+<span class="nc" id="L226">      throw new SQLException(name + &quot;is not a function returning value&quot;);</span>
+    }
+<span class="nc" id="L228">    Matcher matcher = RETURN_PATTERN.matcher(functionReturn);</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">    if (!matcher.matches()) {</span>
+<span class="nc" id="L230">      throw new SQLException(&quot;can not parse return value definition :&quot; + functionReturn);</span>
+    }
+<span class="nc" id="L232">    CallParameter callParameter = params.get(0);</span>
+<span class="nc" id="L233">    callParameter.setOutput(true);</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">    callParameter.setSigned(matcher.group(1) == null);</span>
+<span class="nc" id="L235">    callParameter.setTypeName(matcher.group(2).trim());</span>
+<span class="nc" id="L236">    callParameter.setSqlType(mapMariaDbTypeToJdbc(callParameter.getTypeName()));</span>
+<span class="nc" id="L237">    String scale = matcher.group(3);</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">    if (scale != null) {</span>
+<span class="nc" id="L239">      scale = scale.replace(&quot;(&quot;, &quot;&quot;).replace(&quot;)&quot;, &quot;&quot;).replace(&quot; &quot;, &quot;&quot;);</span>
+<span class="nc" id="L240">      callParameter.setScale(Integer.valueOf(scale));</span>
+    }
+<span class="nc" id="L242">  }</span>
+
+  private void parseParamList(boolean isFunction, String paramList) throws SQLException {
+<span class="nc" id="L245">    params = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L246" title="All 2 branches missed.">    if (isFunction) {</span>
+      //output parameter
+<span class="nc" id="L248">      params.add(new CallParameter());</span>
+    }
+
+<span class="nc" id="L251">    Matcher matcher2 = PARAMETER_PATTERN.matcher(paramList);</span>
+<span class="nc bnc" id="L252" title="All 2 branches missed.">    while (matcher2.find()) {</span>
+<span class="nc" id="L253">      CallParameter callParameter = new CallParameter();</span>
+<span class="nc" id="L254">      String direction = matcher2.group(1);</span>
+<span class="nc bnc" id="L255" title="All 2 branches missed.">      if (direction != null) {</span>
+<span class="nc" id="L256">        direction = direction.trim();</span>
+      }
+
+<span class="nc" id="L259">      callParameter.setName(matcher2.group(2).trim());</span>
+<span class="nc bnc" id="L260" title="All 2 branches missed.">      callParameter.setSigned(matcher2.group(3) == null);</span>
+<span class="nc" id="L261">      callParameter.setTypeName(matcher2.group(4).trim().toUpperCase(Locale.ROOT));</span>
+
+<span class="nc bnc" id="L263" title="All 4 branches missed.">      if (direction == null || direction.equalsIgnoreCase(&quot;IN&quot;)) {</span>
+<span class="nc" id="L264">        callParameter.setInput(true);</span>
+<span class="nc bnc" id="L265" title="All 2 branches missed.">      } else if (direction.equalsIgnoreCase(&quot;OUT&quot;)) {</span>
+<span class="nc" id="L266">        callParameter.setOutput(true);</span>
+<span class="nc bnc" id="L267" title="All 2 branches missed.">      } else if (direction.equalsIgnoreCase(&quot;INOUT&quot;)) {</span>
+<span class="nc" id="L268">        callParameter.setInput(true);</span>
+<span class="nc" id="L269">        callParameter.setOutput(true);</span>
+      } else {
+<span class="nc" id="L271">        throw new SQLException(</span>
+<span class="nc" id="L272">            &quot;unknown parameter direction &quot; + direction + &quot;for &quot; + callParameter.getName());</span>
+      }
+
+<span class="nc" id="L275">      callParameter.setSqlType(mapMariaDbTypeToJdbc(callParameter.getTypeName()));</span>
+
+<span class="nc" id="L277">      String scale = matcher2.group(5);</span>
+<span class="nc bnc" id="L278" title="All 2 branches missed.">      if (scale != null) {</span>
+<span class="nc" id="L279">        scale = scale.trim().replace(&quot;(&quot;, &quot;&quot;).replace(&quot;)&quot;, &quot;&quot;).replace(&quot; &quot;, &quot;&quot;);</span>
+<span class="nc bnc" id="L280" title="All 2 branches missed.">        if (scale.contains(&quot;,&quot;)) {</span>
+<span class="nc" id="L281">          scale = scale.substring(0, scale.indexOf(&quot;,&quot;));</span>
+        }
+<span class="nc" id="L283">        callParameter.setScale(Integer.valueOf(scale));</span>
+      }
+<span class="nc" id="L285">      params.add(callParameter);</span>
+<span class="nc" id="L286">    }</span>
+<span class="nc" id="L287">  }</span>
+
+  /**
+   * Read procedure metadata from mysql.proc table(column param_list).
+   *
+   * @throws SQLException if data doesn't correspond.
+   */
+  private void readMetadata() throws SQLException {
+<span class="nc bnc" id="L295" title="All 2 branches missed.">    if (valid) {</span>
+<span class="nc" id="L296">      return;</span>
+    }
+
+<span class="nc" id="L299">    String[] metaInfos = queryMetaInfos(isFunction);</span>
+<span class="nc" id="L300">    String paramList = metaInfos[0];</span>
+<span class="nc" id="L301">    String functionReturn = metaInfos[1];</span>
+
+<span class="nc" id="L303">    parseParamList(isFunction, paramList);</span>
+
+    // parse type of the return value (for functions)
+<span class="nc bnc" id="L306" title="All 2 branches missed.">    if (isFunction) {</span>
+<span class="nc" id="L307">      parseFunctionReturnParam(functionReturn);</span>
+    }
+
+<span class="nc" id="L310">  }</span>
+
+  public int getParameterCount() {
+<span class="nc" id="L313">    return params.size();</span>
+  }
+
+  private CallParameter getParam(int index) throws SQLException {
+<span class="nc bnc" id="L317" title="All 4 branches missed.">    if (index &lt; 1 || index &gt; params.size()) {</span>
+<span class="nc" id="L318">      throw new SQLException(&quot;invalid parameter index &quot; + index);</span>
+    }
+<span class="nc" id="L320">    readMetadataFromDbIfRequired();</span>
+<span class="nc" id="L321">    return params.get(index - 1);</span>
+  }
+
+  public int isNullable(int param) throws SQLException {
+<span class="nc" id="L325">    return getParam(param).getCanBeNull();</span>
+  }
+
+  public boolean isSigned(int param) throws SQLException {
+<span class="nc" id="L329">    return getParam(param).isSigned();</span>
+  }
+
+  public int getPrecision(int param) throws SQLException {
+<span class="nc" id="L333">    return getParam(param).getPrecision();</span>
+  }
+
+  public int getScale(int param) throws SQLException {
+<span class="nc" id="L337">    return getParam(param).getScale();</span>
+  }
+
+  public int getParameterType(int param) throws SQLException {
+<span class="nc" id="L341">    return getParam(param).getSqlType();</span>
+  }
+
+  public String getParameterTypeName(int param) throws SQLException {
+<span class="nc" id="L345">    return getParam(param).getTypeName();</span>
+  }
+
+  public String getParameterClassName(int param) throws SQLException {
+<span class="nc" id="L349">    return getParam(param).getClassName();</span>
+  }
+
+  /**
+   * Get mode info.
+   * &lt;ul&gt;
+   * &lt;li&gt;0 : unknown&lt;/li&gt;
+   * &lt;li&gt;1 : IN&lt;/li&gt;
+   * &lt;li&gt;2 : INOUT&lt;/li&gt;
+   * &lt;li&gt;4 : OUT&lt;/li&gt;
+   * &lt;/ul&gt;
+   *
+   * @param param parameter index
+   * @return mode information
+   * @throws SQLException if index is wrong
+   */
+  public int getParameterMode(int param) throws SQLException {
+<span class="nc" id="L366">    CallParameter callParameter = getParam(param);</span>
+<span class="nc bnc" id="L367" title="All 4 branches missed.">    if (callParameter.isInput() &amp;&amp; callParameter.isOutput()) {</span>
+<span class="nc" id="L368">      return parameterModeInOut;</span>
+    }
+<span class="nc bnc" id="L370" title="All 2 branches missed.">    if (callParameter.isInput()) {</span>
+<span class="nc" id="L371">      return parameterModeIn;</span>
+    }
+<span class="nc bnc" id="L373" title="All 2 branches missed.">    if (callParameter.isOutput()) {</span>
+<span class="nc" id="L374">      return parameterModeOut;</span>
+    }
+<span class="nc" id="L376">    return parameterModeUnknown;</span>
+  }
+
+  public String getName(int param) throws SQLException {
+<span class="nc" id="L380">    return getParam(param).getName();</span>
+  }
+
+  public &lt;T&gt; T unwrap(Class&lt;T&gt; iface) {
+<span class="nc" id="L384">    return null;</span>
+  }
+
+  public boolean isWrapperFor(Class&lt;?&gt; iface) {
+<span class="nc" id="L388">    return false;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

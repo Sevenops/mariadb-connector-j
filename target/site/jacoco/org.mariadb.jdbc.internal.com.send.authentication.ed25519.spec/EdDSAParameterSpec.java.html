@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>EdDSAParameterSpec.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.send.authentication.ed25519.spec</a> &gt; <span class="el_source">EdDSAParameterSpec.java</span></div><h1>EdDSAParameterSpec.java</h1><pre class="source lang-java linenums">/**
+ * EdDSA-Java by str4d
+ * &lt;p&gt;
+ * To the extent possible under law, the person who associated CC0 with EdDSA-Java has waived all
+ * copyright and related or neighboring rights to EdDSA-Java.
+ * &lt;p&gt;
+ * You should have received a copy of the CC0 legalcode along with this work. If not, see
+ * &lt;https://creativecommons.org/publicdomain/zero/1.0/&gt;.
+ */
+package org.mariadb.jdbc.internal.com.send.authentication.ed25519.spec;
+
+import java.io.Serializable;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.AlgorithmParameterSpec;
+import org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.Curve;
+import org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.GroupElement;
+import org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.ed25519.ScalarOps;
+
+/**
+ * Parameter specification for an EdDSA algorithm.
+ *
+ * @author str4d
+ */
+public class EdDSAParameterSpec implements AlgorithmParameterSpec, Serializable {
+
+  private static final long serialVersionUID = 8274987108472012L;
+  private final Curve curve;
+  private final String hashAlgo;
+  private final ScalarOps sc;
+  private final GroupElement B;
+
+  /**
+   * @param curve    the curve
+   * @param hashAlgo the JCA string for the hash algorithm
+   * @param sc       the parameter L represented as ScalarOps
+   * @param B        the parameter B
+   * @throws IllegalArgumentException if hash algorithm is unsupported or length is wrong
+   */
+  public EdDSAParameterSpec(Curve curve, String hashAlgo,
+<span class="nc" id="L41">      ScalarOps sc, GroupElement B) {</span>
+    try {
+<span class="nc" id="L43">      MessageDigest hash = MessageDigest.getInstance(hashAlgo);</span>
+      // EdDSA hash function must produce 2b-bit output
+<span class="nc bnc" id="L45" title="All 2 branches missed.">      if (curve.getField().getb() / 4 != hash.getDigestLength()) {</span>
+<span class="nc" id="L46">        throw new IllegalArgumentException(&quot;Hash output is not 2b-bit&quot;);</span>
+      }
+<span class="nc" id="L48">    } catch (NoSuchAlgorithmException e) {</span>
+<span class="nc" id="L49">      throw new IllegalArgumentException(&quot;Unsupported hash algorithm&quot;);</span>
+<span class="nc" id="L50">    }</span>
+
+<span class="nc" id="L52">    this.curve = curve;</span>
+<span class="nc" id="L53">    this.hashAlgo = hashAlgo;</span>
+<span class="nc" id="L54">    this.sc = sc;</span>
+<span class="nc" id="L55">    this.B = B;</span>
+<span class="nc" id="L56">  }</span>
+
+  public Curve getCurve() {
+<span class="nc" id="L59">    return curve;</span>
+  }
+
+  public String getHashAlgorithm() {
+<span class="nc" id="L63">    return hashAlgo;</span>
+  }
+
+  public ScalarOps getScalarOps() {
+<span class="nc" id="L67">    return sc;</span>
+  }
+
+  /**
+   * @return the base (generator)
+   */
+  public GroupElement getB() {
+<span class="nc" id="L74">    return B;</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L79">    return hashAlgo.hashCode() ^</span>
+<span class="nc" id="L80">        curve.hashCode() ^</span>
+<span class="nc" id="L81">        B.hashCode();</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L86" title="All 2 branches missed.">    if (o == this) {</span>
+<span class="nc" id="L87">      return true;</span>
+    }
+<span class="nc bnc" id="L89" title="All 2 branches missed.">    if (!(o instanceof org.mariadb.jdbc.internal.com.send.authentication.ed25519.spec.EdDSAParameterSpec)) {</span>
+<span class="nc" id="L90">      return false;</span>
+    }
+<span class="nc" id="L92">    org.mariadb.jdbc.internal.com.send.authentication.ed25519.spec.EdDSAParameterSpec s = (org.mariadb.jdbc.internal.com.send.authentication.ed25519.spec.EdDSAParameterSpec) o;</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">    return hashAlgo.equals(s.getHashAlgorithm()) &amp;&amp;</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">        curve.equals(s.getCurve()) &amp;&amp;</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">        B.equals(s.getB());</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

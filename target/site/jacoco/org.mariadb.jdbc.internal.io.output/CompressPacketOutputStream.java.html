@@ -1,0 +1,421 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CompressPacketOutputStream.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.io.output</a> &gt; <span class="el_source">CompressPacketOutputStream.java</span></div><h1>CompressPacketOutputStream.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.io.output;
+
+import static org.mariadb.jdbc.internal.io.TraceObject.COMPRESSED_PROTOCOL_COMPRESSED_PACKET;
+import static org.mariadb.jdbc.internal.io.TraceObject.COMPRESSED_PROTOCOL_NOT_COMPRESSED_PACKET;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.util.Arrays;
+import java.util.zip.DeflaterOutputStream;
+import org.mariadb.jdbc.internal.io.TraceObject;
+import org.mariadb.jdbc.internal.logging.Logger;
+import org.mariadb.jdbc.internal.logging.LoggerFactory;
+import org.mariadb.jdbc.internal.util.Utils;
+
+public class CompressPacketOutputStream extends AbstractPacketOutputStream {
+
+<span class="nc" id="L70">  private static final Logger logger = LoggerFactory.getLogger(CompressPacketOutputStream.class);</span>
+
+  private static final int MAX_PACKET_LENGTH = 0x00ffffff;
+<span class="nc" id="L73">  private static final byte[] EMPTY_ARRAY = new byte[0];</span>
+  private static final int MIN_COMPRESSION_SIZE = 100;
+  private static final float MIN_COMPRESSION_RATIO = 0.9f;
+<span class="nc" id="L76">  private final byte[] header = new byte[7];</span>
+<span class="nc" id="L77">  private final byte[] subHeader = new byte[4];</span>
+<span class="nc" id="L78">  private int maxPacketLength = MAX_PACKET_LENGTH;</span>
+  private int compressSeqNo;
+<span class="nc" id="L80">  private byte[] remainingData = new byte[0];</span>
+<span class="nc" id="L81">  private boolean lastPacketExactMaxPacketLength = false;</span>
+
+  public CompressPacketOutputStream(OutputStream out, int maxQuerySizeToLog) {
+<span class="nc" id="L84">    super(out, maxQuerySizeToLog);</span>
+<span class="nc" id="L85">  }</span>
+
+  public int getMaxPacketLength() {
+<span class="nc" id="L88">    return maxPacketLength;</span>
+  }
+
+  @Override
+  public void setMaxAllowedPacket(int maxAllowedPacket) {
+<span class="nc" id="L93">    this.maxAllowedPacket = maxAllowedPacket;</span>
+<span class="nc" id="L94">    maxPacketLength = Math.min(MAX_PACKET_LENGTH, maxAllowedPacket + 7);</span>
+<span class="nc" id="L95">  }</span>
+
+  @Override
+  public void startPacket(int compressSeqNo) {
+<span class="nc" id="L99">    this.compressSeqNo = compressSeqNo;</span>
+<span class="nc" id="L100">    this.seqNo = 0;</span>
+<span class="nc" id="L101">    pos = 0;</span>
+<span class="nc" id="L102">    cmdLength = 0;</span>
+<span class="nc" id="L103">    remainingData = EMPTY_ARRAY;</span>
+<span class="nc" id="L104">    lastPacketExactMaxPacketLength = false;</span>
+<span class="nc" id="L105">  }</span>
+
+  public int initialPacketPos() {
+<span class="nc" id="L108">    return 0;</span>
+  }
+
+  /**
+   * Flush the internal buffer.
+   *
+   * &lt;p&gt;Compression add a 7 header :&lt;/p&gt;
+   * &lt;ol&gt;
+   * &lt;li&gt;3 byte compression length&lt;/li&gt;
+   * &lt;li&gt;1 byte compress sequence number&lt;/li&gt;
+   * &lt;li&gt;3 bytes uncompress length&lt;/li&gt;
+   * &lt;/ol&gt;
+   *
+   * &lt;p&gt;in case packet isn't compressed (last 3 bytes == 0):&lt;/p&gt;
+   * &lt;ol&gt;
+   * &lt;li&gt;3 byte uncompress length&lt;/li&gt;
+   * &lt;li&gt;1 byte compress sequence number&lt;/li&gt;
+   * &lt;li&gt;3 bytes with 0 value&lt;/li&gt;
+   * &lt;/ol&gt;
+   *
+   * &lt;p&gt;Content correspond to standard content.&lt;/p&gt;
+   * &lt;ol&gt;
+   * &lt;li&gt;3 byte length&lt;/li&gt;
+   * &lt;li&gt;1 byte sequence number (!= than compress sequence number)&lt;/li&gt;
+   * &lt;li&gt;sub-content&lt;/li&gt;
+   * &lt;/ol&gt;
+   *
+   * &lt;p&gt;Problem is when standard content is bigger than 16mb : content will not send 4byte standard
+   * header + 16mb content, since packet are limited to 16mb then 4 bytes standard header + 16mb - 4
+   * bytes content. the ending 4 bytes are waiting to be send. next packet will then send the
+   * waiting data before next packet, putting more waiting data is needed. if ending data is exactly
+   * MAX_PACKET_LENGTH length, then an empty packet must be send.&lt;/p&gt;
+   *
+   * @param commandEnd command end
+   * @throws IOException id connection error occur.
+   */
+  protected void flushBuffer(boolean commandEnd) throws IOException {
+<span class="nc bnc" id="L145" title="All 2 branches missed.">    if (pos &gt; 0) {</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">      if (pos + remainingData.length &gt; MIN_COMPRESSION_SIZE) {</span>
+
+        byte[] compressedBytes;
+<span class="nc" id="L149">        int uncompressSize = Math.min(MAX_PACKET_LENGTH, remainingData.length + 4 + pos);</span>
+<span class="nc" id="L150">        checkMaxAllowedLength(uncompressSize);</span>
+
+<span class="nc" id="L152">        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {</span>
+<span class="nc" id="L153">          try (DeflaterOutputStream deflater = new DeflaterOutputStream(baos)) {</span>
+<span class="nc bnc" id="L154" title="All 2 branches missed.">            if (remainingData.length != 0) {</span>
+<span class="nc" id="L155">              deflater.write(remainingData);</span>
+            }
+<span class="nc" id="L157">            subHeader[0] = (byte) pos;</span>
+<span class="nc" id="L158">            subHeader[1] = (byte) (pos &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L159">            subHeader[2] = (byte) (pos &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L160">            subHeader[3] = (byte) this.seqNo++;</span>
+<span class="nc" id="L161">            deflater.write(subHeader, 0, 4);</span>
+<span class="nc" id="L162">            deflater.write(buf, 0, uncompressSize - (remainingData.length + 4));</span>
+<span class="nc" id="L163">            deflater.finish();</span>
+          }
+
+<span class="nc" id="L166">          compressedBytes = baos.toByteArray();</span>
+
+<span class="nc bnc" id="L168" title="All 2 branches missed.">          if (compressedBytes.length &lt; (int) (MIN_COMPRESSION_RATIO * pos)) {</span>
+<span class="nc" id="L169">            int compressedLength = compressedBytes.length;</span>
+
+<span class="nc" id="L171">            header[0] = (byte) compressedLength;</span>
+<span class="nc" id="L172">            header[1] = (byte) (compressedLength &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L173">            header[2] = (byte) (compressedLength &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L174">            header[3] = (byte) this.compressSeqNo++;</span>
+<span class="nc" id="L175">            header[4] = (byte) uncompressSize;</span>
+<span class="nc" id="L176">            header[5] = (byte) (uncompressSize &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L177">            header[6] = (byte) (uncompressSize &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L178">            out.write(header, 0, 7);</span>
+<span class="nc" id="L179">            out.write(compressedBytes, 0, compressedLength);</span>
+<span class="nc" id="L180">            cmdLength += uncompressSize;</span>
+
+<span class="nc bnc" id="L182" title="All 2 branches missed.">            if (traceCache != null) {</span>
+              //trace last packets
+<span class="nc bnc" id="L184" title="All 2 branches missed.">              if (remainingData.length != 0) {</span>
+<span class="nc" id="L185">                traceCache.put(new TraceObject(true, COMPRESSED_PROTOCOL_COMPRESSED_PACKET,</span>
+<span class="nc" id="L186">                    Arrays.copyOfRange(header, 0, 7),</span>
+<span class="nc" id="L187">                    Arrays.copyOfRange(remainingData, 0, remainingData.length),</span>
+<span class="nc" id="L188">                    Arrays.copyOfRange(subHeader, 0, 4),</span>
+<span class="nc" id="L189">                    Arrays.copyOfRange(buf, 0,</span>
+<span class="nc bnc" id="L190" title="All 2 branches missed.">                        (uncompressSize &gt; 1000 ? 1000 : uncompressSize) - (remainingData.length</span>
+                            + 4))));
+              } else {
+<span class="nc" id="L193">                traceCache.put(new TraceObject(true, COMPRESSED_PROTOCOL_COMPRESSED_PACKET,</span>
+<span class="nc" id="L194">                    Arrays.copyOfRange(header, 0, 7),</span>
+<span class="nc" id="L195">                    Arrays.copyOfRange(subHeader, 0, 4),</span>
+<span class="nc" id="L196">                    Arrays.copyOfRange(buf, 0,</span>
+<span class="nc bnc" id="L197" title="All 2 branches missed.">                        (uncompressSize &gt; 1000 ? 1000 : uncompressSize) - (remainingData.length</span>
+                            + 4))));
+              }
+            }
+
+<span class="nc bnc" id="L202" title="All 2 branches missed.">            if (logger.isTraceEnabled()) {</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">              if (remainingData.length != 0) {</span>
+<span class="nc" id="L204">                logger.trace(&quot;send compress: {}{}&quot;,</span>
+                    serverThreadLog,
+<span class="nc" id="L206">                    Utils.hexdump(maxQuerySizeToLog - (remainingData.length + 11), 0,</span>
+                        compressedLength, header, remainingData, subHeader, buf));
+              } else {
+<span class="nc" id="L209">                logger.trace(&quot;send compress: {}{}&quot;,</span>
+                    serverThreadLog,
+<span class="nc" id="L211">                    Utils.hexdump(maxQuerySizeToLog - 11, 0, compressedLength, header, subHeader,</span>
+                        buf));
+              }
+            }
+<span class="nc bnc" id="L215" title="All 2 branches missed.">            if (pos + remainingData.length + 4 - uncompressSize &gt; 0) {</span>
+<span class="nc" id="L216">              remainingData = Arrays</span>
+<span class="nc" id="L217">                  .copyOfRange(buf, uncompressSize - (remainingData.length + 4), pos);</span>
+            } else {
+<span class="nc" id="L219">              remainingData = EMPTY_ARRAY;</span>
+            }
+
+            //if last packet fill the max size, must send an empty packet to indicate command end.
+<span class="nc bnc" id="L223" title="All 2 branches missed.">            lastPacketExactMaxPacketLength = pos == MAX_PACKET_LENGTH;</span>
+<span class="nc bnc" id="L224" title="All 4 branches missed.">            if (commandEnd &amp;&amp; lastPacketExactMaxPacketLength) {</span>
+<span class="nc" id="L225">              writeEmptyPacket();</span>
+            }
+<span class="nc" id="L227">            pos = 0;</span>
+<span class="nc" id="L228">            return;</span>
+          }
+
+<span class="nc" id="L231">        }</span>
+
+      }
+
+<span class="nc" id="L235">      int uncompressSize = Math.min(MAX_PACKET_LENGTH, remainingData.length + 4 + pos);</span>
+<span class="nc" id="L236">      checkMaxAllowedLength(uncompressSize);</span>
+<span class="nc" id="L237">      cmdLength += uncompressSize;</span>
+
+      //send packet without compression
+<span class="nc" id="L240">      header[0] = (byte) uncompressSize;</span>
+<span class="nc" id="L241">      header[1] = (byte) (uncompressSize &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L242">      header[2] = (byte) (uncompressSize &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L243">      header[3] = (byte) this.compressSeqNo++;</span>
+<span class="nc" id="L244">      header[4] = (byte) 0x00;</span>
+<span class="nc" id="L245">      header[5] = (byte) 0x00;</span>
+<span class="nc" id="L246">      header[6] = (byte) 0x00;</span>
+<span class="nc" id="L247">      out.write(header, 0, 7);</span>
+
+<span class="nc" id="L249">      cmdLength += uncompressSize;</span>
+
+<span class="nc bnc" id="L251" title="All 2 branches missed.">      if (remainingData.length != 0) {</span>
+<span class="nc" id="L252">        out.write(remainingData);</span>
+      }
+<span class="nc" id="L254">      subHeader[0] = (byte) pos;</span>
+<span class="nc" id="L255">      subHeader[1] = (byte) (pos &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L256">      subHeader[2] = (byte) (pos &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L257">      subHeader[3] = (byte) this.seqNo++;</span>
+<span class="nc" id="L258">      out.write(subHeader, 0, 4);</span>
+<span class="nc" id="L259">      out.write(buf, 0, uncompressSize - (remainingData.length + 4));</span>
+<span class="nc" id="L260">      cmdLength += remainingData.length;</span>
+
+<span class="nc bnc" id="L262" title="All 2 branches missed.">      if (traceCache != null) {</span>
+        //trace last packets
+<span class="nc bnc" id="L264" title="All 2 branches missed.">        if (remainingData.length != 0) {</span>
+<span class="nc" id="L265">          traceCache.put(new TraceObject(true, COMPRESSED_PROTOCOL_NOT_COMPRESSED_PACKET,</span>
+<span class="nc" id="L266">              Arrays.copyOfRange(header, 0, 7),</span>
+<span class="nc" id="L267">              Arrays.copyOfRange(remainingData, 0, remainingData.length),</span>
+<span class="nc" id="L268">              Arrays.copyOfRange(subHeader, 0, 4),</span>
+<span class="nc" id="L269">              Arrays.copyOfRange(buf, 0,</span>
+<span class="nc bnc" id="L270" title="All 2 branches missed.">                  (uncompressSize &gt; 1000 ? 1000 : uncompressSize) - (remainingData.length + 4))));</span>
+        } else {
+<span class="nc" id="L272">          traceCache.put(new TraceObject(true, COMPRESSED_PROTOCOL_NOT_COMPRESSED_PACKET,</span>
+<span class="nc" id="L273">              Arrays.copyOfRange(header, 0, 7),</span>
+<span class="nc" id="L274">              Arrays.copyOfRange(subHeader, 0, 4),</span>
+<span class="nc" id="L275">              Arrays.copyOfRange(buf, 0,</span>
+<span class="nc bnc" id="L276" title="All 2 branches missed.">                  (uncompressSize &gt; 1000 ? 1000 : uncompressSize) - (remainingData.length + 4))));</span>
+        }
+      }
+
+<span class="nc bnc" id="L280" title="All 2 branches missed.">      if (logger.isTraceEnabled()) {</span>
+<span class="nc bnc" id="L281" title="All 2 branches missed.">        if (remainingData.length != 0) {</span>
+<span class="nc" id="L282">          logger.trace(&quot;send uncompress: {}{}&quot;,</span>
+              serverThreadLog,
+<span class="nc" id="L284">              Utils.hexdump(maxQuerySizeToLog - (remainingData.length + 11),</span>
+                  0, pos, header, remainingData, subHeader, buf));
+        } else {
+<span class="nc" id="L287">          logger.trace(&quot;send uncompress: {}{}&quot;,</span>
+              serverThreadLog,
+<span class="nc" id="L289">              Utils.hexdump(maxQuerySizeToLog - 11, 0, pos, header, subHeader, buf));</span>
+        }
+      }
+
+<span class="nc bnc" id="L293" title="All 2 branches missed.">      if (pos + remainingData.length + 4 - uncompressSize &gt; 0) {</span>
+<span class="nc" id="L294">        remainingData = Arrays.copyOfRange(buf, uncompressSize - (remainingData.length + 4), pos);</span>
+      } else {
+<span class="nc" id="L296">        remainingData = EMPTY_ARRAY;</span>
+      }
+
+      //if last packet fill the max size, must send an empty packet to indicate command end.
+<span class="nc bnc" id="L300" title="All 2 branches missed.">      lastPacketExactMaxPacketLength = pos == MAX_PACKET_LENGTH;</span>
+<span class="nc" id="L301">      pos = 0;</span>
+    }
+
+<span class="nc bnc" id="L304" title="All 2 branches missed.">    if (remainingData.length &gt; 0) {</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">      if (remainingData.length &gt; MIN_COMPRESSION_SIZE) {</span>
+
+        byte[] compressedBytes;
+<span class="nc" id="L308">        int uncompressSize = Math.min(MAX_PACKET_LENGTH, remainingData.length);</span>
+<span class="nc" id="L309">        checkMaxAllowedLength(uncompressSize);</span>
+<span class="nc" id="L310">        cmdLength += uncompressSize;</span>
+<span class="nc" id="L311">        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {</span>
+<span class="nc" id="L312">          try (DeflaterOutputStream deflater = new DeflaterOutputStream(baos)) {</span>
+<span class="nc" id="L313">            deflater.write(remainingData);</span>
+<span class="nc" id="L314">            deflater.finish();</span>
+          }
+<span class="nc" id="L316">          compressedBytes = baos.toByteArray();</span>
+<span class="nc" id="L317">          remainingData = EMPTY_ARRAY;</span>
+        }
+
+<span class="nc bnc" id="L320" title="All 2 branches missed.">        if (compressedBytes.length &lt; (int) (MIN_COMPRESSION_RATIO * pos)) {</span>
+<span class="nc" id="L321">          int compressedLength = compressedBytes.length;</span>
+
+<span class="nc" id="L323">          header[0] = (byte) compressedLength;</span>
+<span class="nc" id="L324">          header[1] = (byte) (compressedLength &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L325">          header[2] = (byte) (compressedLength &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L326">          header[3] = (byte) this.compressSeqNo++;</span>
+<span class="nc" id="L327">          header[4] = (byte) uncompressSize;</span>
+<span class="nc" id="L328">          header[5] = (byte) (uncompressSize &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L329">          header[6] = (byte) (uncompressSize &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L330">          out.write(header, 0, 7);</span>
+<span class="nc" id="L331">          out.write(compressedBytes, 0, compressedLength);</span>
+
+<span class="nc bnc" id="L333" title="All 2 branches missed.">          if (traceCache != null) {</span>
+<span class="nc" id="L334">            traceCache.put(new TraceObject(true, COMPRESSED_PROTOCOL_COMPRESSED_PACKET,</span>
+<span class="nc" id="L335">                Arrays.copyOfRange(header, 0, 7),</span>
+<span class="nc" id="L336">                Arrays.copyOfRange(remainingData, 0,</span>
+<span class="nc bnc" id="L337" title="All 2 branches missed.">                    (uncompressSize &gt; 1000 ? 1000 : uncompressSize))));</span>
+          }
+
+<span class="nc bnc" id="L340" title="All 2 branches missed.">          if (logger.isTraceEnabled()) {</span>
+<span class="nc" id="L341">            logger.trace(&quot;send compress: {}{}&quot;,</span>
+                serverThreadLog,
+<span class="nc" id="L343">                Utils.hexdump(maxQuerySizeToLog - 7, 0, uncompressSize, header, remainingData));</span>
+          }
+
+          //if last packet fill the max size, must send an empty packet to indicate command end.
+<span class="nc bnc" id="L347" title="All 4 branches missed.">          if (commandEnd &amp;&amp; lastPacketExactMaxPacketLength) {</span>
+<span class="nc" id="L348">            writeEmptyPacket();</span>
+          }
+<span class="nc" id="L350">          return;</span>
+        }
+      }
+
+<span class="nc" id="L354">      int uncompressSize = Math.min(MAX_PACKET_LENGTH, remainingData.length);</span>
+<span class="nc" id="L355">      checkMaxAllowedLength(uncompressSize);</span>
+<span class="nc" id="L356">      cmdLength += uncompressSize;</span>
+
+      //send packet without compression
+<span class="nc" id="L359">      header[0] = (byte) uncompressSize;</span>
+<span class="nc" id="L360">      header[1] = (byte) (uncompressSize &gt;&gt;&gt; 8);</span>
+<span class="nc" id="L361">      header[2] = (byte) (uncompressSize &gt;&gt;&gt; 16);</span>
+<span class="nc" id="L362">      header[3] = (byte) this.compressSeqNo++;</span>
+<span class="nc" id="L363">      header[4] = (byte) 0x00;</span>
+<span class="nc" id="L364">      header[5] = (byte) 0x00;</span>
+<span class="nc" id="L365">      header[6] = (byte) 0x00;</span>
+<span class="nc" id="L366">      out.write(header, 0, 7);</span>
+
+<span class="nc" id="L368">      out.write(remainingData);</span>
+<span class="nc" id="L369">      remainingData = EMPTY_ARRAY;</span>
+
+<span class="nc bnc" id="L371" title="All 2 branches missed.">      if (traceCache != null) {</span>
+<span class="nc" id="L372">        traceCache.put(new TraceObject(true, COMPRESSED_PROTOCOL_NOT_COMPRESSED_PACKET,</span>
+<span class="nc" id="L373">            Arrays.copyOfRange(header, 0, 7),</span>
+<span class="nc" id="L374">            Arrays.copyOfRange(remainingData, 0,</span>
+<span class="nc bnc" id="L375" title="All 2 branches missed.">                (remainingData.length &gt; 1000 ? 1000 : remainingData.length))));</span>
+      }
+
+<span class="nc bnc" id="L378" title="All 2 branches missed.">      if (logger.isTraceEnabled()) {</span>
+<span class="nc" id="L379">        logger.trace(&quot;send uncompress: {}{}&quot;,</span>
+            serverThreadLog,
+<span class="nc" id="L381">            Utils.hexdump(maxQuerySizeToLog - 7, 0, remainingData.length, header, remainingData));</span>
+      }
+<span class="nc bnc" id="L383" title="All 4 branches missed.">      if (commandEnd &amp;&amp; lastPacketExactMaxPacketLength) {</span>
+<span class="nc" id="L384">        writeEmptyPacket();</span>
+      }
+    }
+<span class="nc" id="L387">  }</span>
+
+  /**
+   * Write an empty packet.
+   *
+   * @throws IOException if socket error occur.
+   */
+  public void writeEmptyPacket() throws IOException {
+<span class="nc" id="L395">    buf[0] = (byte) 4;</span>
+<span class="nc" id="L396">    buf[1] = (byte) 0x00;</span>
+<span class="nc" id="L397">    buf[2] = (byte) 0x00;</span>
+<span class="nc" id="L398">    buf[3] = (byte) this.compressSeqNo++;</span>
+<span class="nc" id="L399">    buf[4] = (byte) 0x00;</span>
+<span class="nc" id="L400">    buf[5] = (byte) 0x00;</span>
+<span class="nc" id="L401">    buf[6] = (byte) 0x00;</span>
+<span class="nc" id="L402">    buf[7] = (byte) 0x00;</span>
+<span class="nc" id="L403">    buf[8] = (byte) 0x00;</span>
+<span class="nc" id="L404">    buf[9] = (byte) 0x00;</span>
+<span class="nc" id="L405">    buf[10] = (byte) this.seqNo++;</span>
+<span class="nc" id="L406">    out.write(buf, 0, 11);</span>
+
+<span class="nc bnc" id="L408" title="All 2 branches missed.">    if (traceCache != null) {</span>
+<span class="nc" id="L409">      traceCache.put(new TraceObject(true, COMPRESSED_PROTOCOL_NOT_COMPRESSED_PACKET,</span>
+<span class="nc" id="L410">          Arrays.copyOfRange(buf, 0, 11)));</span>
+    }
+
+<span class="nc bnc" id="L413" title="All 2 branches missed.">    if (logger.isTraceEnabled()) {</span>
+<span class="nc" id="L414">      logger.trace(&quot;send uncompress:{}{}&quot;,</span>
+          serverThreadLog,
+<span class="nc" id="L416">          Utils.hexdump(maxQuerySizeToLog, 0, 11, buf));</span>
+    }
+<span class="nc" id="L418">  }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

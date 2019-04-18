@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MariaDbX509TrustManager.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.protocol.tls</a> &gt; <span class="el_source">MariaDbX509TrustManager.java</span></div><h1>MariaDbX509TrustManager.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.protocol.tls;
+
+import static org.mariadb.jdbc.internal.util.SqlStates.CONNECTION_EXCEPTION;
+
+import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.sql.SQLException;
+import java.util.Collection;
+import java.util.UUID;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.SqlStates;
+
+public class MariaDbX509TrustManager implements X509TrustManager {
+
+  private X509TrustManager trustManager;
+
+  /**
+   * MyX509TrustManager.
+   *
+   * @param options parsed url options
+   * @throws SQLException exception
+   */
+<span class="nc" id="L89">  public MariaDbX509TrustManager(Options options) throws SQLException {</span>
+    //if trustServerCertificate is true, will have a X509TrustManager implementation that validate all.
+<span class="nc bnc" id="L91" title="All 2 branches missed.">    if (options.trustServerCertificate) {</span>
+<span class="nc" id="L92">      return;</span>
+    }
+
+    KeyStore ks;
+    try {
+<span class="nc bnc" id="L97" title="All 2 branches missed.">      ks = KeyStore.getInstance(options.trustStoreType != null ? options.trustStoreType : KeyStore.getDefaultType());</span>
+<span class="nc" id="L98">    } catch (GeneralSecurityException generalSecurityEx) {</span>
+<span class="nc" id="L99">      throw new SQLException(&quot;Failed to create keystore instance&quot;,</span>
+<span class="nc" id="L100">          SqlStates.CONNECTION_EXCEPTION.getSqlState(), generalSecurityEx);</span>
+<span class="nc" id="L101">    }</span>
+
+<span class="nc" id="L103">    InputStream inStream = null;</span>
+    try {
+<span class="nc bnc" id="L105" title="All 2 branches missed.">      if (options.trustStore != null) {</span>
+        // use the provided keyStore
+        try {
+<span class="nc" id="L108">          String trustStore = options.trustStore;</span>
+
+          try {
+<span class="nc" id="L111">            inStream = new URL(trustStore).openStream();</span>
+<span class="nc" id="L112">          } catch (IOException ioexception) {</span>
+<span class="nc" id="L113">            inStream = new FileInputStream(trustStore);</span>
+<span class="nc" id="L114">          }</span>
+<span class="nc" id="L115">          ks.load(inStream,</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">              options.trustStorePassword == null ? null : options.trustStorePassword.toCharArray());</span>
+
+<span class="nc" id="L118">        } catch (GeneralSecurityException generalSecurityEx) {</span>
+<span class="nc" id="L119">          throw new SQLException(&quot;Failed to create trustStore instance&quot;,</span>
+<span class="nc" id="L120">              CONNECTION_EXCEPTION.getSqlState(), generalSecurityEx);</span>
+<span class="nc" id="L121">        } catch (FileNotFoundException fileNotFoundEx) {</span>
+<span class="nc" id="L122">          throw new SQLException(&quot;Failed to find trustStore file. trustStore=&quot; + options.trustStore,</span>
+<span class="nc" id="L123">              CONNECTION_EXCEPTION.getSqlState(), fileNotFoundEx);</span>
+<span class="nc" id="L124">        } catch (IOException ioEx) {</span>
+<span class="nc" id="L125">          throw new SQLException(&quot;Failed to read trustStore file. trustStore=&quot; + options.trustStore,</span>
+<span class="nc" id="L126">              CONNECTION_EXCEPTION.getSqlState(), ioEx);</span>
+<span class="nc" id="L127">        }</span>
+      } else {
+        // generate a keyStore from the provided cert
+<span class="nc bnc" id="L130" title="All 2 branches missed.">        if (options.serverSslCert.startsWith(&quot;-----BEGIN CERTIFICATE-----&quot;)) {</span>
+<span class="nc" id="L131">          inStream = new ByteArrayInputStream(options.serverSslCert.getBytes());</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">        } else if (options.serverSslCert.startsWith(&quot;classpath:&quot;)) {</span>
+          // Load it from a classpath relative file
+<span class="nc" id="L134">          String classpathFile = options.serverSslCert.substring(&quot;classpath:&quot;.length());</span>
+<span class="nc" id="L135">          inStream = Thread.currentThread().getContextClassLoader()</span>
+<span class="nc" id="L136">              .getResourceAsStream(classpathFile);</span>
+<span class="nc" id="L137">        } else {</span>
+          try {
+<span class="nc" id="L139">            inStream = new FileInputStream(options.serverSslCert);</span>
+<span class="nc" id="L140">          } catch (FileNotFoundException fileNotFoundEx) {</span>
+<span class="nc" id="L141">            throw new SQLException(</span>
+                &quot;Failed to find serverSslCert file. serverSslCert=&quot; + options.serverSslCert,
+<span class="nc" id="L143">                CONNECTION_EXCEPTION.getSqlState(), fileNotFoundEx);</span>
+<span class="nc" id="L144">          }</span>
+        }
+
+        try {
+          // Note: KeyStore requires it be loaded even if you don't load anything into it
+          // (will be initialized with &quot;javax.net.ssl.trustStore&quot;) values.
+<span class="nc" id="L150">          ks.load(null);</span>
+<span class="nc" id="L151">          CertificateFactory cf = CertificateFactory.getInstance(&quot;X.509&quot;);</span>
+<span class="nc" id="L152">          Collection&lt;? extends Certificate&gt; caList = cf.generateCertificates(inStream);</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">          for (Certificate ca : caList) {</span>
+<span class="nc" id="L154">            ks.setCertificateEntry(UUID.randomUUID().toString(), ca);</span>
+<span class="nc" id="L155">          }</span>
+<span class="nc" id="L156">        } catch (IOException ioEx) {</span>
+<span class="nc" id="L157">          throw new SQLException(&quot;Failed load keyStore&quot;, CONNECTION_EXCEPTION.getSqlState(), ioEx);</span>
+<span class="nc" id="L158">        } catch (GeneralSecurityException generalSecurityEx) {</span>
+<span class="nc" id="L159">          throw new SQLException(&quot;Failed to store certificate from serverSslCert into a keyStore&quot;,</span>
+<span class="nc" id="L160">              CONNECTION_EXCEPTION.getSqlState(), generalSecurityEx);</span>
+<span class="nc" id="L161">        }</span>
+
+      }
+    } finally {
+<span class="nc bnc" id="L165" title="All 2 branches missed.">      if (inStream != null) {</span>
+        try {
+<span class="nc" id="L167">          inStream.close();</span>
+<span class="nc" id="L168">        } catch (IOException ioEx) {</span>
+          //ignore error
+<span class="nc" id="L170">        }</span>
+      }
+    }
+    try {
+      TrustManagerFactory tmf = TrustManagerFactory
+<span class="nc" id="L175">          .getInstance(TrustManagerFactory.getDefaultAlgorithm());</span>
+<span class="nc" id="L176">      tmf.init(ks);</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">      for (TrustManager tm : tmf.getTrustManagers()) {</span>
+<span class="nc bnc" id="L178" title="All 2 branches missed.">        if (tm instanceof X509TrustManager) {</span>
+<span class="nc" id="L179">          trustManager = (X509TrustManager) tm;</span>
+<span class="nc" id="L180">          break;</span>
+        }
+      }
+<span class="nc" id="L183">    } catch (NoSuchAlgorithmException noSuchAlgorithmEx) {</span>
+<span class="nc" id="L184">      throw new SQLException(&quot;Failed to create TrustManagerFactory default instance&quot;,</span>
+<span class="nc" id="L185">          CONNECTION_EXCEPTION.getSqlState(), noSuchAlgorithmEx);</span>
+<span class="nc" id="L186">    } catch (GeneralSecurityException generalSecurityEx) {</span>
+<span class="nc" id="L187">      throw new SQLException(&quot;Failed to initialize trust manager&quot;,</span>
+<span class="nc" id="L188">          CONNECTION_EXCEPTION.getSqlState(), generalSecurityEx);</span>
+<span class="nc" id="L189">    }</span>
+
+<span class="nc bnc" id="L191" title="All 2 branches missed.">    if (trustManager == null) {</span>
+<span class="nc" id="L192">      throw new SQLException(&quot;No X509TrustManager found&quot;);</span>
+    }
+<span class="nc" id="L194">  }</span>
+
+  /**
+   * Check client trusted.
+   *
+   * @param x509Certificates certificate
+   * @param string           string
+   * @throws CertificateException exception
+   */
+  @Override
+  public void checkClientTrusted(X509Certificate[] x509Certificates, String string)
+      throws CertificateException {
+<span class="nc bnc" id="L206" title="All 2 branches missed.">    if (trustManager == null) {</span>
+<span class="nc" id="L207">      return;</span>
+    }
+<span class="nc" id="L209">    trustManager.checkClientTrusted(x509Certificates, string);</span>
+<span class="nc" id="L210">  }</span>
+
+  /**
+   * Check server trusted.
+   *
+   * @param x509Certificates certificate
+   * @param string           string
+   * @throws CertificateException exception
+   */
+  @Override
+  public void checkServerTrusted(X509Certificate[] x509Certificates, String string)
+      throws CertificateException {
+<span class="nc bnc" id="L222" title="All 2 branches missed.">    if (trustManager == null) {</span>
+<span class="nc" id="L223">      return;</span>
+    }
+<span class="nc" id="L225">    trustManager.checkServerTrusted(x509Certificates, string);</span>
+<span class="nc" id="L226">  }</span>
+
+  public X509Certificate[] getAcceptedIssuers() {
+<span class="nc" id="L229">    return null;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

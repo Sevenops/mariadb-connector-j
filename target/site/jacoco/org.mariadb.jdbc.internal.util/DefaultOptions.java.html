@@ -1,0 +1,724 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DefaultOptions.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.util</a> &gt; <span class="el_source">DefaultOptions.java</span></div><h1>DefaultOptions.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.util;
+
+import java.lang.reflect.Field;
+import java.util.Properties;
+import org.mariadb.jdbc.internal.util.constant.HaMode;
+
+<span class="nc bnc" id="L59" title="All 2 branches missed.">public enum DefaultOptions {</span>
+
+<span class="nc" id="L61">  USER(&quot;user&quot;, &quot;1.0.0&quot;, &quot;Database user name&quot;, false),</span>
+<span class="nc" id="L62">  PASSWORD(&quot;password&quot;, &quot;1.0.0&quot;, &quot;Password of database user&quot;, false),</span>
+
+  /**
+   * The connect timeout value, in milliseconds, or zero for no timeout. Default: 30000 (30 seconds)
+   * (was 0 before 2.1.2)
+   */
+<span class="nc" id="L68">  CONNECT_TIMEOUT(&quot;connectTimeout&quot;, 30_000, 0, &quot;1.1.8&quot;,</span>
+      &quot;The connect timeout value, in milliseconds, or zero for no timeout.&quot;, false),
+<span class="nc" id="L70">  PIPE(&quot;pipe&quot;, &quot;1.1.3&quot;, &quot;On Windows, specify named pipe name to connect.&quot;, false),</span>
+<span class="nc" id="L71">  LOCAL_SOCKET(&quot;localSocket&quot;, &quot;1.1.4&quot;,</span>
+      &quot;Permits connecting to the database via Unix domain socket, if the server &quot;
+          + &quot;allows it. \nThe value is the path of Unix domain socket (i.e \&quot;socket\&quot; database parameter : &quot;
+          + &quot;select @@socket).&quot;, false),
+<span class="nc" id="L75">  SHARED_MEMORY(&quot;sharedMemory&quot;, &quot;1.1.4&quot;,</span>
+      &quot;Permits connecting to the database via shared memory, if the server allows &quot;
+          + &quot;it. \nThe value is the base name of the shared memory.&quot;, false),
+<span class="nc" id="L78">  TCP_NO_DELAY(&quot;tcpNoDelay&quot;, Boolean.TRUE, &quot;1.0.0&quot;,</span>
+      &quot;Sets corresponding option on the connection socket.&quot;, false),
+<span class="nc" id="L80">  TCP_ABORTIVE_CLOSE(&quot;tcpAbortiveClose&quot;, Boolean.FALSE, &quot;1.1.1&quot;,</span>
+      &quot;Sets corresponding option on the connection &quot;
+          + &quot;socket.&quot;, false),
+<span class="nc" id="L83">  LOCAL_SOCKET_ADDRESS(&quot;localSocketAddress&quot;, &quot;1.1.8&quot;,</span>
+      &quot;Hostname or IP address to bind the connection socket to a &quot;
+          + &quot;local (UNIX domain) socket.&quot;, false),
+<span class="nc" id="L86">  SOCKET_TIMEOUT(&quot;socketTimeout&quot;, new Integer[]{10000, null, null, null, null, null}, 0, &quot;1.1.8&quot;,</span>
+      &quot;Defined the &quot;
+          + &quot;network socket timeout (SO_TIMEOUT) in milliseconds. Value of 0 disables this timeout. \n&quot;
+          + &quot;If the goal is to set a timeout for all queries, since MariaDB 10.1.1, the server has permitted a &quot;
+          + &quot;solution to limit the query time by setting a system variable, max_statement_time. The advantage is that&quot;
+          + &quot; the connection then is still usable.\n&quot;
+          + &quot;Default: 0 (standard configuration) or 10000ms (using \&quot;aurora\&quot; failover configuration).&quot;,
+      false),
+<span class="nc" id="L94">  INTERACTIVE_CLIENT(&quot;interactiveClient&quot;, Boolean.FALSE, &quot;1.1.8&quot;,</span>
+      &quot;Session timeout is defined by the wait_timeout &quot;
+          + &quot;server variable. Setting interactiveClient to true will tell the server to use the interactive_timeout &quot;
+          + &quot;server variable.&quot;, false),
+<span class="nc" id="L98">  DUMP_QUERY_ON_EXCEPTION(&quot;dumpQueriesOnException&quot;, Boolean.FALSE, &quot;1.1.0&quot;,</span>
+      &quot;If set to 'true', an exception is thrown &quot;
+          + &quot;during query execution containing a query string.&quot;, false),
+<span class="nc" id="L101">  USE_OLD_ALIAS_METADATA_BEHAVIOR(&quot;useOldAliasMetadataBehavior&quot;, Boolean.FALSE, &quot;1.1.9&quot;,</span>
+      &quot;Metadata ResultSetMetaData.getTableName() returns the physical table name. \&quot;useOldAliasMetadataBehavior\&quot;&quot;
+          + &quot; permits activating the legacy code that sends the table alias if set.&quot;, false),
+<span class="nc" id="L104">  ALLOW_LOCAL_INFILE(&quot;allowLocalInfile&quot;, Boolean.TRUE, &quot;1.2.1&quot;, &quot;Permit loading data from file&quot;,</span>
+      false),
+<span class="nc" id="L106">  SESSION_VARIABLES(&quot;sessionVariables&quot;, &quot;1.1.0&quot;,</span>
+      &quot;&lt;var&gt;=&lt;value&gt; pairs separated by comma, mysql session variables, &quot;
+          + &quot;set upon establishing successful connection.&quot;, false),
+<span class="nc" id="L109">  CREATE_DATABASE_IF_NOT_EXISTS(&quot;createDatabaseIfNotExist&quot;, Boolean.FALSE, &quot;1.1.8&quot;,</span>
+      &quot;the specified database in the &quot;
+          + &quot;url will be created if non-existent.&quot;, false),
+<span class="nc" id="L112">  SERVER_TIMEZONE(&quot;serverTimezone&quot;, &quot;1.1.8&quot;, &quot;Defines the server time zone.\n&quot;</span>
+      + &quot;to use only if the jre server has a different time implementation of the server.\n&quot;
+      + &quot;(best to have the same server time zone when possible).&quot;, false),
+<span class="nc" id="L115">  NULL_CATALOG_MEANS_CURRENT(&quot;nullCatalogMeansCurrent&quot;, Boolean.TRUE, &quot;1.1.8&quot;,</span>
+      &quot;DatabaseMetaData use current catalog&quot;
+          + &quot; if null.&quot;, false),
+<span class="nc" id="L118">  TINY_INT_IS_BIT(&quot;tinyInt1isBit&quot;, Boolean.TRUE, &quot;1.0.0&quot;,</span>
+      &quot;Datatype mapping flag, handle Tiny as BIT(boolean).&quot;,
+      false),
+<span class="nc" id="L121">  YEAR_IS_DATE_TYPE(&quot;yearIsDateType&quot;, Boolean.TRUE, &quot;1.0.0&quot;,</span>
+      &quot;Year is date type, rather than numerical.&quot;, false),
+<span class="nc" id="L123">  USE_SSL(&quot;useSsl&quot;, Boolean.FALSE, &quot;1.1.0&quot;, &quot;Force SSL on connection. (legacy alias \&quot;useSSL\&quot;)&quot;,</span>
+      false),
+<span class="nc" id="L125">  USER_COMPRESSION(&quot;useCompression&quot;, Boolean.FALSE, &quot;1.0.0&quot;,</span>
+      &quot;Compresses the exchange with the database through gzip.&quot;
+          + &quot; This permits better performance when the database is not in the same location.&quot;,
+      false),
+<span class="nc" id="L129">  ALLOW_MULTI_QUERIES(&quot;allowMultiQueries&quot;, Boolean.FALSE, &quot;1.0.0&quot;,</span>
+      &quot;permit multi-queries like insert into ab (i) &quot;
+          + &quot;values (1); insert into ab (i) values (2).&quot;, false),
+<span class="nc" id="L132">  REWRITE_BATCHED_STATEMENTS(&quot;rewriteBatchedStatements&quot;, Boolean.FALSE, &quot;1.1.8&quot;,</span>
+      &quot;For insert queries, rewrite &quot;
+          + &quot;batchedStatement to execute in a single executeQuery.\n&quot;
+          + &quot;example:\n&quot;
+          + &quot;   insert into ab (i) values (?) with first batch values = 1, second = 2 will be rewritten\n&quot;
+          + &quot;   insert into ab (i) values (1), (2). \n&quot;
+          + &quot;\n&quot;
+          + &quot;If query cannot be rewriten in \&quot;multi-values\&quot;, rewrite will use multi-queries : INSERT INTO &quot;
+          + &quot;TABLE(col1) VALUES (?) ON DUPLICATE KEY UPDATE col2=? with values [1,2] and [2,3]\&quot; will be rewritten\n&quot;
+          + &quot;INSERT INTO TABLE(col1) VALUES (1) ON DUPLICATE KEY UPDATE col2=2;INSERT INTO TABLE(col1) VALUES (3) ON &quot;
+          + &quot;DUPLICATE KEY UPDATE col2=4\n&quot;
+          + &quot;\n&quot;
+          + &quot;when active, the useServerPrepStmts option is set to false&quot;, false),
+<span class="nc" id="L145">  TCP_KEEP_ALIVE(&quot;tcpKeepAlive&quot;, Boolean.TRUE, &quot;1.0.0&quot;,</span>
+      &quot;Sets corresponding option on the connection socket.&quot;, false),
+<span class="nc" id="L147">  TCP_RCV_BUF(&quot;tcpRcvBuf&quot;, (Integer) null, 0, &quot;1.0.0&quot;,</span>
+      &quot;set buffer size for TCP buffer (SO_RCVBUF).&quot;, false),
+<span class="nc" id="L149">  TCP_SND_BUF(&quot;tcpSndBuf&quot;, (Integer) null, 0, &quot;1.0.0&quot;,</span>
+      &quot;set buffer size for TCP buffer (SO_SNDBUF).&quot;, false),
+<span class="nc" id="L151">  SOCKET_FACTORY(&quot;socketFactory&quot;, &quot;1.0.0&quot;,</span>
+      &quot;to use a custom socket factory, set it to the full name of the class that&quot;
+          + &quot; implements javax.net.SocketFactory.&quot;, false),
+<span class="nc" id="L154">  PIN_GLOBAL_TX_TO_PHYSICAL_CONNECTION(&quot;pinGlobalTxToPhysicalConnection&quot;, Boolean.FALSE, &quot;1.1.8&quot;,</span>
+      &quot;&quot;, false),
+<span class="nc" id="L156">  TRUST_SERVER_CERTIFICATE(&quot;trustServerCertificate&quot;, Boolean.FALSE, &quot;1.1.1&quot;,</span>
+      &quot;When using SSL, do not check server's&quot;
+          + &quot; certificate.&quot;, false),
+<span class="nc" id="L159">  SERVER_SSL_CERT(&quot;serverSslCert&quot;, &quot;1.1.3&quot;,</span>
+      &quot;Permits providing server's certificate in DER form, or server's CA&quot;
+          + &quot; certificate. The server will be added to trustStor. This permits a self-signed certificate to be trusted.\n&quot;
+          + &quot;Can be used in one of 3 forms : \n&quot;
+          + &quot;* serverSslCert=/path/to/cert.pem (full path to certificate)\n&quot;
+          + &quot;* serverSslCert=classpath:relative/cert.pem (relative to current classpath)\n&quot;
+          + &quot;* or as verbatim DER-encoded certificate string \&quot;------BEGIN CERTIFICATE-----\&quot; .&quot;,
+      false),
+<span class="nc" id="L167">  USE_FRACTIONAL_SECONDS(&quot;useFractionalSeconds&quot;, Boolean.TRUE, &quot;1.0.0&quot;,</span>
+      &quot;Correctly handle subsecond precision in&quot;
+          + &quot; timestamps (feature available with MariaDB 5.3 and later).\n&quot;
+          + &quot;May confuse 3rd party components (Hibernate).&quot;, false),
+<span class="nc" id="L171">  AUTO_RECONNECT(&quot;autoReconnect&quot;, Boolean.FALSE, &quot;1.2.0&quot;,</span>
+      &quot;Driver must recreateConnection after a failover.&quot;, false),
+<span class="nc" id="L173">  FAIL_ON_READ_ONLY(&quot;failOnReadOnly&quot;, Boolean.FALSE, &quot;1.2.0&quot;,</span>
+      &quot;After a master failover and no other master found,&quot;
+          + &quot; back on a read-only host ( throw exception if not).&quot;, false),
+<span class="nc" id="L176">  RETRY_ALL_DOWN(&quot;retriesAllDown&quot;, 120, 0, &quot;1.2.0&quot;,</span>
+      &quot;When using loadbalancing, the number of times the driver should&quot;
+          + &quot; cycle through available hosts, attempting to connect.\n&quot;
+          + &quot;     * Between cycles, the driver will pause for 250ms if no servers are available.&quot;,
+      false),
+<span class="nc" id="L181">  FAILOVER_LOOP_RETRIES(&quot;failoverLoopRetries&quot;, 120, 0, &quot;1.2.0&quot;,</span>
+      &quot;When using failover, the number of times the driver&quot;
+          + &quot; should cycle silently through available hosts, attempting to connect.\n&quot;
+          + &quot;     * Between cycles, the driver will pause for 250ms if no servers are available.\n&quot;
+          + &quot;     * if set to 0, there will be no silent reconnection&quot;, false),
+<span class="nc" id="L186">  VALID_CONNECTION_TIMEOUT(&quot;validConnectionTimeout&quot;, 0, 0, &quot;1.2.0&quot;,</span>
+      &quot;When in multiple hosts, after this time in&quot;
+          + &quot; second without used, verification that the connections haven't been lost.\n&quot;
+          + &quot;     * When 0, no verification will be done. Defaults to 0 (120 before 1.5.8 version)&quot;,
+      false),
+<span class="nc" id="L191">  LOAD_BALANCE_BLACKLIST_TIMEOUT(&quot;loadBalanceBlacklistTimeout&quot;, 50, 0, &quot;1.2.0&quot;,</span>
+      &quot;time in second a server is&quot;
+          + &quot; blacklisted after a connection failure.&quot;, false),
+<span class="nc" id="L194">  CACHE_PREP_STMTS(&quot;cachePrepStmts&quot;, Boolean.TRUE, &quot;1.3.0&quot;,</span>
+      &quot;enable/disable prepare Statement cache, default true.&quot;,
+      false),
+<span class="nc" id="L197">  PREP_STMT_CACHE_SIZE(&quot;prepStmtCacheSize&quot;, 250, 0, &quot;1.3.0&quot;,</span>
+      &quot;This sets the number of prepared statements that the &quot;
+          + &quot;driver will cache per connection if \&quot;cachePrepStmts\&quot; is enabled.&quot;, false),
+<span class="nc" id="L200">  PREP_STMT_CACHE_SQL_LIMIT(&quot;prepStmtCacheSqlLimit&quot;, 2048, 0, &quot;1.3.0&quot;,</span>
+      &quot;This is the maximum length of a prepared SQL&quot;
+          + &quot; statement that the driver will cache  if \&quot;cachePrepStmts\&quot; is enabled.&quot;, false),
+<span class="nc" id="L203">  ASSURE_READONLY(&quot;assureReadOnly&quot;, Boolean.FALSE, &quot;1.3.0&quot;,</span>
+      &quot;If true, in high availability, and switching to a &quot;
+          + &quot;read-only host, assure that this host is in read-only mode by setting the session to read-only.&quot;,
+      false),
+<span class="nc" id="L207">  USE_LEGACY_DATETIME_CODE(&quot;useLegacyDatetimeCode&quot;, Boolean.TRUE, &quot;1.3.0&quot;,</span>
+      &quot;if true (default) store date/timestamps &quot;
+          + &quot;according to client time zone.\n&quot;
+          + &quot;if false, store all date/timestamps in DB according to server time zone, and time information (that is a&quot;
+          + &quot; time difference), doesn't take\n&quot;
+          + &quot;timezone in account.&quot;, false),
+<span class="nc" id="L213">  MAXIMIZE_MYSQL_COMPATIBILITY(&quot;maximizeMysqlCompatibility&quot;, Boolean.FALSE, &quot;1.3.0&quot;,</span>
+      &quot;maximize MySQL compatibility.\n&quot;
+          + &quot;when using jdbc setDate(), will store date in client timezone, not in server timezone when &quot;
+          + &quot;useLegacyDatetimeCode = false.\n&quot;
+          + &quot;default to false.&quot;, false),
+<span class="nc" id="L218">  USE_SERVER_PREP_STMTS(&quot;useServerPrepStmts&quot;, Boolean.FALSE, &quot;1.3.0&quot;,</span>
+      &quot;useServerPrepStmts must prepared statements be&quot;
+          + &quot; prepared on server side, or just faked on client side.\n&quot;
+          + &quot;     * if rewriteBatchedStatements is set to true, this options will be set to false.&quot;,
+      false),
+<span class="nc" id="L223">  TRUSTSTORE(&quot;trustStore&quot;, &quot;1.3.0&quot;,</span>
+      &quot;File path of the trustStore file (similar to java System property &quot;
+          + &quot;\&quot;javax.net.ssl.trustStore\&quot;). (legacy alias trustCertificateKeyStoreUrl)\n&quot;
+          + &quot;Use the specified file for trusted root certificates.\n&quot;
+          + &quot;When set, overrides serverSslCert.&quot;, false),
+<span class="nc" id="L228">  TRUST_CERTIFICATE_KEYSTORE_PASSWORD(&quot;trustStorePassword&quot;, &quot;1.3.0&quot;,</span>
+      &quot;Password for the trusted root certificate file&quot;
+          + &quot; (similar to java System property \&quot;javax.net.ssl.trustStorePassword\&quot;).\n&quot;
+          + &quot;(legacy alias trustCertificateKeyStorePassword).&quot;, false),
+<span class="nc" id="L232">  KEYSTORE(&quot;keyStore&quot;, &quot;1.3.0&quot;,</span>
+      &quot;File path of the keyStore file that contain client private key store and associate &quot;
+          + &quot;certificates (similar to java System property \&quot;javax.net.ssl.keyStore\&quot;, but ensure that only the &quot;
+          + &quot;private key's entries are used).(legacy alias clientCertificateKeyStoreUrl).&quot;, false),
+<span class="nc" id="L236">  KEYSTORE_PASSWORD(&quot;keyStorePassword&quot;, &quot;1.3.0&quot;,</span>
+      &quot;Password for the client certificate keyStore (similar to java &quot;
+          + &quot;System property \&quot;javax.net.ssl.keyStorePassword\&quot;).(legacy alias clientCertificateKeyStorePassword)&quot;,
+      false),
+<span class="nc" id="L240">  PRIVATE_KEYS_PASSWORD(&quot;keyPassword&quot;, &quot;1.5.3&quot;,</span>
+      &quot;Password for the private key in client certificate keyStore. (only &quot;
+          + &quot;needed if private key password differ from keyStore password).&quot;, false),
+<span class="nc" id="L243">  ENABLED_SSL_PROTOCOL_SUITES(&quot;enabledSslProtocolSuites&quot;, &quot;1.5.0&quot;,</span>
+      &quot;Force TLS/SSL protocol to a specific set of TLS &quot;
+          + &quot;versions (comma separated list). \n&quot;
+          + &quot;Example : \&quot;TLSv1, TLSv1.1, TLSv1.2\&quot;\n&quot;
+          + &quot;(Alias \&quot;enabledSSLProtocolSuites\&quot; works too)&quot;, false),
+<span class="nc" id="L248">  ENABLED_SSL_CIPHER_SUITES(&quot;enabledSslCipherSuites&quot;, &quot;1.5.0&quot;,</span>
+      &quot;Force TLS/SSL cipher (comma separated list).\n&quot;
+          + &quot;Example : \&quot;TLS_DHE_RSA_WITH_AES_256_GCM_SHA384, TLS_DHE_DSS_WITH_AES_256_GCM_SHA384\&quot;&quot;,
+      false),
+<span class="nc" id="L252">  CONTINUE_BATCH_ON_ERROR(&quot;continueBatchOnError&quot;, Boolean.TRUE, &quot;1.4.0&quot;,</span>
+      &quot;When executing batch queries, must batch &quot;
+          + &quot;continue on error.&quot;, false),
+<span class="nc" id="L255">  JDBC_COMPLIANT_TRUNCATION(&quot;jdbcCompliantTruncation&quot;, Boolean.TRUE, &quot;1.4.0&quot;,</span>
+      &quot;Truncation error (\&quot;Data truncated for&quot;
+          + &quot; column '%' at row %\&quot;, \&quot;Out of range value for column '%' at row %\&quot;) will be thrown as error, and not as warning.&quot;,
+      false),
+<span class="nc" id="L259">  CACHE_CALLABLE_STMTS(&quot;cacheCallableStmts&quot;, Boolean.TRUE, &quot;1.4.0&quot;,</span>
+      &quot;enable/disable callable Statement cache, default&quot;
+          + &quot; true.&quot;, false),
+<span class="nc" id="L262">  CALLABLE_STMT_CACHE_SIZE(&quot;callableStmtCacheSize&quot;, 150, 0, &quot;1.4.0&quot;,</span>
+      &quot;This sets the number of callable statements &quot;
+          + &quot;that the driver will cache per VM if \&quot;cacheCallableStmts\&quot; is enabled.&quot;, false),
+<span class="nc" id="L265">  CONNECTION_ATTRIBUTES(&quot;connectionAttributes&quot;, &quot;1.4.0&quot;,</span>
+      &quot;When performance_schema is active, permit to send server &quot;
+          + &quot;some client information in a key;value pair format &quot;
+          + &quot;(example: connectionAttributes=key1:value1,key2,value2).\n&quot;
+          + &quot;Those informations can be retrieved on server within tables performance_schema.session_connect_attrs &quot;
+          + &quot;and performance_schema.session_account_connect_attrs.\n&quot;
+          + &quot;This can permit from server an identification of client/application&quot;, false),
+<span class="nc" id="L272">  USE_BATCH_MULTI_SEND(&quot;useBatchMultiSend&quot;, (Boolean) null, &quot;1.5.0&quot;,</span>
+      &quot;*Not compatible with aurora*\n&quot;
+          + &quot;Driver will can send queries by batch. \n&quot;
+          + &quot;If set to false, queries are sent one by one, waiting for the result before sending the next one. \n&quot;
+          + &quot;If set to true, queries will be sent by batch corresponding to the useBatchMultiSendNumber option value&quot;
+          + &quot; (default 100) or according to the max_allowed_packet server variable if the packet size does not permit&quot;
+          + &quot; sending as many queries. Results will be read later, avoiding a lot of network latency when the client&quot;
+          + &quot; and server aren't on the same host. \n&quot;
+          + &quot;\n&quot;
+          + &quot;This option is mainly effective when the client is distant from the server.&quot;, false),
+<span class="nc" id="L282">  USE_BATCH_MULTI_SEND_NUMBER(&quot;useBatchMultiSendNumber&quot;, 100, 1, &quot;1.5.0&quot;,</span>
+      &quot;When option useBatchMultiSend is active,&quot;
+          + &quot; indicate the maximum query send in a row before reading results.&quot;, false),
+<span class="nc" id="L285">  LOGGING(&quot;log&quot;, Boolean.FALSE, &quot;1.5.0&quot;, &quot;Enable log information. \n&quot;</span>
+      + &quot;require Slf4j version &gt; 1.4 dependency.\n&quot;
+      + &quot;Log level correspond to Slf4j logging implementation&quot;, false),
+<span class="nc" id="L288">  PROFILE_SQL(&quot;profileSql&quot;, Boolean.FALSE, &quot;1.5.0&quot;, &quot;log query execution time.&quot;, false),</span>
+<span class="nc" id="L289">  MAX_QUERY_LOG_SIZE(&quot;maxQuerySizeToLog&quot;, 1024, 0, &quot;1.5.0&quot;, &quot;Max query log size.&quot;, false),</span>
+<span class="nc" id="L290">  SLOW_QUERY_TIME(&quot;slowQueryThresholdNanos&quot;, null, 0L, &quot;1.5.0&quot;,</span>
+      &quot;Will log query with execution time superior&quot;
+          + &quot; to this value (if defined )&quot;, false),
+<span class="nc" id="L293">  PASSWORD_CHARACTER_ENCODING(&quot;passwordCharacterEncoding&quot;, &quot;1.5.9&quot;,</span>
+      &quot;Indicate password encoding charset. If not set,&quot;
+          + &quot; driver use platform's default charset.&quot;, false),
+<span class="nc" id="L296">  PIPELINE_AUTH(&quot;usePipelineAuth&quot;, (Boolean) null, &quot;1.6.0&quot;, &quot;*Not compatible with aurora*\n&quot;</span>
+      + &quot;During connection, different queries are executed. When option is active those queries are send using&quot;
+      + &quot; pipeline (all queries are send, then only all results are reads), permitting faster connection &quot;
+      + &quot;creation&quot;, false),
+<span class="nc" id="L300">  ENABLE_PACKET_DEBUG(&quot;enablePacketDebug&quot;, Boolean.FALSE, &quot;1.6.0&quot;,</span>
+      &quot;Driver will save the last 16 MariaDB packet &quot;
+          + &quot;exchanges (limited to first 1000 bytes). Hexadecimal value of those packets will be added to stacktrace&quot;
+          + &quot; when an IOException occur.\n&quot;
+          + &quot;This option has no impact on performance but driver will then take 16kb more memory.&quot;,
+      false),
+<span class="nc" id="L306">  SSL_HOSTNAME_VERIFICATION(&quot;disableSslHostnameVerification&quot;, Boolean.FALSE, &quot;2.1.0&quot;,</span>
+      &quot;When using ssl, the driver &quot;
+          + &quot;checks the hostname against the server's identity as presented in the server's certificate (checking &quot;
+          + &quot;alternative names or the certificate CN) to prevent man-in-the-middle attacks. This option permits &quot;
+          + &quot;deactivating this validation. Hostname verification is disabled when the trustServerCertificate &quot;
+          + &quot;option is set&quot;, false),
+<span class="nc" id="L312">  USE_BULK_PROTOCOL(&quot;useBulkStmts&quot;, Boolean.FALSE, &quot;2.1.0&quot;,</span>
+      &quot;Use dedicated COM_STMT_BULK_EXECUTE protocol for batch &quot;
+          + &quot;insert when possible. (batch without Statement.RETURN_GENERATED_KEYS and streams) to have faster batch. &quot;
+          + &quot;(significant only if server MariaDB &gt;= 10.2.7)&quot;, false),
+<span class="nc" id="L316">  AUTOCOMMIT(&quot;autocommit&quot;, Boolean.TRUE, &quot;2.2.0&quot;,</span>
+      &quot;Set default autocommit value on connection initialization&quot;, false),
+<span class="nc" id="L318">  POOL(&quot;pool&quot;, Boolean.FALSE, &quot;2.2.0&quot;,</span>
+      &quot;Use pool. This option is useful only if not using a DataSource object, but &quot;
+          + &quot;only a connection object.&quot;, false),
+<span class="nc" id="L321">  POOL_NAME(&quot;poolName&quot;, &quot;2.2.0&quot;,</span>
+      &quot;Pool name that permits identifying threads. default: auto-generated as &quot;
+          + &quot;MariaDb-pool-&lt;pool-index&gt;&quot;, false),
+<span class="nc" id="L324">  MAX_POOL_SIZE(&quot;maxPoolSize&quot;, 8, 1, &quot;2.2.0&quot;,</span>
+      &quot;The maximum number of physical connections that the pool should &quot;
+          + &quot;contain.&quot;, false),
+<span class="nc" id="L327">  MIN_POOL_SIZE(&quot;minPoolSize&quot;, (Integer) null, 0, &quot;2.2.0&quot;,</span>
+      &quot;When connections are removed due to not being used for &quot;
+          + &quot;longer than than \&quot;maxIdleTime\&quot;, connections are closed and removed from the pool. \&quot;minPoolSize\&quot; &quot;
+          + &quot;indicates the number of physical connections the pool should keep available at all times. Should be less&quot;
+          + &quot; or equal to maxPoolSize.&quot;, false),
+<span class="nc" id="L332">  MAX_IDLE_TIME(&quot;maxIdleTime&quot;, 600, Options.MIN_VALUE__MAX_IDLE_TIME, &quot;2.2.0&quot;,</span>
+      &quot;The maximum amount of time in seconds&quot;
+          + &quot; that a connection can stay in the pool when not used. This value must always be below @wait_timeout&quot;
+          + &quot; value - 45s \n&quot;
+          + &quot;Default: 600 in seconds (=10 minutes), minimum value is 60 seconds&quot;, false),
+<span class="nc" id="L337">  POOL_VALID_MIN_DELAY(&quot;poolValidMinDelay&quot;, 1000, 0, &quot;2.2.0&quot;,</span>
+      &quot;When asking a connection to pool, the pool will &quot;
+          + &quot;validate the connection state. \&quot;poolValidMinDelay\&quot; permits disabling this validation if the connection&quot;
+          + &quot; has been borrowed recently avoiding useless verifications in case of frequent reuse of connections. &quot;
+          + &quot;0 means validation is done each time the connection is asked.&quot;, false),
+<span class="nc" id="L342">  STATIC_GLOBAL(&quot;staticGlobal&quot;, Boolean.FALSE, &quot;2.2.0&quot;,</span>
+      &quot;Indicates the values of the global variables &quot;
+          + &quot;max_allowed_packet, wait_timeout, autocommit, auto_increment_increment, time_zone, system_time_zone and&quot;
+          + &quot; tx_isolation) won't be changed, permitting the pool to create new connections faster.&quot;,
+      false),
+<span class="nc" id="L347">  REGISTER_POOL_JMX(&quot;registerJmxPool&quot;, Boolean.TRUE, &quot;2.2.0&quot;, &quot;Register JMX monitoring pools.&quot;,</span>
+      false),
+<span class="nc" id="L349">  USE_RESET_CONNECTION(&quot;useResetConnection&quot;, Boolean.FALSE, &quot;2.2.0&quot;,</span>
+      &quot;When a connection is closed() &quot;
+          + &quot;(given back to pool), the pool resets the connection state. Setting this option, the prepare command &quot;
+          + &quot;will be deleted, session variables changed will be reset, and user variables will be destroyed when the&quot;
+          + &quot; server permits it (&gt;= MariaDB 10.2.4, &gt;= MySQL 5.7.3), permitting saving memory on the server if the &quot;
+          + &quot;application make extensive use of variables. Must not be used with the useServerPrepStmts option&quot;,
+      false),
+<span class="nc" id="L356">  ALLOW_MASTER_DOWN(&quot;allowMasterDownConnection&quot;, Boolean.FALSE, &quot;2.2.0&quot;,</span>
+      &quot;When using master/slave configuration, &quot;
+          + &quot;permit to create connection when master is down. If no master is up, default connection is then a slave &quot;
+          + &quot;and Connection.isReadOnly() will then return true.&quot;, false),
+<span class="nc" id="L360">  GALERA_ALLOWED_STATE(&quot;galeraAllowedState&quot;, &quot;2.2.5&quot;,</span>
+      &quot;Usually, Connection.isValid just send an empty packet to &quot;
+          + &quot;server, and server send a small response to ensure connectivity. When this option is set, connector will&quot;
+          + &quot; ensure Galera server state \&quot;wsrep_local_state\&quot; correspond to allowed values (separated by comma). &quot;
+          + &quot;Example \&quot;4,5\&quot;, recommended is \&quot;4\&quot;. see galera state to know more.&quot;, false),
+<span class="nc" id="L365">  USE_AFFECTED_ROWS(&quot;useAffectedRows&quot;, Boolean.FALSE, &quot;2.3.0&quot;,</span>
+      &quot;If false (default), use \&quot;found rows\&quot; for the row &quot;
+          + &quot;count of statements. This corresponds to the JDBC standard.\n&quot;
+          + &quot;If true, use \&quot;affected rows\&quot; for the row count.\n&quot;
+          + &quot;This changes the behavior of, for example, UPDATE... ON DUPLICATE KEY statements.&quot;,
+      false),
+<span class="nc" id="L371">  INCLUDE_STATUS(&quot;includeInnodbStatusInDeadlockExceptions&quot;, Boolean.FALSE, &quot;2.3.0&quot;,</span>
+      &quot;add \&quot;SHOW ENGINE INNODB STATUS\&quot; result to exception trace when having a deadlock exception&quot;,
+      false),
+<span class="nc" id="L374">  INCLUDE_THREAD_DUMP(&quot;includeThreadDumpInDeadlockExceptions&quot;, Boolean.FALSE, &quot;2.3.0&quot;,</span>
+      &quot;add thread dump to exception trace when having a deadlock exception&quot;, false),
+<span class="nc" id="L376">  READ_AHEAD(&quot;useReadAheadInput&quot;, Boolean.TRUE, &quot;2.4.0&quot;,</span>
+      &quot;use a buffered inputSteam that read socket available data&quot;, false),
+<span class="nc" id="L378">  KEY_STORE_TYPE(&quot;keyStoreType&quot;, (String) null, &quot;2.4.0&quot;,</span>
+      &quot;indicate key store type (JKS/PKCS12). default is null, then using java default type&quot;, false),
+<span class="nc" id="L380">  TRUST_STORE_TYPE(&quot;trustStoreType&quot;, (String) null, &quot;2.4.0&quot;,</span>
+      &quot;indicate trust store type (JKS/PKCS12). default is null, then using java default type&quot;, false),
+<span class="nc" id="L382">  SERVICE_PRINCIPAL_NAME(&quot;servicePrincipalName&quot;, (String) null, &quot;2.4.0&quot;,</span>
+      &quot;when using GSSAPI authentication, SPN (Service Principal Name) use the server SPN information. When set, &quot;
+          + &quot;connector will use this value, ignoring server information&quot;, false),
+<span class="nc" id="L385">  USE_MYSQL_AS_DATABASE(&quot;useMysqlMetadata&quot;, Boolean.FALSE, &quot;2.4.1&quot;,</span>
+          &quot;force DatabaseMetadata.getDatabaseProductName() &quot;
+          + &quot;to return \&quot;MySQL\&quot; as database, not real database type&quot;, false);
+
+
+  private final String optionName;
+  private final String description;
+  private final boolean required;
+  private final Object objType;
+  private final Object defaultValue;
+  private final Object minValue;
+  private final Object maxValue;
+  private final String implementationVersion;
+
+  DefaultOptions(final String optionName, final String implementationVersion, String description,
+<span class="nc" id="L400">      boolean required) {</span>
+<span class="nc" id="L401">    this.optionName = optionName;</span>
+<span class="nc" id="L402">    this.implementationVersion = implementationVersion;</span>
+<span class="nc" id="L403">    this.description = description;</span>
+<span class="nc" id="L404">    this.required = required;</span>
+<span class="nc" id="L405">    objType = String.class;</span>
+<span class="nc" id="L406">    defaultValue = null;</span>
+<span class="nc" id="L407">    minValue = null;</span>
+<span class="nc" id="L408">    maxValue = null;</span>
+<span class="nc" id="L409">  }</span>
+
+  DefaultOptions(final String optionName,
+      final String defaultValue,
+      final String implementationVersion,
+      String description,
+<span class="nc" id="L415">      boolean required) {</span>
+<span class="nc" id="L416">    this.optionName = optionName;</span>
+<span class="nc" id="L417">    this.implementationVersion = implementationVersion;</span>
+<span class="nc" id="L418">    this.description = description;</span>
+<span class="nc" id="L419">    this.required = required;</span>
+<span class="nc" id="L420">    objType = String.class;</span>
+<span class="nc" id="L421">    this.defaultValue = defaultValue;</span>
+<span class="nc" id="L422">    minValue = null;</span>
+<span class="nc" id="L423">    maxValue = null;</span>
+<span class="nc" id="L424">  }</span>
+
+  DefaultOptions(final String optionName,
+      final Boolean defaultValue,
+      final String implementationVersion,
+      String description,
+<span class="nc" id="L430">      boolean required) {</span>
+<span class="nc" id="L431">    this.optionName = optionName;</span>
+<span class="nc" id="L432">    this.objType = Boolean.class;</span>
+<span class="nc" id="L433">    this.defaultValue = defaultValue;</span>
+<span class="nc" id="L434">    this.implementationVersion = implementationVersion;</span>
+<span class="nc" id="L435">    this.description = description;</span>
+<span class="nc" id="L436">    this.required = required;</span>
+<span class="nc" id="L437">    minValue = null;</span>
+<span class="nc" id="L438">    maxValue = null;</span>
+<span class="nc" id="L439">  }</span>
+
+  DefaultOptions(final String optionName,
+      final Integer defaultValue,
+      final Integer minValue,
+      final String implementationVersion,
+      String description,
+<span class="nc" id="L446">      boolean required) {</span>
+<span class="nc" id="L447">    this.optionName = optionName;</span>
+<span class="nc" id="L448">    this.objType = Integer.class;</span>
+<span class="nc" id="L449">    this.defaultValue = defaultValue;</span>
+<span class="nc" id="L450">    this.minValue = minValue;</span>
+<span class="nc" id="L451">    this.maxValue = Integer.MAX_VALUE;</span>
+<span class="nc" id="L452">    this.implementationVersion = implementationVersion;</span>
+<span class="nc" id="L453">    this.description = description;</span>
+<span class="nc" id="L454">    this.required = required;</span>
+<span class="nc" id="L455">  }</span>
+
+  DefaultOptions(final String optionName,
+      final Long defaultValue,
+      final Long minValue,
+      final String implementationVersion,
+      String description,
+<span class="nc" id="L462">      boolean required) {</span>
+<span class="nc" id="L463">    this.optionName = optionName;</span>
+<span class="nc" id="L464">    this.objType = Long.class;</span>
+<span class="nc" id="L465">    this.defaultValue = defaultValue;</span>
+<span class="nc" id="L466">    this.minValue = minValue;</span>
+<span class="nc" id="L467">    this.maxValue = Long.MAX_VALUE;</span>
+<span class="nc" id="L468">    this.implementationVersion = implementationVersion;</span>
+<span class="nc" id="L469">    this.description = description;</span>
+<span class="nc" id="L470">    this.required = required;</span>
+<span class="nc" id="L471">  }</span>
+
+
+  DefaultOptions(final String optionName,
+      final Integer[] defaultValue,
+      final Integer minValue,
+      final String implementationVersion,
+      String description,
+<span class="nc" id="L479">      boolean required) {</span>
+<span class="nc" id="L480">    this.optionName = optionName;</span>
+<span class="nc" id="L481">    this.objType = Integer.class;</span>
+<span class="nc" id="L482">    this.defaultValue = defaultValue;</span>
+<span class="nc" id="L483">    this.minValue = minValue;</span>
+<span class="nc" id="L484">    this.maxValue = Integer.MAX_VALUE;</span>
+<span class="nc" id="L485">    this.implementationVersion = implementationVersion;</span>
+<span class="nc" id="L486">    this.description = description;</span>
+<span class="nc" id="L487">    this.required = required;</span>
+<span class="nc" id="L488">  }</span>
+
+  public static Options defaultValues(final HaMode haMode) {
+<span class="nc" id="L491">    return parse(haMode, &quot;&quot;, new Properties());</span>
+  }
+
+  /**
+   * Generate an Options object with default value corresponding to High Availability mode.
+   *
+   * @param haMode current high Availability mode
+   * @param pool   is for pool
+   * @return Options object initialized
+   */
+  public static Options defaultValues(HaMode haMode, boolean pool) {
+<span class="nc" id="L502">    Properties properties = new Properties();</span>
+<span class="nc" id="L503">    properties.setProperty(&quot;pool&quot;, String.valueOf(pool));</span>
+<span class="nc" id="L504">    Options options = parse(haMode, &quot;&quot;, properties);</span>
+<span class="nc" id="L505">    optionCoherenceValidation(options);</span>
+<span class="nc" id="L506">    return options;</span>
+  }
+
+  /**
+   * Parse additional properties.
+   *
+   * @param haMode        current haMode.
+   * @param urlParameters options defined in url
+   * @param options       initial options
+   */
+  public static void parse(final HaMode haMode, final String urlParameters, final Options options) {
+<span class="nc" id="L517">    Properties prop = new Properties();</span>
+<span class="nc" id="L518">    parse(haMode, urlParameters, prop, options);</span>
+<span class="nc" id="L519">    optionCoherenceValidation(options);</span>
+<span class="nc" id="L520">  }</span>
+
+  private static Options parse(final HaMode haMode, final String urlParameters,
+      final Properties properties) {
+<span class="nc" id="L524">    Options options = parse(haMode, urlParameters, properties, null);</span>
+<span class="nc" id="L525">    optionCoherenceValidation(options);</span>
+<span class="nc" id="L526">    return options;</span>
+  }
+
+  /**
+   * Parse additional properties .
+   *
+   * @param haMode        current haMode.
+   * @param urlParameters options defined in url
+   * @param properties    options defined by properties
+   * @param options       initial options
+   * @return options
+   */
+  public static Options parse(final HaMode haMode,
+      final String urlParameters,
+      final Properties properties,
+      final Options options) {
+<span class="nc bnc" id="L542" title="All 4 branches missed.">    if (urlParameters != null &amp;&amp; !urlParameters.isEmpty()) {</span>
+<span class="nc" id="L543">      String[] parameters = urlParameters.split(&quot;&amp;&quot;);</span>
+<span class="nc bnc" id="L544" title="All 2 branches missed.">      for (String parameter : parameters) {</span>
+<span class="nc" id="L545">        int pos = parameter.indexOf('=');</span>
+<span class="nc bnc" id="L546" title="All 2 branches missed.">        if (pos == -1) {</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">          if (!properties.containsKey(parameter)) {</span>
+<span class="nc" id="L548">            properties.setProperty(parameter, &quot;&quot;);</span>
+          }
+        } else {
+<span class="nc bnc" id="L551" title="All 2 branches missed.">          if (!properties.containsKey(parameter.substring(0, pos))) {</span>
+<span class="nc" id="L552">            properties.setProperty(parameter.substring(0, pos), parameter.substring(pos + 1));</span>
+          }
+
+        }
+      }
+    }
+<span class="nc" id="L558">    return parse(haMode, properties, options);</span>
+  }
+
+  private static Options parse(final HaMode haMode, final Properties properties,
+      final Options paramOptions) {
+<span class="nc bnc" id="L563" title="All 2 branches missed.">    final Options options = paramOptions != null ? paramOptions : new Options();</span>
+
+    try {
+      //Option object is already initialized to default values.
+      //loop on properties,
+      // - check DefaultOption to check that property value correspond to type (and range)
+      // - set values
+<span class="nc bnc" id="L570" title="All 2 branches missed.">      for (final String key : properties.stringPropertyNames()) {</span>
+<span class="nc" id="L571">        final String propertyValue = properties.getProperty(key);</span>
+<span class="nc" id="L572">        final DefaultOptions o = OptionUtils.OPTIONS_MAP.get(key);</span>
+<span class="nc bnc" id="L573" title="All 4 branches missed.">        if (o != null &amp;&amp; propertyValue != null) {</span>
+<span class="nc" id="L574">          final Field field = Options.class.getField(o.optionName);</span>
+<span class="nc bnc" id="L575" title="All 2 branches missed.">          if (o.objType.equals(String.class)) {</span>
+<span class="nc" id="L576">            field.set(options, propertyValue);</span>
+<span class="nc bnc" id="L577" title="All 2 branches missed.">          } else if (o.objType.equals(Boolean.class)) {</span>
+<span class="nc bnc" id="L578" title="All 3 branches missed.">            switch (propertyValue.toLowerCase()) {</span>
+              case &quot;&quot;:
+              case &quot;1&quot;:
+              case &quot;true&quot;:
+<span class="nc" id="L582">                field.set(options, Boolean.TRUE);</span>
+<span class="nc" id="L583">                break;</span>
+
+              case &quot;0&quot;:
+              case &quot;false&quot;:
+<span class="nc" id="L587">                field.set(options, Boolean.FALSE);</span>
+<span class="nc" id="L588">                break;</span>
+
+              default:
+<span class="nc" id="L591">                throw new IllegalArgumentException(&quot;Optional parameter &quot; + o.optionName</span>
+                    + &quot; must be boolean (true/false or 0/1) was \&quot;&quot; + propertyValue + &quot;\&quot;&quot;);
+            }
+<span class="nc bnc" id="L594" title="All 2 branches missed.">          } else if (o.objType.equals(Integer.class)) {</span>
+            try {
+<span class="nc" id="L596">              final Integer value = Integer.parseInt(propertyValue);</span>
+<span class="nc bnc" id="L597" title="All 4 branches missed.">              assert o.minValue != null;</span>
+<span class="nc bnc" id="L598" title="All 4 branches missed.">              assert o.maxValue != null;</span>
+<span class="nc bnc" id="L599" title="All 2 branches missed.">              if (value.compareTo((Integer) o.minValue) &lt; 0</span>
+<span class="nc bnc" id="L600" title="All 2 branches missed.">                  || value.compareTo((Integer) o.maxValue) &gt; 0) {</span>
+<span class="nc" id="L601">                throw new IllegalArgumentException(&quot;Optional parameter &quot; + o.optionName</span>
+                    + &quot; must be greater or equal to &quot; + o.minValue
+<span class="nc bnc" id="L603" title="All 2 branches missed.">                    + (((Integer) o.maxValue != Integer.MAX_VALUE) ? &quot; and smaller than &quot;</span>
+<span class="nc" id="L604">                    + o.maxValue : &quot; &quot;)</span>
+                    + &quot;, was \&quot;&quot; + propertyValue + &quot;\&quot;&quot;);
+              }
+<span class="nc" id="L607">              field.set(options, value);</span>
+<span class="nc" id="L608">            } catch (NumberFormatException n) {</span>
+<span class="nc" id="L609">              throw new IllegalArgumentException(&quot;Optional parameter &quot; + o.optionName</span>
+                  + &quot; must be Integer, was \&quot;&quot; + propertyValue + &quot;\&quot;&quot;);
+<span class="nc" id="L611">            }</span>
+<span class="nc bnc" id="L612" title="All 2 branches missed.">          } else if (o.objType.equals(Long.class)) {</span>
+            try {
+<span class="nc" id="L614">              final Long value = Long.parseLong(propertyValue);</span>
+<span class="nc bnc" id="L615" title="All 4 branches missed.">              assert o.minValue != null;</span>
+<span class="nc bnc" id="L616" title="All 4 branches missed.">              assert o.maxValue != null;</span>
+<span class="nc bnc" id="L617" title="All 2 branches missed.">              if (value.compareTo((Long) o.minValue) &lt; 0</span>
+<span class="nc bnc" id="L618" title="All 2 branches missed.">                  || value.compareTo((Long) o.maxValue) &gt; 0) {</span>
+<span class="nc" id="L619">                throw new IllegalArgumentException(&quot;Optional parameter &quot; + o.optionName</span>
+                    + &quot; must be greater or equal to &quot; + o.minValue
+<span class="nc bnc" id="L621" title="All 2 branches missed.">                    + (((Long) o.maxValue != Long.MAX_VALUE) ? &quot; and smaller than &quot; + o.maxValue</span>
+<span class="nc" id="L622">                    : &quot; &quot;)</span>
+                    + &quot;, was \&quot;&quot; + propertyValue + &quot;\&quot;&quot;);
+              }
+<span class="nc" id="L625">              field.set(options, value);</span>
+<span class="nc" id="L626">            } catch (NumberFormatException n) {</span>
+<span class="nc" id="L627">              throw new IllegalArgumentException(&quot;Optional parameter &quot; + o.optionName</span>
+                  + &quot; must be Long, was \&quot;&quot; + propertyValue + &quot;\&quot;&quot;);
+<span class="nc" id="L629">            }</span>
+          }
+        }
+<span class="nc" id="L632">      }</span>
+
+      //special case : field with multiple default according to HA_MODE
+<span class="nc bnc" id="L635" title="All 2 branches missed.">      if (options.socketTimeout == null) {</span>
+<span class="nc" id="L636">        options.socketTimeout = ((Integer[]) SOCKET_TIMEOUT.defaultValue)[haMode.ordinal()];</span>
+      }
+
+<span class="nc" id="L639">    } catch (NoSuchFieldException | IllegalAccessException n) {</span>
+<span class="nc" id="L640">      n.printStackTrace();</span>
+<span class="nc" id="L641">    } catch (SecurityException s) {</span>
+      //only for jws, so never thrown
+<span class="nc" id="L643">      throw new IllegalArgumentException(&quot;Security too restrictive : &quot; + s.getMessage());</span>
+<span class="nc" id="L644">    }</span>
+
+<span class="nc" id="L646">    return options;</span>
+  }
+
+  /**
+   * Option initialisation end : set option value to a coherent state.
+   *
+   * @param options options
+   */
+  public static void optionCoherenceValidation(final Options options) {
+
+    //disable use server prepare id using client rewrite
+<span class="nc bnc" id="L657" title="All 2 branches missed.">    if (options.rewriteBatchedStatements) {</span>
+<span class="nc" id="L658">      options.useServerPrepStmts = false;</span>
+    }
+
+    //pipe cannot use read and write socket simultaneously
+<span class="nc bnc" id="L662" title="All 2 branches missed.">    if (options.pipe != null) {</span>
+<span class="nc" id="L663">      options.useBatchMultiSend = false;</span>
+<span class="nc" id="L664">      options.usePipelineAuth = false;</span>
+    }
+
+    //if min pool size default to maximum pool size if not set
+<span class="nc bnc" id="L668" title="All 2 branches missed.">    if (options.pool) {</span>
+<span class="nc bnc" id="L669" title="All 2 branches missed.">      options.minPoolSize = options.minPoolSize == null ? options.maxPoolSize</span>
+<span class="nc" id="L670">          : Math.min(options.minPoolSize, options.maxPoolSize);</span>
+    }
+
+<span class="nc" id="L673">  }</span>
+
+  /**
+   * Generate parameter String equivalent to options.
+   *
+   * @param options options
+   * @param haMode  high availability Mode
+   * @param sb      String builder
+   */
+  public static void propertyString(final Options options, final HaMode haMode,
+      final StringBuilder sb) {
+    try {
+<span class="nc" id="L685">      boolean first = true;</span>
+<span class="nc bnc" id="L686" title="All 2 branches missed.">      for (DefaultOptions o : DefaultOptions.values()) {</span>
+<span class="nc" id="L687">        final Object value = Options.class.getField(o.optionName).get(options);</span>
+
+<span class="nc bnc" id="L689" title="All 4 branches missed.">        if (value != null &amp;&amp; !value.equals(o.defaultValue)) {</span>
+<span class="nc bnc" id="L690" title="All 2 branches missed.">          if (first) {</span>
+<span class="nc" id="L691">            first = false;</span>
+<span class="nc" id="L692">            sb.append('?');</span>
+          } else {
+<span class="nc" id="L694">            sb.append('&amp;');</span>
+          }
+<span class="nc" id="L696">          sb.append(o.optionName)</span>
+<span class="nc" id="L697">              .append('=');</span>
+<span class="nc bnc" id="L698" title="All 2 branches missed.">          if (o.objType.equals(String.class)) {</span>
+<span class="nc" id="L699">            sb.append((String) value);</span>
+<span class="nc bnc" id="L700" title="All 2 branches missed.">          } else if (o.objType.equals(Boolean.class)) {</span>
+<span class="nc" id="L701">            sb.append(((Boolean) value).toString());</span>
+<span class="nc bnc" id="L702" title="All 4 branches missed.">          } else if (o.objType.equals(Integer.class) || o.objType.equals(Long.class)) {</span>
+<span class="nc" id="L703">            sb.append(value);</span>
+          }
+        }
+      }
+<span class="nc" id="L707">    } catch (NoSuchFieldException | IllegalAccessException n) {</span>
+<span class="nc" id="L708">      n.printStackTrace();</span>
+<span class="nc" id="L709">    }</span>
+<span class="nc" id="L710">  }</span>
+
+  public String getOptionName() {
+<span class="nc" id="L713">    return optionName;</span>
+  }
+
+  public String getDescription() {
+<span class="nc" id="L717">    return description;</span>
+  }
+
+  public boolean isRequired() {
+<span class="nc" id="L721">    return required;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

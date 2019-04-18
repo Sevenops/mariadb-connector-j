@@ -1,0 +1,404 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FailoverProxy.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.failover</a> &gt; <span class="el_source">FailoverProxy.java</span></div><h1>FailoverProxy.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.failover;
+
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.sql.SQLException;
+import java.util.concurrent.locks.ReentrantLock;
+import org.mariadb.jdbc.HostAddress;
+import org.mariadb.jdbc.MariaDbConnection;
+import org.mariadb.jdbc.MariaDbStatement;
+import org.mariadb.jdbc.internal.logging.Logger;
+import org.mariadb.jdbc.internal.logging.LoggerFactory;
+import org.mariadb.jdbc.internal.protocol.Protocol;
+import org.mariadb.jdbc.internal.util.dao.ServerPrepareResult;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+
+public class FailoverProxy implements InvocationHandler {
+
+  private static final String METHOD_IS_EXPLICIT_CLOSED = &quot;isExplicitClosed&quot;;
+  private static final String METHOD_GET_OPTIONS = &quot;getOptions&quot;;
+  private static final String METHOD_GET_URLPARSER = &quot;getUrlParser&quot;;
+  private static final String METHOD_GET_PROXY = &quot;getProxy&quot;;
+  private static final String METHOD_EXECUTE_QUERY = &quot;executeQuery&quot;;
+  private static final String METHOD_SET_READ_ONLY = &quot;setReadonly&quot;;
+  private static final String METHOD_GET_READ_ONLY = &quot;getReadonly&quot;;
+  private static final String METHOD_IS_MASTER_CONNECTION = &quot;isMasterConnection&quot;;
+  private static final String METHOD_VERSION_GREATER_OR_EQUAL = &quot;versionGreaterOrEqual&quot;;
+  private static final String METHOD_SESSION_STATE_AWARE = &quot;sessionStateAware&quot;;
+  private static final String METHOD_CLOSED_EXPLICIT = &quot;closeExplicit&quot;;
+  private static final String METHOD_ABORT = &quot;abort&quot;;
+  private static final String METHOD_IS_CLOSED = &quot;isClosed&quot;;
+  private static final String METHOD_EXECUTE_PREPARED_QUERY = &quot;executePreparedQuery&quot;;
+  private static final String METHOD_COM_MULTI_PREPARE_EXECUTES = &quot;prepareAndExecutesComMulti&quot;;
+  private static final String METHOD_PROLOG_PROXY = &quot;prologProxy&quot;;
+  private static final String METHOD_RESET = &quot;reset&quot;;
+  private static final String METHOD_IS_VALID = &quot;isValid&quot;;
+  private static final String METHOD_GET_LOCK = &quot;getLock&quot;;
+  private static final String METHOD_GET_NO_BACKSLASH = &quot;noBackslashEscapes&quot;;
+  private static final String METHOD_GET_SERVER_THREAD_ID = &quot;getServerThreadId&quot;;
+  private static final String METHOD_PROLOG = &quot;prolog&quot;;
+  private static final String METHOD_GET_CATALOG = &quot;getCatalog&quot;;
+  private static final String METHOD_GET_TIMEOUT = &quot;getTimeout&quot;;
+  private static final String METHOD_GET_MAJOR_VERSION = &quot;getMajorServerVersion&quot;;
+  private static final String METHOD_IN_TRANSACTION = &quot;inTransaction&quot;;
+
+
+<span class="nc" id="L100">  private static final Logger logger = LoggerFactory.getLogger(FailoverProxy.class);</span>
+  public final ReentrantLock lock;
+
+  private final Listener listener;
+
+  /**
+   * Proxy constructor.
+   *
+   * @param listener failover implementation.
+   * @param lock     synchronisation lock
+   * @throws SQLException if connection error occur
+   */
+<span class="nc" id="L112">  public FailoverProxy(Listener listener, ReentrantLock lock) throws SQLException {</span>
+<span class="nc" id="L113">    this.lock = lock;</span>
+<span class="nc" id="L114">    this.listener = listener;</span>
+<span class="nc" id="L115">    this.listener.setProxy(this);</span>
+<span class="nc" id="L116">    this.listener.initializeConnection();</span>
+<span class="nc" id="L117">  }</span>
+
+  /**
+   * Add Host information (&quot;on HostAddress...&quot;) to exception.
+   *
+   * &lt;p&gt;example :
+   * java.sql.SQLException: (conn=603) Cannot execute statement in a READ ONLY transaction.&lt;br/&gt;
+   * Query is: INSERT INTO TableX VALUES (21)&lt;br/&gt; on HostAddress{host='mydb.example.com',
+   * port=3306},master=true&lt;/p&gt;
+   *
+   * @param exception current exception
+   * @param protocol  protocol to have hostname
+   */
+  private static SQLException addHostInformationToException(SQLException exception,
+      Protocol protocol) {
+<span class="nc bnc" id="L132" title="All 2 branches missed.">    if (protocol != null) {</span>
+<span class="nc" id="L133">      return new SQLException(exception.getMessage()</span>
+<span class="nc" id="L134">          + &quot;\non &quot; + protocol.getHostAddress().toString() + &quot;,master=&quot;</span>
+<span class="nc" id="L135">          + protocol.isMasterConnection(), exception.getSQLState(), exception.getErrorCode(),</span>
+<span class="nc" id="L136">          exception.getCause());</span>
+
+    }
+<span class="nc" id="L139">    return exception;</span>
+  }
+
+  /**
+   * Proxy that catch Protocol call, to permit to catch errors and handle failover when multiple
+   * hosts.
+   *
+   * @param proxy  the current protocol
+   * @param method the called method on the protocol
+   * @param args   methods parameters
+   * @return protocol method result
+   * @throws Throwable the method throwed error if not catch by failover
+   */
+  @Override
+  public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+<span class="nc" id="L154">    String methodName = method.getName();</span>
+<span class="nc bnc" id="L155" title="All 26 branches missed.">    switch (methodName) {</span>
+      case METHOD_GET_LOCK:
+<span class="nc" id="L157">        return this.lock;</span>
+      case METHOD_GET_NO_BACKSLASH:
+<span class="nc" id="L159">        return listener.noBackslashEscapes();</span>
+      case METHOD_GET_CATALOG:
+<span class="nc" id="L161">        return listener.getCatalog();</span>
+      case METHOD_GET_TIMEOUT:
+<span class="nc" id="L163">        return listener.getTimeout();</span>
+      case METHOD_VERSION_GREATER_OR_EQUAL:
+<span class="nc" id="L165">        return listener.versionGreaterOrEqual((int) args[0], (int) args[1], (int) args[2]);</span>
+      case METHOD_SESSION_STATE_AWARE:
+<span class="nc" id="L167">        return listener.sessionStateAware();</span>
+      case METHOD_IS_EXPLICIT_CLOSED:
+<span class="nc" id="L169">        return listener.isExplicitClosed();</span>
+      case METHOD_GET_OPTIONS:
+<span class="nc" id="L171">        return listener.getUrlParser().getOptions();</span>
+      case METHOD_GET_MAJOR_VERSION:
+<span class="nc" id="L173">        return listener.getMajorServerVersion();</span>
+      case METHOD_GET_SERVER_THREAD_ID:
+<span class="nc" id="L175">        return listener.getServerThreadId();</span>
+      case METHOD_GET_URLPARSER:
+<span class="nc" id="L177">        return listener.getUrlParser();</span>
+      case METHOD_GET_PROXY:
+<span class="nc" id="L179">        return this;</span>
+      case METHOD_IS_CLOSED:
+<span class="nc" id="L181">        return listener.isClosed();</span>
+      case METHOD_IS_VALID:
+<span class="nc" id="L183">        return listener.isValid((int) args[0]);</span>
+      case METHOD_PROLOG:
+<span class="nc" id="L185">        listener.prolog((long) args[0], (MariaDbConnection) args[2], (MariaDbStatement) args[3]);</span>
+<span class="nc" id="L186">        return null;</span>
+      case METHOD_EXECUTE_QUERY:
+        try {
+<span class="nc" id="L189">          this.listener.preExecute();</span>
+<span class="nc" id="L190">        } catch (SQLException e) {</span>
+          //handle failover only if connection error
+          //normal error can be thrown upon reconnection if there was a transaction in progress.
+<span class="nc bnc" id="L193" title="All 2 branches missed.">          if (hasToHandleFailover(e)) {</span>
+<span class="nc" id="L194">            return handleFailOver(e, method, args, listener.getCurrentProtocol());</span>
+          }
+<span class="nc" id="L196">        }</span>
+<span class="nc" id="L197">        break;</span>
+      case METHOD_SET_READ_ONLY:
+<span class="nc" id="L199">        this.listener.switchReadOnlyConnection((Boolean) args[0]);</span>
+<span class="nc" id="L200">        return null;</span>
+      case METHOD_GET_READ_ONLY:
+<span class="nc" id="L202">        return this.listener.isReadOnly();</span>
+      case METHOD_IN_TRANSACTION:
+<span class="nc" id="L204">        return this.listener.inTransaction();</span>
+      case METHOD_IS_MASTER_CONNECTION:
+<span class="nc" id="L206">        return this.listener.isMasterConnection();</span>
+      case METHOD_ABORT:
+<span class="nc" id="L208">        this.listener.preAbort();</span>
+<span class="nc" id="L209">        return null;</span>
+      case METHOD_CLOSED_EXPLICIT:
+<span class="nc" id="L211">        this.listener.preClose();</span>
+<span class="nc" id="L212">        return null;</span>
+      case METHOD_COM_MULTI_PREPARE_EXECUTES:
+      case METHOD_EXECUTE_PREPARED_QUERY:
+<span class="nc" id="L215">        boolean mustBeOnMaster = (Boolean) args[0];</span>
+<span class="nc" id="L216">        ServerPrepareResult serverPrepareResult = (ServerPrepareResult) args[1];</span>
+<span class="nc bnc" id="L217" title="All 2 branches missed.">        if (serverPrepareResult != null) {</span>
+<span class="nc bnc" id="L218" title="All 4 branches missed.">          if (!mustBeOnMaster &amp;&amp; serverPrepareResult.getUnProxiedProtocol().isMasterConnection()</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">              &amp;&amp; !this.listener.hasHostFail()) {</span>
+            //PrepareStatement was to be executed on slave, but since a failover was running on master connection. Slave connection is up
+            // again, so has to be re-prepared on slave
+            try {
+<span class="nc" id="L223">              logger.trace(&quot;re-prepare query \&quot;{}\&quot; on slave (was &quot;</span>
+<span class="nc" id="L224">                  + &quot;temporary on master since failover)&quot;, serverPrepareResult.getSql());</span>
+<span class="nc" id="L225">              this.listener.rePrepareOnSlave(serverPrepareResult, false);</span>
+<span class="nc" id="L226">            } catch (SQLException q) {</span>
+              //error during re-prepare, will do executed on master.
+<span class="nc" id="L228">            }</span>
+          }
+          try {
+<span class="nc" id="L231">            return listener.invoke(method, args, serverPrepareResult.getUnProxiedProtocol());</span>
+<span class="nc" id="L232">          } catch (InvocationTargetException e) {</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">            if (e.getTargetException() != null) {</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">              if (e.getTargetException() instanceof SQLException</span>
+<span class="nc bnc" id="L235" title="All 2 branches missed.">                  &amp;&amp; hasToHandleFailover((SQLException) e.getTargetException())) {</span>
+<span class="nc" id="L236">                return handleFailOver((SQLException) e.getTargetException(), method, args,</span>
+<span class="nc" id="L237">                    serverPrepareResult.getUnProxiedProtocol());</span>
+              }
+<span class="nc" id="L239">              throw e.getTargetException();</span>
+            }
+<span class="nc" id="L241">            throw e;</span>
+          }
+        }
+        break;
+      case METHOD_PROLOG_PROXY:
+        try {
+<span class="nc bnc" id="L247" title="All 2 branches missed.">          if (args[0] != null) {</span>
+<span class="nc" id="L248">            return listener</span>
+<span class="nc" id="L249">                .invoke(method, args, ((ServerPrepareResult) args[0]).getUnProxiedProtocol());</span>
+          }
+<span class="nc" id="L251">          return null;</span>
+<span class="nc" id="L252">        } catch (InvocationTargetException e) {</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">          if (e.getTargetException() != null) {</span>
+<span class="nc bnc" id="L254" title="All 2 branches missed.">            if (e.getTargetException() instanceof SQLException</span>
+<span class="nc bnc" id="L255" title="All 2 branches missed.">                &amp;&amp; hasToHandleFailover((SQLException) e.getTargetException())) {</span>
+<span class="nc" id="L256">              return handleFailOver((SQLException) e.getTargetException(), method, args,</span>
+<span class="nc" id="L257">                  ((ServerPrepareResult) args[0]).getUnProxiedProtocol());</span>
+            }
+<span class="nc" id="L259">            throw e.getTargetException();</span>
+          }
+<span class="nc" id="L261">          throw e;</span>
+        }
+      case METHOD_RESET:
+        //listener will report reset on any active connections (Master/slave)
+<span class="nc" id="L265">        listener.reset();</span>
+<span class="nc" id="L266">        return null;</span>
+      default:
+    }
+
+<span class="nc" id="L270">    return executeInvocation(method, args, false);</span>
+
+  }
+
+  private Object executeInvocation(Method method, Object[] args, boolean isSecondExecution)
+      throws Throwable {
+
+    try {
+<span class="nc" id="L278">      return listener.invoke(method, args);</span>
+<span class="nc" id="L279">    } catch (InvocationTargetException e) {</span>
+<span class="nc bnc" id="L280" title="All 2 branches missed.">      if (e.getTargetException() != null) {</span>
+<span class="nc bnc" id="L281" title="All 2 branches missed.">        if (e.getTargetException() instanceof SQLException) {</span>
+
+<span class="nc" id="L283">          SQLException queryException = (SQLException) e.getTargetException();</span>
+<span class="nc" id="L284">          Protocol protocol = listener.getCurrentProtocol();</span>
+
+<span class="nc" id="L286">          queryException = addHostInformationToException(queryException, protocol);</span>
+
+          //check that failover is due to kill command
+<span class="nc bnc" id="L289" title="All 2 branches missed.">          boolean killCmd = queryException != null</span>
+<span class="nc bnc" id="L290" title="All 2 branches missed.">              &amp;&amp; queryException.getSQLState() != null</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">              &amp;&amp; queryException.getSQLState().equals(&quot;70100&quot;)</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">              &amp;&amp; 1927 == queryException.getErrorCode();</span>
+
+<span class="nc bnc" id="L294" title="All 2 branches missed.">          if (killCmd) {</span>
+<span class="nc" id="L295">            handleFailOver(queryException, method, args, protocol);</span>
+<span class="nc" id="L296">            return null;</span>
+          }
+
+<span class="nc bnc" id="L299" title="All 2 branches missed.">          if (hasToHandleFailover(queryException)) {</span>
+<span class="nc" id="L300">            return handleFailOver(queryException, method, args, protocol);</span>
+          }
+
+          //error is &quot;The MariaDB server is running with the %s option so it cannot execute this statement&quot;
+          //checking that server was master has not been demote to slave without resetting connections
+<span class="nc bnc" id="L305" title="All 6 branches missed.">          if (queryException.getErrorCode() == 1290</span>
+              &amp;&amp; !isSecondExecution
+              &amp;&amp; protocol != null
+<span class="nc bnc" id="L308" title="All 2 branches missed.">              &amp;&amp; protocol.isMasterConnection()</span>
+<span class="nc bnc" id="L309" title="All 2 branches missed.">              &amp;&amp; !protocol.checkIfMaster()) {</span>
+
+<span class="nc" id="L311">            boolean inTransaction = protocol.inTransaction();</span>
+            boolean isReconnected;
+
+            //connection state has changed, master connection is now read-only
+            //reconnect to master, to re-execute command if wasn't in a transaction since
+            //we are sure has not been executed.
+
+            //reconnection
+<span class="nc" id="L319">            lock.lock();</span>
+            try {
+<span class="nc" id="L321">              protocol.close();</span>
+<span class="nc" id="L322">              isReconnected = listener.primaryFail(null, null, false).isReconnected;</span>
+            } finally {
+<span class="nc" id="L324">              lock.unlock();</span>
+            }
+
+            //relaunch command
+<span class="nc bnc" id="L328" title="All 4 branches missed.">            if (isReconnected &amp;&amp; !inTransaction) {</span>
+<span class="nc" id="L329">              return executeInvocation(method, args, true);</span>
+            }
+
+            //throw exception if not reconnected, or was in a transaction
+<span class="nc" id="L333">            return handleFailOver(queryException, method, args, listener.getCurrentProtocol());</span>
+
+          }
+        }
+<span class="nc" id="L337">        throw e.getTargetException();</span>
+      }
+<span class="nc" id="L339">      throw e;</span>
+    }
+  }
+
+  /**
+   * After a connection exception, launch failover.
+   *
+   * @param qe     the exception thrown
+   * @param method the method to call if failover works well
+   * @param args   the arguments of the method
+   * @return the object return from the method
+   * @throws Throwable throwable
+   */
+  private Object handleFailOver(SQLException qe, Method method, Object[] args, Protocol protocol)
+      throws Throwable {
+<span class="nc" id="L354">    HostAddress failHostAddress = null;</span>
+<span class="nc" id="L355">    boolean failIsMaster = true;</span>
+<span class="nc bnc" id="L356" title="All 2 branches missed.">    if (protocol != null) {</span>
+<span class="nc" id="L357">      failHostAddress = protocol.getHostAddress();</span>
+<span class="nc" id="L358">      failIsMaster = protocol.isMasterConnection();</span>
+    }
+
+<span class="nc" id="L361">    HandleErrorResult handleErrorResult = listener.handleFailover(qe, method, args, protocol);</span>
+<span class="nc bnc" id="L362" title="All 2 branches missed.">    if (handleErrorResult.mustThrowError) {</span>
+<span class="nc" id="L363">      listener</span>
+<span class="nc" id="L364">          .throwFailoverMessage(failHostAddress, failIsMaster, qe, handleErrorResult.isReconnected);</span>
+    }
+<span class="nc" id="L366">    return handleErrorResult.resultObject;</span>
+  }
+
+  /**
+   * Check if this Sqlerror is a connection exception. if that's the case, must be handle by
+   * failover
+   *
+   * &lt;p&gt;error codes : 08000 : connection exception 08001 : SQL client unable to establish SQL
+   * connection 08002 : connection name in use 08003 : connection does not exist 08004 : SQL server
+   * rejected SQL connection 08006 : connection failure 08007 : transaction resolution unknown 70100
+   * : connection was killed if error code is &quot;1927&quot;&lt;/p&gt;
+   *
+   * @param exception the Exception
+   * @return true if there has been a connection error that must be handled by failover
+   */
+  public boolean hasToHandleFailover(SQLException exception) {
+<span class="nc bnc" id="L382" title="All 2 branches missed.">    return exception.getSQLState() != null</span>
+<span class="nc bnc" id="L383" title="All 2 branches missed.">        &amp;&amp; (exception.getSQLState().startsWith(&quot;08&quot;)</span>
+<span class="nc bnc" id="L384" title="All 4 branches missed.">        || (exception.getSQLState().equals(&quot;70100&quot;) &amp;&amp; 1927 == exception.getErrorCode()));</span>
+  }
+
+  /**
+   * Launch reconnect implementation.
+   *
+   * @throws SQLException exception
+   */
+  public void reconnect() throws SQLException {
+    try {
+<span class="nc" id="L394">      listener.reconnect();</span>
+<span class="nc" id="L395">    } catch (SQLException e) {</span>
+<span class="nc" id="L396">      ExceptionMapper.throwException(e, null, null);</span>
+<span class="nc" id="L397">    }</span>
+<span class="nc" id="L398">  }</span>
+
+  public Listener getListener() {
+<span class="nc" id="L401">    return listener;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

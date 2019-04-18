@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ColumnNameMap.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.read.dao</a> &gt; <span class="el_source">ColumnNameMap.java</span></div><h1>ColumnNameMap.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.com.read.dao;
+
+import java.sql.SQLException;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import org.mariadb.jdbc.internal.com.read.resultset.ColumnInformation;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+
+public class ColumnNameMap {
+
+  private final ColumnInformation[] columnInfo;
+  private Map&lt;String, Integer&gt; originalMap;
+  private Map&lt;String, Integer&gt; aliasMap;
+
+<span class="nc" id="L69">  public ColumnNameMap(ColumnInformation[] columnInformations) {</span>
+<span class="nc" id="L70">    this.columnInfo = columnInformations;</span>
+<span class="nc" id="L71">  }</span>
+
+  /**
+   * Get column index by name.
+   *
+   * @param name column name
+   * @return index.
+   * @throws SQLException if no column info exists, or column is unknown
+   */
+  public int getIndex(String name) throws SQLException {
+<span class="nc bnc" id="L81" title="All 2 branches missed.">    if (name == null) {</span>
+<span class="nc" id="L82">      throw new SQLException(&quot;Column name cannot be null&quot;);</span>
+    }
+<span class="nc" id="L84">    String lowerName = name.toLowerCase(Locale.ROOT);</span>
+    // The specs in JDBC 4.0 specify that ResultSet.findColumn and
+    // ResultSet.getXXX(String name) should use column alias (AS in the query). If label is not found, we use
+    // original table name.
+<span class="nc bnc" id="L88" title="All 2 branches missed.">    if (aliasMap == null) {</span>
+<span class="nc" id="L89">      aliasMap = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L90">      int counter = 0;</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">      for (ColumnInformation ci : columnInfo) {</span>
+<span class="nc" id="L92">        String columnAlias = ci.getName();</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">        if (columnAlias != null) {</span>
+<span class="nc" id="L94">          columnAlias = columnAlias.toLowerCase(Locale.ROOT);</span>
+<span class="nc" id="L95">          aliasMap.putIfAbsent(columnAlias, counter);</span>
+
+<span class="nc" id="L97">          String tableName = ci.getTable();</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">          if (tableName != null) {</span>
+<span class="nc" id="L99">            aliasMap.putIfAbsent(tableName.toLowerCase(Locale.ROOT) + &quot;.&quot; + columnAlias, counter);</span>
+          }
+        }
+<span class="nc" id="L102">        counter++;</span>
+      }
+    }
+
+<span class="nc" id="L106">    Integer res = aliasMap.get(lowerName);</span>
+<span class="nc bnc" id="L107" title="All 2 branches missed.">    if (res != null) {</span>
+<span class="nc" id="L108">      return res;</span>
+    }
+
+<span class="nc bnc" id="L111" title="All 2 branches missed.">    if (originalMap == null) {</span>
+<span class="nc" id="L112">      originalMap = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L113">      int counter = 0;</span>
+<span class="nc bnc" id="L114" title="All 2 branches missed.">      for (ColumnInformation ci : columnInfo) {</span>
+<span class="nc" id="L115">        String columnRealName = ci.getOriginalName();</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">        if (columnRealName != null) {</span>
+<span class="nc" id="L117">          columnRealName = columnRealName.toLowerCase(Locale.ROOT);</span>
+<span class="nc" id="L118">          originalMap.putIfAbsent(columnRealName, counter);</span>
+
+<span class="nc" id="L120">          String tableName = ci.getOriginalTable();</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">          if (tableName != null) {</span>
+<span class="nc" id="L122">            originalMap</span>
+<span class="nc" id="L123">                .putIfAbsent(tableName.toLowerCase(Locale.ROOT) + &quot;.&quot; + columnRealName, counter);</span>
+          }
+        }
+<span class="nc" id="L126">        counter++;</span>
+      }
+    }
+
+<span class="nc" id="L130">    res = originalMap.get(lowerName);</span>
+
+<span class="nc bnc" id="L132" title="All 2 branches missed.">    if (res == null) {</span>
+<span class="nc" id="L133">      throw ExceptionMapper.get(&quot;No such column: &quot; + name, &quot;42S22&quot;, 1054, null, false);</span>
+    }
+<span class="nc" id="L135">    return res;</span>
+
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MariaXaResource.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">MariaXaResource.java</span></div><h1>MariaXaResource.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+
+package org.mariadb.jdbc;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import javax.transaction.xa.XAException;
+import javax.transaction.xa.XAResource;
+import javax.transaction.xa.Xid;
+import org.mariadb.jdbc.internal.util.Utils;
+
+public class MariaXaResource implements XAResource {
+
+  private final MariaDbConnection connection;
+
+<span class="nc" id="L68">  public MariaXaResource(MariaDbConnection connection) {</span>
+<span class="nc" id="L69">    this.connection = connection;</span>
+<span class="nc" id="L70">  }</span>
+
+  private static String xidToString(Xid xid) {
+<span class="nc" id="L73">    return &quot;0x&quot; + Utils.byteArrayToHexString(xid.getGlobalTransactionId())</span>
+<span class="nc" id="L74">        + &quot;,0x&quot; + Utils.byteArrayToHexString(xid.getBranchQualifier())</span>
+<span class="nc" id="L75">        + &quot;,&quot; + xid.getFormatId();</span>
+  }
+
+  private static String flagsToString(int flags) {
+<span class="nc bnc" id="L79" title="All 5 branches missed.">    switch (flags) {</span>
+      case TMJOIN:
+<span class="nc" id="L81">        return &quot;JOIN&quot;;</span>
+      case TMONEPHASE:
+<span class="nc" id="L83">        return &quot;ONE PHASE&quot;;</span>
+      case TMRESUME:
+<span class="nc" id="L85">        return &quot;RESUME&quot;;</span>
+      case TMSUSPEND:
+<span class="nc" id="L87">        return &quot;SUSPEND&quot;;</span>
+      default:
+<span class="nc" id="L89">        return &quot;&quot;;</span>
+    }
+  }
+
+  private XAException mapXaException(SQLException sqle) {
+    int xaErrorCode;
+
+<span class="nc bnc" id="L96" title="All 7 branches missed.">    switch (sqle.getErrorCode()) {</span>
+      case 1397:
+<span class="nc" id="L98">        xaErrorCode = XAException.XAER_NOTA;</span>
+<span class="nc" id="L99">        break;</span>
+      case 1398:
+<span class="nc" id="L101">        xaErrorCode = XAException.XAER_INVAL;</span>
+<span class="nc" id="L102">        break;</span>
+      case 1399:
+<span class="nc" id="L104">        xaErrorCode = XAException.XAER_RMFAIL;</span>
+<span class="nc" id="L105">        break;</span>
+      case 1400:
+<span class="nc" id="L107">        xaErrorCode = XAException.XAER_OUTSIDE;</span>
+<span class="nc" id="L108">        break;</span>
+      case 1401:
+<span class="nc" id="L110">        xaErrorCode = XAException.XAER_RMERR;</span>
+<span class="nc" id="L111">        break;</span>
+      case 1402:
+<span class="nc" id="L113">        xaErrorCode = XAException.XA_RBROLLBACK;</span>
+<span class="nc" id="L114">        break;</span>
+      default:
+<span class="nc" id="L116">        xaErrorCode = 0;</span>
+        break;
+    }
+<span class="nc bnc" id="L119" title="All 2 branches missed.">    if (xaErrorCode != 0) {</span>
+<span class="nc" id="L120">      return new XAException(xaErrorCode);</span>
+    } else {
+<span class="nc" id="L122">      return new XAException(sqle.getMessage());</span>
+    }
+  }
+
+  /**
+   * Execute a query.
+   *
+   * @param command query to run.
+   * @throws XAException exception
+   */
+  private void execute(String command) throws XAException {
+    try {
+<span class="nc" id="L134">      connection.createStatement().execute(command);</span>
+<span class="nc" id="L135">    } catch (SQLException sqle) {</span>
+<span class="nc" id="L136">      throw mapXaException(sqle);</span>
+<span class="nc" id="L137">    }</span>
+<span class="nc" id="L138">  }</span>
+
+  /**
+   * Commits the global transaction specified by xid.
+   *
+   * @param xid      A global transaction identifier
+   * @param onePhase If true, the resource manager should use a one-phase commit protocol to commit
+   *                 the work done on behalf of xid.
+   * @throws XAException exception
+   */
+  public void commit(Xid xid, boolean onePhase) throws XAException {
+<span class="nc" id="L149">    String command = &quot;XA COMMIT &quot; + xidToString(xid);</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">    if (onePhase) {</span>
+<span class="nc" id="L151">      command += &quot; ONE PHASE&quot;;</span>
+    }
+<span class="nc" id="L153">    execute(command);</span>
+<span class="nc" id="L154">  }</span>
+
+  /**
+   * Ends the work performed on behalf of a transaction branch. The resource manager disassociates
+   * the XA resource from the transaction branch specified and lets the transaction complete.
+   * &lt;p&gt;If TMSUSPEND is specified in the flags, the transaction branch is temporarily suspended in
+   * an incomplete state. The transaction context is in a suspended state and must be resumed via
+   * the start method with TMRESUME specified.&lt;/p&gt;
+   * &lt;p&gt;If TMFAIL is specified, the portion of work has failed. The resource manager may mark the
+   * transaction as rollback-only&lt;/p&gt;
+   * &lt;p&gt;If TMSUCCESS is specified, the portion of work has completed successfully.&lt;/p&gt;
+   *
+   * @param xid   A global transaction identifier that is the same as the identifier used previously
+   *              in the start method.
+   * @param flags One of TMSUCCESS, TMFAIL, or TMSUSPEND.
+   * @throws XAException An error has occurred. (XAException values are XAER_RMERR, XAER_RMFAILED,
+   *                     XAER_NOTA, XAER_INVAL, XAER_PROTO, or XA_RB*)
+   */
+  public void end(Xid xid, int flags) throws XAException {
+<span class="nc bnc" id="L173" title="All 6 branches missed.">    if (flags != TMSUCCESS &amp;&amp; flags != TMSUSPEND &amp;&amp; flags != TMFAIL) {</span>
+<span class="nc" id="L174">      throw new XAException(XAException.XAER_INVAL);</span>
+    }
+
+<span class="nc" id="L177">    execute(&quot;XA END &quot; + xidToString(xid) + &quot; &quot; + flagsToString(flags));</span>
+<span class="nc" id="L178">  }</span>
+
+  /**
+   * Tells the resource manager to forget about a heuristically completed transaction branch.
+   *
+   * @param xid A global transaction identifier.
+   */
+  public void forget(Xid xid) {
+    // Not implemented by the server
+<span class="nc" id="L187">  }</span>
+
+  /**
+   * Obtains the current transaction timeout value set for this XAResource instance. If
+   * XAResource.setTransactionTimeout was not used prior to invoking this method, the return value
+   * is the default timeout set for the resource manager; otherwise, the value used in the previous
+   * setTransactionTimeout call is returned.
+   *
+   * @return the transaction timeout value in seconds.
+   */
+  public int getTransactionTimeout() {
+    // not implemented
+<span class="nc" id="L199">    return 0;</span>
+  }
+
+  /**
+   * This method is called to determine if the resource manager instance represented by the target
+   * object is the same as the resource manager instance represented by the parameter xares.
+   *
+   * @param xaResource An XAResource object whose resource manager instance is to be compared with
+   *                   the target object.
+   * @return true if it's the same RM instance; otherwise false.
+   */
+  @Override
+  public boolean isSameRM(XAResource xaResource) {
+    // Typically used by transaction manager to &quot;join&quot; transactions. We do not support joins,
+    // so always return false;
+<span class="nc" id="L214">    return false;</span>
+  }
+
+  /**
+   * Ask the resource manager to prepare for a transaction commit of the transaction specified in
+   * xid.
+   *
+   * @param xid A global transaction identifier.
+   * @return A value indicating the resource manager's vote on the outcome of the transaction.
+   * @throws XAException An error has occurred. Possible exception values are: XA_RB*, XAER_RMERR,
+   *                     XAER_RMFAIL, XAER_NOTA, XAER_INVAL, XAER_PROTO.
+   */
+  public int prepare(Xid xid) throws XAException {
+<span class="nc" id="L227">    execute(&quot;XA PREPARE &quot; + xidToString(xid));</span>
+<span class="nc" id="L228">    return XA_OK;</span>
+  }
+
+  /**
+   * Obtains a list of prepared transaction branches from a resource manager. The transaction
+   * manager calls this method during recovery to obtain the list of transaction branches that are
+   * currently in prepared or heuristically completed states.
+   *
+   * @param flags One of TMSTARTRSCAN, TMENDRSCAN, TMNOFLAGS. TMNOFLAGS must be used when no other
+   *              flags are set in the parameter.
+   * @return The resource manager returns zero or more XIDs of the transaction branches.
+   * @throws XAException An error has occurred. Possible values are XAER_RMERR, XAER_RMFAIL,
+   *                     XAER_INVAL, and XAER_PROTO.
+   */
+  public Xid[] recover(int flags) throws XAException {
+    // Return all Xid  at once, when STARTRSCAN is specified
+    // Return zero-length array otherwise.
+
+<span class="nc bnc" id="L246" title="All 6 branches missed.">    if (((flags &amp; TMSTARTRSCAN) == 0) &amp;&amp; ((flags &amp; TMENDRSCAN) == 0) &amp;&amp; (flags != TMNOFLAGS)) {</span>
+<span class="nc" id="L247">      throw new XAException(XAException.XAER_INVAL);</span>
+    }
+
+<span class="nc bnc" id="L250" title="All 2 branches missed.">    if ((flags &amp; TMSTARTRSCAN) == 0) {</span>
+<span class="nc" id="L251">      return new MariaDbXid[0];</span>
+    }
+
+    try {
+<span class="nc" id="L255">      ResultSet rs = connection.createStatement().executeQuery(&quot;XA RECOVER&quot;);</span>
+<span class="nc" id="L256">      ArrayList&lt;MariaDbXid&gt; xidList = new ArrayList&lt;&gt;();</span>
+
+<span class="nc bnc" id="L258" title="All 2 branches missed.">      while (rs.next()) {</span>
+<span class="nc" id="L259">        int formatId = rs.getInt(1);</span>
+<span class="nc" id="L260">        int len1 = rs.getInt(2);</span>
+<span class="nc" id="L261">        int len2 = rs.getInt(3);</span>
+<span class="nc" id="L262">        byte[] arr = rs.getBytes(4);</span>
+
+<span class="nc" id="L264">        byte[] globalTransactionId = new byte[len1];</span>
+<span class="nc" id="L265">        byte[] branchQualifier = new byte[len2];</span>
+<span class="nc" id="L266">        System.arraycopy(arr, 0, globalTransactionId, 0, len1);</span>
+<span class="nc" id="L267">        System.arraycopy(arr, len1, branchQualifier, 0, len2);</span>
+<span class="nc" id="L268">        xidList.add(new MariaDbXid(formatId, globalTransactionId, branchQualifier));</span>
+<span class="nc" id="L269">      }</span>
+<span class="nc" id="L270">      Xid[] xids = new Xid[xidList.size()];</span>
+<span class="nc" id="L271">      xidList.toArray(xids);</span>
+<span class="nc" id="L272">      return xids;</span>
+<span class="nc" id="L273">    } catch (SQLException sqle) {</span>
+<span class="nc" id="L274">      throw mapXaException(sqle);</span>
+    }
+  }
+
+  /**
+   * Informs the resource manager to roll back work done on behalf of a transaction branch.
+   *
+   * @param xid A global transaction identifier.
+   * @throws XAException An error has occurred.
+   */
+  public void rollback(Xid xid) throws XAException {
+<span class="nc" id="L285">    execute(&quot;XA ROLLBACK &quot; + xidToString(xid));</span>
+<span class="nc" id="L286">  }</span>
+
+  /**
+   * Sets the current transaction timeout value for this XAResource instance. Once set, this timeout
+   * value is effective until setTransactionTimeout is invoked again with a different value. To
+   * reset the timeout value to the default value used by the resource manager, set the value to
+   * zero. If the timeout operation is performed successfully, the method returns true; otherwise
+   * false. If a resource manager does not support explicitly setting the transaction timeout value,
+   * this method returns false.
+   *
+   * @param timeout The transaction timeout value in seconds.
+   * @return true if the transaction timeout value is set successfully; otherwise false.
+   */
+  public boolean setTransactionTimeout(int timeout) {
+<span class="nc" id="L300">    return false; // not implemented</span>
+  }
+
+  /**
+   * Starts work on behalf of a transaction branch specified in xid. If TMJOIN is specified, the
+   * start applies to joining a transaction previously seen by the resource manager. If TMRESUME is
+   * specified, the start applies to resuming a suspended transaction specified in the parameter
+   * xid. If neither TMJOIN nor TMRESUME is specified and the transaction specified by xid has
+   * previously been seen by the resource manager, the resource manager throws the XAException
+   * exception with XAER_DUPID error code.
+   *
+   * @param xid   A global transaction identifier to be associated with the resource.
+   * @param flags One of TMNOFLAGS, TMJOIN, or TMRESUME.
+   * @throws XAException An error has occurred.
+   */
+  public void start(Xid xid, int flags) throws XAException {
+<span class="nc bnc" id="L316" title="All 6 branches missed.">    if (flags != TMJOIN &amp;&amp; flags != TMRESUME &amp;&amp; flags != TMNOFLAGS) {</span>
+<span class="nc" id="L317">      throw new XAException(XAException.XAER_INVAL);</span>
+    }
+<span class="nc" id="L319">    execute(&quot;XA START &quot; + xidToString(xid) + &quot; &quot;</span>
+<span class="nc" id="L320">        + flagsToString(</span>
+<span class="nc bnc" id="L321" title="All 4 branches missed.">        flags == TMJOIN &amp;&amp; connection.getPinGlobalTxToPhysicalConnection() ? TMRESUME : flags));</span>
+<span class="nc" id="L322">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

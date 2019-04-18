@@ -1,0 +1,934 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ScalarOps.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.ed25519</a> &gt; <span class="el_source">ScalarOps.java</span></div><h1>ScalarOps.java</h1><pre class="source lang-java linenums">/**
+ * EdDSA-Java by str4d
+ * &lt;p&gt;
+ * To the extent possible under law, the person who associated CC0 with EdDSA-Java has waived all
+ * copyright and related or neighboring rights to EdDSA-Java.
+ * &lt;p&gt;
+ * You should have received a copy of the CC0 legalcode along with this work. If not, see
+ * &lt;https://creativecommons.org/publicdomain/zero/1.0/&gt;.
+ */
+package org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.ed25519;
+
+import static org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.ed25519.Ed25519LittleEndianEncoding.load_3;
+import static org.mariadb.jdbc.internal.com.send.authentication.ed25519.math.ed25519.Ed25519LittleEndianEncoding.load_4;
+
+/**
+ * Class for reducing a huge integer modulo the group order q and doing a combined multiply plus add
+ * plus reduce operation.
+ * &lt;p&gt;
+ * $q = 2^{252} + 27742317777372353535851937790883648493$.
+ * &lt;p&gt;
+ * Reviewed/commented by Bloody Rookie (nemproject@gmx.de)
+ */
+<span class="nc" id="L23">public class ScalarOps {</span>
+
+  /**
+   * Reduction modulo the group order $q$.
+   * &lt;p&gt;
+   * Input: $s[0]+256*s[1]+\dots+256^{63}*s[63] = s$
+   * &lt;p&gt;
+   * Output: $s[0]+256*s[1]+\dots+256^{31}*s[31] = s \bmod q$ where $q = 2^{252} +
+   * 27742317777372353535851937790883648493$.
+   *
+   * @param s byte array
+   * @return reduced byte array using a huge integer modulo the group order q
+   */
+  public byte[] reduce(byte[] s) {
+    // s0,..., s22 have 21 bits, s23 has 29 bits
+<span class="nc" id="L38">    long s0 = 0x1FFFFF &amp; load_3(s, 0);</span>
+<span class="nc" id="L39">    long s1 = 0x1FFFFF &amp; (load_4(s, 2) &gt;&gt; 5);</span>
+<span class="nc" id="L40">    long s2 = 0x1FFFFF &amp; (load_3(s, 5) &gt;&gt; 2);</span>
+<span class="nc" id="L41">    long s3 = 0x1FFFFF &amp; (load_4(s, 7) &gt;&gt; 7);</span>
+<span class="nc" id="L42">    long s4 = 0x1FFFFF &amp; (load_4(s, 10) &gt;&gt; 4);</span>
+<span class="nc" id="L43">    long s5 = 0x1FFFFF &amp; (load_3(s, 13) &gt;&gt; 1);</span>
+<span class="nc" id="L44">    long s6 = 0x1FFFFF &amp; (load_4(s, 15) &gt;&gt; 6);</span>
+<span class="nc" id="L45">    long s7 = 0x1FFFFF &amp; (load_3(s, 18) &gt;&gt; 3);</span>
+<span class="nc" id="L46">    long s8 = 0x1FFFFF &amp; load_3(s, 21);</span>
+<span class="nc" id="L47">    long s9 = 0x1FFFFF &amp; (load_4(s, 23) &gt;&gt; 5);</span>
+<span class="nc" id="L48">    long s10 = 0x1FFFFF &amp; (load_3(s, 26) &gt;&gt; 2);</span>
+<span class="nc" id="L49">    long s11 = 0x1FFFFF &amp; (load_4(s, 28) &gt;&gt; 7);</span>
+<span class="nc" id="L50">    long s12 = 0x1FFFFF &amp; (load_4(s, 31) &gt;&gt; 4);</span>
+<span class="nc" id="L51">    long s13 = 0x1FFFFF &amp; (load_3(s, 34) &gt;&gt; 1);</span>
+<span class="nc" id="L52">    long s14 = 0x1FFFFF &amp; (load_4(s, 36) &gt;&gt; 6);</span>
+<span class="nc" id="L53">    long s15 = 0x1FFFFF &amp; (load_3(s, 39) &gt;&gt; 3);</span>
+<span class="nc" id="L54">    long s16 = 0x1FFFFF &amp; load_3(s, 42);</span>
+<span class="nc" id="L55">    long s17 = 0x1FFFFF &amp; (load_4(s, 44) &gt;&gt; 5);</span>
+<span class="nc" id="L56">    long s18 = 0x1FFFFF &amp; (load_3(s, 47) &gt;&gt; 2);</span>
+<span class="nc" id="L57">    long s19 = 0x1FFFFF &amp; (load_4(s, 49) &gt;&gt; 7);</span>
+<span class="nc" id="L58">    long s20 = 0x1FFFFF &amp; (load_4(s, 52) &gt;&gt; 4);</span>
+<span class="nc" id="L59">    long s21 = 0x1FFFFF &amp; (load_3(s, 55) &gt;&gt; 1);</span>
+<span class="nc" id="L60">    long s22 = 0x1FFFFF &amp; (load_4(s, 57) &gt;&gt; 6);</span>
+<span class="nc" id="L61">    long s23 = (load_4(s, 60) &gt;&gt; 3);</span>
+    long carry0;
+    long carry1;
+    long carry2;
+    long carry3;
+    long carry4;
+    long carry5;
+    long carry6;
+    long carry7;
+    long carry8;
+    long carry9;
+    long carry10;
+    long carry11;
+    long carry12;
+    long carry13;
+    long carry14;
+    long carry15;
+    long carry16;
+
+    /**
+     * Lots of magic numbers :)
+     * To understand what's going on below, note that
+     *
+     * (1) q = 2^252 + q0 where q0 = 27742317777372353535851937790883648493.
+     * (2) s11 is the coefficient of 2^(11*21), s23 is the coefficient of 2^(^23*21) and 2^252 = 2^((23-11) * 21)).
+     * (3) 2^252 congruent -q0 modulo q.
+     * (4) -q0 = 666643 * 2^0 + 470296 * 2^21 + 654183 * 2^(2*21) - 997805 * 2^(3*21) + 136657 * 2^(4*21) - 683901 * 2^(5*21)
+     *
+     * Thus
+     * s23 * 2^(23*11) = s23 * 2^(12*21) * 2^(11*21) = s3 * 2^252 * 2^(11*21) congruent
+     * s23 * (666643 * 2^0 + 470296 * 2^21 + 654183 * 2^(2*21) - 997805 * 2^(3*21) + 136657 * 2^(4*21) - 683901 * 2^(5*21)) * 2^(11*21) modulo q =
+     * s23 * (666643 * 2^(11*21) + 470296 * 2^(12*21) + 654183 * 2^(13*21) - 997805 * 2^(14*21) + 136657 * 2^(15*21) - 683901 * 2^(16*21)).
+     *
+     * The same procedure is then applied for s22,...,s18.
+     */
+<span class="nc" id="L96">    s11 += s23 * 666643;</span>
+<span class="nc" id="L97">    s12 += s23 * 470296;</span>
+<span class="nc" id="L98">    s13 += s23 * 654183;</span>
+<span class="nc" id="L99">    s14 -= s23 * 997805;</span>
+<span class="nc" id="L100">    s15 += s23 * 136657;</span>
+<span class="nc" id="L101">    s16 -= s23 * 683901;</span>
+    // not used again
+    //s23 = 0;
+
+<span class="nc" id="L105">    s10 += s22 * 666643;</span>
+<span class="nc" id="L106">    s11 += s22 * 470296;</span>
+<span class="nc" id="L107">    s12 += s22 * 654183;</span>
+<span class="nc" id="L108">    s13 -= s22 * 997805;</span>
+<span class="nc" id="L109">    s14 += s22 * 136657;</span>
+<span class="nc" id="L110">    s15 -= s22 * 683901;</span>
+    // not used again
+    //s22 = 0;
+
+<span class="nc" id="L114">    s9 += s21 * 666643;</span>
+<span class="nc" id="L115">    s10 += s21 * 470296;</span>
+<span class="nc" id="L116">    s11 += s21 * 654183;</span>
+<span class="nc" id="L117">    s12 -= s21 * 997805;</span>
+<span class="nc" id="L118">    s13 += s21 * 136657;</span>
+<span class="nc" id="L119">    s14 -= s21 * 683901;</span>
+    // not used again
+    //s21 = 0;
+
+<span class="nc" id="L123">    s8 += s20 * 666643;</span>
+<span class="nc" id="L124">    s9 += s20 * 470296;</span>
+<span class="nc" id="L125">    s10 += s20 * 654183;</span>
+<span class="nc" id="L126">    s11 -= s20 * 997805;</span>
+<span class="nc" id="L127">    s12 += s20 * 136657;</span>
+<span class="nc" id="L128">    s13 -= s20 * 683901;</span>
+    // not used again
+    //s20 = 0;
+
+<span class="nc" id="L132">    s7 += s19 * 666643;</span>
+<span class="nc" id="L133">    s8 += s19 * 470296;</span>
+<span class="nc" id="L134">    s9 += s19 * 654183;</span>
+<span class="nc" id="L135">    s10 -= s19 * 997805;</span>
+<span class="nc" id="L136">    s11 += s19 * 136657;</span>
+<span class="nc" id="L137">    s12 -= s19 * 683901;</span>
+    // not used again
+    //s19 = 0;
+
+<span class="nc" id="L141">    s6 += s18 * 666643;</span>
+<span class="nc" id="L142">    s7 += s18 * 470296;</span>
+<span class="nc" id="L143">    s8 += s18 * 654183;</span>
+<span class="nc" id="L144">    s9 -= s18 * 997805;</span>
+<span class="nc" id="L145">    s10 += s18 * 136657;</span>
+<span class="nc" id="L146">    s11 -= s18 * 683901;</span>
+    // not used again
+    //s18 = 0;
+
+    /**
+     * Time to reduce the coefficient in order not to get an overflow.
+     */
+<span class="nc" id="L153">    carry6 = (s6 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L154">    s7 += carry6;</span>
+<span class="nc" id="L155">    s6 -= carry6 &lt;&lt; 21;</span>
+<span class="nc" id="L156">    carry8 = (s8 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L157">    s9 += carry8;</span>
+<span class="nc" id="L158">    s8 -= carry8 &lt;&lt; 21;</span>
+<span class="nc" id="L159">    carry10 = (s10 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L160">    s11 += carry10;</span>
+<span class="nc" id="L161">    s10 -= carry10 &lt;&lt; 21;</span>
+<span class="nc" id="L162">    carry12 = (s12 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L163">    s13 += carry12;</span>
+<span class="nc" id="L164">    s12 -= carry12 &lt;&lt; 21;</span>
+<span class="nc" id="L165">    carry14 = (s14 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L166">    s15 += carry14;</span>
+<span class="nc" id="L167">    s14 -= carry14 &lt;&lt; 21;</span>
+<span class="nc" id="L168">    carry16 = (s16 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L169">    s17 += carry16;</span>
+<span class="nc" id="L170">    s16 -= carry16 &lt;&lt; 21;</span>
+
+<span class="nc" id="L172">    carry7 = (s7 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L173">    s8 += carry7;</span>
+<span class="nc" id="L174">    s7 -= carry7 &lt;&lt; 21;</span>
+<span class="nc" id="L175">    carry9 = (s9 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L176">    s10 += carry9;</span>
+<span class="nc" id="L177">    s9 -= carry9 &lt;&lt; 21;</span>
+<span class="nc" id="L178">    carry11 = (s11 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L179">    s12 += carry11;</span>
+<span class="nc" id="L180">    s11 -= carry11 &lt;&lt; 21;</span>
+<span class="nc" id="L181">    carry13 = (s13 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L182">    s14 += carry13;</span>
+<span class="nc" id="L183">    s13 -= carry13 &lt;&lt; 21;</span>
+<span class="nc" id="L184">    carry15 = (s15 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L185">    s16 += carry15;</span>
+<span class="nc" id="L186">    s15 -= carry15 &lt;&lt; 21;</span>
+
+    /**
+     * Continue with above procedure.
+     */
+<span class="nc" id="L191">    s5 += s17 * 666643;</span>
+<span class="nc" id="L192">    s6 += s17 * 470296;</span>
+<span class="nc" id="L193">    s7 += s17 * 654183;</span>
+<span class="nc" id="L194">    s8 -= s17 * 997805;</span>
+<span class="nc" id="L195">    s9 += s17 * 136657;</span>
+<span class="nc" id="L196">    s10 -= s17 * 683901;</span>
+    // not used again
+    //s17 = 0;
+
+<span class="nc" id="L200">    s4 += s16 * 666643;</span>
+<span class="nc" id="L201">    s5 += s16 * 470296;</span>
+<span class="nc" id="L202">    s6 += s16 * 654183;</span>
+<span class="nc" id="L203">    s7 -= s16 * 997805;</span>
+<span class="nc" id="L204">    s8 += s16 * 136657;</span>
+<span class="nc" id="L205">    s9 -= s16 * 683901;</span>
+    // not used again
+    //s16 = 0;
+
+<span class="nc" id="L209">    s3 += s15 * 666643;</span>
+<span class="nc" id="L210">    s4 += s15 * 470296;</span>
+<span class="nc" id="L211">    s5 += s15 * 654183;</span>
+<span class="nc" id="L212">    s6 -= s15 * 997805;</span>
+<span class="nc" id="L213">    s7 += s15 * 136657;</span>
+<span class="nc" id="L214">    s8 -= s15 * 683901;</span>
+    // not used again
+    //s15 = 0;
+
+<span class="nc" id="L218">    s2 += s14 * 666643;</span>
+<span class="nc" id="L219">    s3 += s14 * 470296;</span>
+<span class="nc" id="L220">    s4 += s14 * 654183;</span>
+<span class="nc" id="L221">    s5 -= s14 * 997805;</span>
+<span class="nc" id="L222">    s6 += s14 * 136657;</span>
+<span class="nc" id="L223">    s7 -= s14 * 683901;</span>
+    // not used again
+    //s14 = 0;
+
+<span class="nc" id="L227">    s1 += s13 * 666643;</span>
+<span class="nc" id="L228">    s2 += s13 * 470296;</span>
+<span class="nc" id="L229">    s3 += s13 * 654183;</span>
+<span class="nc" id="L230">    s4 -= s13 * 997805;</span>
+<span class="nc" id="L231">    s5 += s13 * 136657;</span>
+<span class="nc" id="L232">    s6 -= s13 * 683901;</span>
+    // not used again
+    //s13 = 0;
+
+<span class="nc" id="L236">    s0 += s12 * 666643;</span>
+<span class="nc" id="L237">    s1 += s12 * 470296;</span>
+<span class="nc" id="L238">    s2 += s12 * 654183;</span>
+<span class="nc" id="L239">    s3 -= s12 * 997805;</span>
+<span class="nc" id="L240">    s4 += s12 * 136657;</span>
+<span class="nc" id="L241">    s5 -= s12 * 683901;</span>
+    // set below
+    //s12 = 0;
+
+    /**
+     * Reduce coefficients again.
+     */
+<span class="nc" id="L248">    carry0 = (s0 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L249">    s1 += carry0;</span>
+<span class="nc" id="L250">    s0 -= carry0 &lt;&lt; 21;</span>
+<span class="nc" id="L251">    carry2 = (s2 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L252">    s3 += carry2;</span>
+<span class="nc" id="L253">    s2 -= carry2 &lt;&lt; 21;</span>
+<span class="nc" id="L254">    carry4 = (s4 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L255">    s5 += carry4;</span>
+<span class="nc" id="L256">    s4 -= carry4 &lt;&lt; 21;</span>
+<span class="nc" id="L257">    carry6 = (s6 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L258">    s7 += carry6;</span>
+<span class="nc" id="L259">    s6 -= carry6 &lt;&lt; 21;</span>
+<span class="nc" id="L260">    carry8 = (s8 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L261">    s9 += carry8;</span>
+<span class="nc" id="L262">    s8 -= carry8 &lt;&lt; 21;</span>
+<span class="nc" id="L263">    carry10 = (s10 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L264">    s11 += carry10;</span>
+<span class="nc" id="L265">    s10 -= carry10 &lt;&lt; 21;</span>
+
+<span class="nc" id="L267">    carry1 = (s1 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L268">    s2 += carry1;</span>
+<span class="nc" id="L269">    s1 -= carry1 &lt;&lt; 21;</span>
+<span class="nc" id="L270">    carry3 = (s3 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L271">    s4 += carry3;</span>
+<span class="nc" id="L272">    s3 -= carry3 &lt;&lt; 21;</span>
+<span class="nc" id="L273">    carry5 = (s5 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L274">    s6 += carry5;</span>
+<span class="nc" id="L275">    s5 -= carry5 &lt;&lt; 21;</span>
+<span class="nc" id="L276">    carry7 = (s7 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L277">    s8 += carry7;</span>
+<span class="nc" id="L278">    s7 -= carry7 &lt;&lt; 21;</span>
+<span class="nc" id="L279">    carry9 = (s9 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L280">    s10 += carry9;</span>
+<span class="nc" id="L281">    s9 -= carry9 &lt;&lt; 21;</span>
+    //carry11 = (s11 + (1&lt;&lt;20)) &gt;&gt; 21; s12 += carry11; s11 -= carry11 &lt;&lt; 21;
+<span class="nc" id="L283">    carry11 = (s11 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L284">    s12 = carry11;</span>
+<span class="nc" id="L285">    s11 -= carry11 &lt;&lt; 21;</span>
+
+<span class="nc" id="L287">    s0 += s12 * 666643;</span>
+<span class="nc" id="L288">    s1 += s12 * 470296;</span>
+<span class="nc" id="L289">    s2 += s12 * 654183;</span>
+<span class="nc" id="L290">    s3 -= s12 * 997805;</span>
+<span class="nc" id="L291">    s4 += s12 * 136657;</span>
+<span class="nc" id="L292">    s5 -= s12 * 683901;</span>
+    // set below
+    //s12 = 0;
+
+<span class="nc" id="L296">    carry0 = s0 &gt;&gt; 21;</span>
+<span class="nc" id="L297">    s1 += carry0;</span>
+<span class="nc" id="L298">    s0 -= carry0 &lt;&lt; 21;</span>
+<span class="nc" id="L299">    carry1 = s1 &gt;&gt; 21;</span>
+<span class="nc" id="L300">    s2 += carry1;</span>
+<span class="nc" id="L301">    s1 -= carry1 &lt;&lt; 21;</span>
+<span class="nc" id="L302">    carry2 = s2 &gt;&gt; 21;</span>
+<span class="nc" id="L303">    s3 += carry2;</span>
+<span class="nc" id="L304">    s2 -= carry2 &lt;&lt; 21;</span>
+<span class="nc" id="L305">    carry3 = s3 &gt;&gt; 21;</span>
+<span class="nc" id="L306">    s4 += carry3;</span>
+<span class="nc" id="L307">    s3 -= carry3 &lt;&lt; 21;</span>
+<span class="nc" id="L308">    carry4 = s4 &gt;&gt; 21;</span>
+<span class="nc" id="L309">    s5 += carry4;</span>
+<span class="nc" id="L310">    s4 -= carry4 &lt;&lt; 21;</span>
+<span class="nc" id="L311">    carry5 = s5 &gt;&gt; 21;</span>
+<span class="nc" id="L312">    s6 += carry5;</span>
+<span class="nc" id="L313">    s5 -= carry5 &lt;&lt; 21;</span>
+<span class="nc" id="L314">    carry6 = s6 &gt;&gt; 21;</span>
+<span class="nc" id="L315">    s7 += carry6;</span>
+<span class="nc" id="L316">    s6 -= carry6 &lt;&lt; 21;</span>
+<span class="nc" id="L317">    carry7 = s7 &gt;&gt; 21;</span>
+<span class="nc" id="L318">    s8 += carry7;</span>
+<span class="nc" id="L319">    s7 -= carry7 &lt;&lt; 21;</span>
+<span class="nc" id="L320">    carry8 = s8 &gt;&gt; 21;</span>
+<span class="nc" id="L321">    s9 += carry8;</span>
+<span class="nc" id="L322">    s8 -= carry8 &lt;&lt; 21;</span>
+<span class="nc" id="L323">    carry9 = s9 &gt;&gt; 21;</span>
+<span class="nc" id="L324">    s10 += carry9;</span>
+<span class="nc" id="L325">    s9 -= carry9 &lt;&lt; 21;</span>
+<span class="nc" id="L326">    carry10 = s10 &gt;&gt; 21;</span>
+<span class="nc" id="L327">    s11 += carry10;</span>
+<span class="nc" id="L328">    s10 -= carry10 &lt;&lt; 21;</span>
+    //carry11 = s11 &gt;&gt; 21; s12 += carry11; s11 -= carry11 &lt;&lt; 21;
+<span class="nc" id="L330">    carry11 = s11 &gt;&gt; 21;</span>
+<span class="nc" id="L331">    s12 = carry11;</span>
+<span class="nc" id="L332">    s11 -= carry11 &lt;&lt; 21;</span>
+
+    // TODO-CR BR: Is it really needed to do it TWO times? (it doesn't hurt, just a question).
+<span class="nc" id="L335">    s0 += s12 * 666643;</span>
+<span class="nc" id="L336">    s1 += s12 * 470296;</span>
+<span class="nc" id="L337">    s2 += s12 * 654183;</span>
+<span class="nc" id="L338">    s3 -= s12 * 997805;</span>
+<span class="nc" id="L339">    s4 += s12 * 136657;</span>
+<span class="nc" id="L340">    s5 -= s12 * 683901;</span>
+    // not used again
+    //s12 = 0;
+
+<span class="nc" id="L344">    carry0 = s0 &gt;&gt; 21;</span>
+<span class="nc" id="L345">    s1 += carry0;</span>
+<span class="nc" id="L346">    s0 -= carry0 &lt;&lt; 21;</span>
+<span class="nc" id="L347">    carry1 = s1 &gt;&gt; 21;</span>
+<span class="nc" id="L348">    s2 += carry1;</span>
+<span class="nc" id="L349">    s1 -= carry1 &lt;&lt; 21;</span>
+<span class="nc" id="L350">    carry2 = s2 &gt;&gt; 21;</span>
+<span class="nc" id="L351">    s3 += carry2;</span>
+<span class="nc" id="L352">    s2 -= carry2 &lt;&lt; 21;</span>
+<span class="nc" id="L353">    carry3 = s3 &gt;&gt; 21;</span>
+<span class="nc" id="L354">    s4 += carry3;</span>
+<span class="nc" id="L355">    s3 -= carry3 &lt;&lt; 21;</span>
+<span class="nc" id="L356">    carry4 = s4 &gt;&gt; 21;</span>
+<span class="nc" id="L357">    s5 += carry4;</span>
+<span class="nc" id="L358">    s4 -= carry4 &lt;&lt; 21;</span>
+<span class="nc" id="L359">    carry5 = s5 &gt;&gt; 21;</span>
+<span class="nc" id="L360">    s6 += carry5;</span>
+<span class="nc" id="L361">    s5 -= carry5 &lt;&lt; 21;</span>
+<span class="nc" id="L362">    carry6 = s6 &gt;&gt; 21;</span>
+<span class="nc" id="L363">    s7 += carry6;</span>
+<span class="nc" id="L364">    s6 -= carry6 &lt;&lt; 21;</span>
+<span class="nc" id="L365">    carry7 = s7 &gt;&gt; 21;</span>
+<span class="nc" id="L366">    s8 += carry7;</span>
+<span class="nc" id="L367">    s7 -= carry7 &lt;&lt; 21;</span>
+<span class="nc" id="L368">    carry8 = s8 &gt;&gt; 21;</span>
+<span class="nc" id="L369">    s9 += carry8;</span>
+<span class="nc" id="L370">    s8 -= carry8 &lt;&lt; 21;</span>
+<span class="nc" id="L371">    carry9 = s9 &gt;&gt; 21;</span>
+<span class="nc" id="L372">    s10 += carry9;</span>
+<span class="nc" id="L373">    s9 -= carry9 &lt;&lt; 21;</span>
+<span class="nc" id="L374">    carry10 = s10 &gt;&gt; 21;</span>
+<span class="nc" id="L375">    s11 += carry10;</span>
+<span class="nc" id="L376">    s10 -= carry10 &lt;&lt; 21;</span>
+
+    // s0, ..., s11 got 21 bits each.
+<span class="nc" id="L379">    byte[] result = new byte[32];</span>
+<span class="nc" id="L380">    result[0] = (byte) s0;</span>
+<span class="nc" id="L381">    result[1] = (byte) (s0 &gt;&gt; 8);</span>
+<span class="nc" id="L382">    result[2] = (byte) ((s0 &gt;&gt; 16) | (s1 &lt;&lt; 5));</span>
+<span class="nc" id="L383">    result[3] = (byte) (s1 &gt;&gt; 3);</span>
+<span class="nc" id="L384">    result[4] = (byte) (s1 &gt;&gt; 11);</span>
+<span class="nc" id="L385">    result[5] = (byte) ((s1 &gt;&gt; 19) | (s2 &lt;&lt; 2));</span>
+<span class="nc" id="L386">    result[6] = (byte) (s2 &gt;&gt; 6);</span>
+<span class="nc" id="L387">    result[7] = (byte) ((s2 &gt;&gt; 14) | (s3 &lt;&lt; 7));</span>
+<span class="nc" id="L388">    result[8] = (byte) (s3 &gt;&gt; 1);</span>
+<span class="nc" id="L389">    result[9] = (byte) (s3 &gt;&gt; 9);</span>
+<span class="nc" id="L390">    result[10] = (byte) ((s3 &gt;&gt; 17) | (s4 &lt;&lt; 4));</span>
+<span class="nc" id="L391">    result[11] = (byte) (s4 &gt;&gt; 4);</span>
+<span class="nc" id="L392">    result[12] = (byte) (s4 &gt;&gt; 12);</span>
+<span class="nc" id="L393">    result[13] = (byte) ((s4 &gt;&gt; 20) | (s5 &lt;&lt; 1));</span>
+<span class="nc" id="L394">    result[14] = (byte) (s5 &gt;&gt; 7);</span>
+<span class="nc" id="L395">    result[15] = (byte) ((s5 &gt;&gt; 15) | (s6 &lt;&lt; 6));</span>
+<span class="nc" id="L396">    result[16] = (byte) (s6 &gt;&gt; 2);</span>
+<span class="nc" id="L397">    result[17] = (byte) (s6 &gt;&gt; 10);</span>
+<span class="nc" id="L398">    result[18] = (byte) ((s6 &gt;&gt; 18) | (s7 &lt;&lt; 3));</span>
+<span class="nc" id="L399">    result[19] = (byte) (s7 &gt;&gt; 5);</span>
+<span class="nc" id="L400">    result[20] = (byte) (s7 &gt;&gt; 13);</span>
+<span class="nc" id="L401">    result[21] = (byte) s8;</span>
+<span class="nc" id="L402">    result[22] = (byte) (s8 &gt;&gt; 8);</span>
+<span class="nc" id="L403">    result[23] = (byte) ((s8 &gt;&gt; 16) | (s9 &lt;&lt; 5));</span>
+<span class="nc" id="L404">    result[24] = (byte) (s9 &gt;&gt; 3);</span>
+<span class="nc" id="L405">    result[25] = (byte) (s9 &gt;&gt; 11);</span>
+<span class="nc" id="L406">    result[26] = (byte) ((s9 &gt;&gt; 19) | (s10 &lt;&lt; 2));</span>
+<span class="nc" id="L407">    result[27] = (byte) (s10 &gt;&gt; 6);</span>
+<span class="nc" id="L408">    result[28] = (byte) ((s10 &gt;&gt; 14) | (s11 &lt;&lt; 7));</span>
+<span class="nc" id="L409">    result[29] = (byte) (s11 &gt;&gt; 1);</span>
+<span class="nc" id="L410">    result[30] = (byte) (s11 &gt;&gt; 9);</span>
+<span class="nc" id="L411">    result[31] = (byte) (s11 &gt;&gt; 17);</span>
+<span class="nc" id="L412">    return result;</span>
+  }
+
+
+  /**
+   * $(ab+c) \bmod q$
+   * &lt;p&gt;
+   * Input:
+   * &lt;/p&gt;&lt;ul&gt;
+   * &lt;li&gt;$a[0]+256*a[1]+\dots+256^{31}*a[31] = a$
+   * &lt;li&gt;$b[0]+256*b[1]+\dots+256^{31}*b[31] = b$
+   * &lt;li&gt;$c[0]+256*c[1]+\dots+256^{31}*c[31] = c$
+   * &lt;/ul&gt;&lt;p&gt;
+   * Output: $result[0]+256*result[1]+\dots+256^{31}*result[31] = (ab+c) \bmod q$ where $q = 2^{252}
+   * + 27742317777372353535851937790883648493$.
+   * &lt;p&gt;
+   * See the comments in {@link #reduce(byte[])} for an explanation of the algorithm.
+   *
+   * @param a a
+   * @param b b
+   * @param c c
+   * @return multiplied result
+   */
+  public byte[] multiplyAndAdd(byte[] a, byte[] b, byte[] c) {
+<span class="nc" id="L436">    long a0 = 0x1FFFFF &amp; load_3(a, 0);</span>
+<span class="nc" id="L437">    long a1 = 0x1FFFFF &amp; (load_4(a, 2) &gt;&gt; 5);</span>
+<span class="nc" id="L438">    long a2 = 0x1FFFFF &amp; (load_3(a, 5) &gt;&gt; 2);</span>
+<span class="nc" id="L439">    long a3 = 0x1FFFFF &amp; (load_4(a, 7) &gt;&gt; 7);</span>
+<span class="nc" id="L440">    long a4 = 0x1FFFFF &amp; (load_4(a, 10) &gt;&gt; 4);</span>
+<span class="nc" id="L441">    long a5 = 0x1FFFFF &amp; (load_3(a, 13) &gt;&gt; 1);</span>
+<span class="nc" id="L442">    long a6 = 0x1FFFFF &amp; (load_4(a, 15) &gt;&gt; 6);</span>
+<span class="nc" id="L443">    long a7 = 0x1FFFFF &amp; (load_3(a, 18) &gt;&gt; 3);</span>
+<span class="nc" id="L444">    long a8 = 0x1FFFFF &amp; load_3(a, 21);</span>
+<span class="nc" id="L445">    long a9 = 0x1FFFFF &amp; (load_4(a, 23) &gt;&gt; 5);</span>
+<span class="nc" id="L446">    long a10 = 0x1FFFFF &amp; (load_3(a, 26) &gt;&gt; 2);</span>
+<span class="nc" id="L447">    long a11 = (load_4(a, 28) &gt;&gt; 7);</span>
+<span class="nc" id="L448">    long b0 = 0x1FFFFF &amp; load_3(b, 0);</span>
+<span class="nc" id="L449">    long b1 = 0x1FFFFF &amp; (load_4(b, 2) &gt;&gt; 5);</span>
+<span class="nc" id="L450">    long b2 = 0x1FFFFF &amp; (load_3(b, 5) &gt;&gt; 2);</span>
+<span class="nc" id="L451">    long b3 = 0x1FFFFF &amp; (load_4(b, 7) &gt;&gt; 7);</span>
+<span class="nc" id="L452">    long b4 = 0x1FFFFF &amp; (load_4(b, 10) &gt;&gt; 4);</span>
+<span class="nc" id="L453">    long b5 = 0x1FFFFF &amp; (load_3(b, 13) &gt;&gt; 1);</span>
+<span class="nc" id="L454">    long b6 = 0x1FFFFF &amp; (load_4(b, 15) &gt;&gt; 6);</span>
+<span class="nc" id="L455">    long b7 = 0x1FFFFF &amp; (load_3(b, 18) &gt;&gt; 3);</span>
+<span class="nc" id="L456">    long b8 = 0x1FFFFF &amp; load_3(b, 21);</span>
+<span class="nc" id="L457">    long b9 = 0x1FFFFF &amp; (load_4(b, 23) &gt;&gt; 5);</span>
+<span class="nc" id="L458">    long b10 = 0x1FFFFF &amp; (load_3(b, 26) &gt;&gt; 2);</span>
+<span class="nc" id="L459">    long b11 = (load_4(b, 28) &gt;&gt; 7);</span>
+<span class="nc" id="L460">    long c0 = 0x1FFFFF &amp; load_3(c, 0);</span>
+<span class="nc" id="L461">    long c1 = 0x1FFFFF &amp; (load_4(c, 2) &gt;&gt; 5);</span>
+<span class="nc" id="L462">    long c2 = 0x1FFFFF &amp; (load_3(c, 5) &gt;&gt; 2);</span>
+<span class="nc" id="L463">    long c3 = 0x1FFFFF &amp; (load_4(c, 7) &gt;&gt; 7);</span>
+<span class="nc" id="L464">    long c4 = 0x1FFFFF &amp; (load_4(c, 10) &gt;&gt; 4);</span>
+<span class="nc" id="L465">    long c5 = 0x1FFFFF &amp; (load_3(c, 13) &gt;&gt; 1);</span>
+<span class="nc" id="L466">    long c6 = 0x1FFFFF &amp; (load_4(c, 15) &gt;&gt; 6);</span>
+<span class="nc" id="L467">    long c7 = 0x1FFFFF &amp; (load_3(c, 18) &gt;&gt; 3);</span>
+<span class="nc" id="L468">    long c8 = 0x1FFFFF &amp; load_3(c, 21);</span>
+<span class="nc" id="L469">    long c9 = 0x1FFFFF &amp; (load_4(c, 23) &gt;&gt; 5);</span>
+<span class="nc" id="L470">    long c10 = 0x1FFFFF &amp; (load_3(c, 26) &gt;&gt; 2);</span>
+<span class="nc" id="L471">    long c11 = (load_4(c, 28) &gt;&gt; 7);</span>
+    long s0;
+    long s1;
+    long s2;
+    long s3;
+    long s4;
+    long s5;
+    long s6;
+    long s7;
+    long s8;
+    long s9;
+    long s10;
+    long s11;
+    long s12;
+    long s13;
+    long s14;
+    long s15;
+    long s16;
+    long s17;
+    long s18;
+    long s19;
+    long s20;
+    long s21;
+    long s22;
+    long s23;
+    long carry0;
+    long carry1;
+    long carry2;
+    long carry3;
+    long carry4;
+    long carry5;
+    long carry6;
+    long carry7;
+    long carry8;
+    long carry9;
+    long carry10;
+    long carry11;
+    long carry12;
+    long carry13;
+    long carry14;
+    long carry15;
+    long carry16;
+    long carry17;
+    long carry18;
+    long carry19;
+    long carry20;
+    long carry21;
+    long carry22;
+
+<span class="nc" id="L520">    s0 = c0 + a0 * b0;</span>
+<span class="nc" id="L521">    s1 = c1 + a0 * b1 + a1 * b0;</span>
+<span class="nc" id="L522">    s2 = c2 + a0 * b2 + a1 * b1 + a2 * b0;</span>
+<span class="nc" id="L523">    s3 = c3 + a0 * b3 + a1 * b2 + a2 * b1 + a3 * b0;</span>
+<span class="nc" id="L524">    s4 = c4 + a0 * b4 + a1 * b3 + a2 * b2 + a3 * b1 + a4 * b0;</span>
+<span class="nc" id="L525">    s5 = c5 + a0 * b5 + a1 * b4 + a2 * b3 + a3 * b2 + a4 * b1 + a5 * b0;</span>
+<span class="nc" id="L526">    s6 = c6 + a0 * b6 + a1 * b5 + a2 * b4 + a3 * b3 + a4 * b2 + a5 * b1 + a6 * b0;</span>
+<span class="nc" id="L527">    s7 = c7 + a0 * b7 + a1 * b6 + a2 * b5 + a3 * b4 + a4 * b3 + a5 * b2 + a6 * b1 + a7 * b0;</span>
+<span class="nc" id="L528">    s8 = c8 + a0 * b8 + a1 * b7 + a2 * b6 + a3 * b5 + a4 * b4 + a5 * b3 + a6 * b2 + a7 * b1</span>
+        + a8 * b0;
+<span class="nc" id="L530">    s9 =</span>
+        c9 + a0 * b9 + a1 * b8 + a2 * b7 + a3 * b6 + a4 * b5 + a5 * b4 + a6 * b3 + a7 * b2 + a8 * b1
+            + a9 * b0;
+<span class="nc" id="L533">    s10 = c10 + a0 * b10 + a1 * b9 + a2 * b8 + a3 * b7 + a4 * b6 + a5 * b5 + a6 * b4 + a7 * b3</span>
+        + a8 * b2 + a9 * b1 + a10 * b0;
+<span class="nc" id="L535">    s11 = c11 + a0 * b11 + a1 * b10 + a2 * b9 + a3 * b8 + a4 * b7 + a5 * b6 + a6 * b5 + a7 * b4</span>
+        + a8 * b3 + a9 * b2 + a10 * b1 + a11 * b0;
+<span class="nc" id="L537">    s12 = a1 * b11 + a2 * b10 + a3 * b9 + a4 * b8 + a5 * b7 + a6 * b6 + a7 * b5 + a8 * b4 + a9 * b3</span>
+        + a10 * b2 + a11 * b1;
+<span class="nc" id="L539">    s13 = a2 * b11 + a3 * b10 + a4 * b9 + a5 * b8 + a6 * b7 + a7 * b6 + a8 * b5 + a9 * b4 + a10 * b3</span>
+        + a11 * b2;
+<span class="nc" id="L541">    s14 =</span>
+        a3 * b11 + a4 * b10 + a5 * b9 + a6 * b8 + a7 * b7 + a8 * b6 + a9 * b5 + a10 * b4 + a11 * b3;
+<span class="nc" id="L543">    s15 = a4 * b11 + a5 * b10 + a6 * b9 + a7 * b8 + a8 * b7 + a9 * b6 + a10 * b5 + a11 * b4;</span>
+<span class="nc" id="L544">    s16 = a5 * b11 + a6 * b10 + a7 * b9 + a8 * b8 + a9 * b7 + a10 * b6 + a11 * b5;</span>
+<span class="nc" id="L545">    s17 = a6 * b11 + a7 * b10 + a8 * b9 + a9 * b8 + a10 * b7 + a11 * b6;</span>
+<span class="nc" id="L546">    s18 = a7 * b11 + a8 * b10 + a9 * b9 + a10 * b8 + a11 * b7;</span>
+<span class="nc" id="L547">    s19 = a8 * b11 + a9 * b10 + a10 * b9 + a11 * b8;</span>
+<span class="nc" id="L548">    s20 = a9 * b11 + a10 * b10 + a11 * b9;</span>
+<span class="nc" id="L549">    s21 = a10 * b11 + a11 * b10;</span>
+<span class="nc" id="L550">    s22 = a11 * b11;</span>
+    // set below
+    //s23 = 0;
+
+<span class="nc" id="L554">    carry0 = (s0 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L555">    s1 += carry0;</span>
+<span class="nc" id="L556">    s0 -= carry0 &lt;&lt; 21;</span>
+<span class="nc" id="L557">    carry2 = (s2 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L558">    s3 += carry2;</span>
+<span class="nc" id="L559">    s2 -= carry2 &lt;&lt; 21;</span>
+<span class="nc" id="L560">    carry4 = (s4 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L561">    s5 += carry4;</span>
+<span class="nc" id="L562">    s4 -= carry4 &lt;&lt; 21;</span>
+<span class="nc" id="L563">    carry6 = (s6 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L564">    s7 += carry6;</span>
+<span class="nc" id="L565">    s6 -= carry6 &lt;&lt; 21;</span>
+<span class="nc" id="L566">    carry8 = (s8 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L567">    s9 += carry8;</span>
+<span class="nc" id="L568">    s8 -= carry8 &lt;&lt; 21;</span>
+<span class="nc" id="L569">    carry10 = (s10 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L570">    s11 += carry10;</span>
+<span class="nc" id="L571">    s10 -= carry10 &lt;&lt; 21;</span>
+<span class="nc" id="L572">    carry12 = (s12 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L573">    s13 += carry12;</span>
+<span class="nc" id="L574">    s12 -= carry12 &lt;&lt; 21;</span>
+<span class="nc" id="L575">    carry14 = (s14 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L576">    s15 += carry14;</span>
+<span class="nc" id="L577">    s14 -= carry14 &lt;&lt; 21;</span>
+<span class="nc" id="L578">    carry16 = (s16 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L579">    s17 += carry16;</span>
+<span class="nc" id="L580">    s16 -= carry16 &lt;&lt; 21;</span>
+<span class="nc" id="L581">    carry18 = (s18 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L582">    s19 += carry18;</span>
+<span class="nc" id="L583">    s18 -= carry18 &lt;&lt; 21;</span>
+<span class="nc" id="L584">    carry20 = (s20 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L585">    s21 += carry20;</span>
+<span class="nc" id="L586">    s20 -= carry20 &lt;&lt; 21;</span>
+    //carry22 = (s22 + (1&lt;&lt;20)) &gt;&gt; 21; s23 += carry22; s22 -= carry22 &lt;&lt; 21;
+<span class="nc" id="L588">    carry22 = (s22 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L589">    s23 = carry22;</span>
+<span class="nc" id="L590">    s22 -= carry22 &lt;&lt; 21;</span>
+
+<span class="nc" id="L592">    carry1 = (s1 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L593">    s2 += carry1;</span>
+<span class="nc" id="L594">    s1 -= carry1 &lt;&lt; 21;</span>
+<span class="nc" id="L595">    carry3 = (s3 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L596">    s4 += carry3;</span>
+<span class="nc" id="L597">    s3 -= carry3 &lt;&lt; 21;</span>
+<span class="nc" id="L598">    carry5 = (s5 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L599">    s6 += carry5;</span>
+<span class="nc" id="L600">    s5 -= carry5 &lt;&lt; 21;</span>
+<span class="nc" id="L601">    carry7 = (s7 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L602">    s8 += carry7;</span>
+<span class="nc" id="L603">    s7 -= carry7 &lt;&lt; 21;</span>
+<span class="nc" id="L604">    carry9 = (s9 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L605">    s10 += carry9;</span>
+<span class="nc" id="L606">    s9 -= carry9 &lt;&lt; 21;</span>
+<span class="nc" id="L607">    carry11 = (s11 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L608">    s12 += carry11;</span>
+<span class="nc" id="L609">    s11 -= carry11 &lt;&lt; 21;</span>
+<span class="nc" id="L610">    carry13 = (s13 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L611">    s14 += carry13;</span>
+<span class="nc" id="L612">    s13 -= carry13 &lt;&lt; 21;</span>
+<span class="nc" id="L613">    carry15 = (s15 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L614">    s16 += carry15;</span>
+<span class="nc" id="L615">    s15 -= carry15 &lt;&lt; 21;</span>
+<span class="nc" id="L616">    carry17 = (s17 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L617">    s18 += carry17;</span>
+<span class="nc" id="L618">    s17 -= carry17 &lt;&lt; 21;</span>
+<span class="nc" id="L619">    carry19 = (s19 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L620">    s20 += carry19;</span>
+<span class="nc" id="L621">    s19 -= carry19 &lt;&lt; 21;</span>
+<span class="nc" id="L622">    carry21 = (s21 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L623">    s22 += carry21;</span>
+<span class="nc" id="L624">    s21 -= carry21 &lt;&lt; 21;</span>
+
+<span class="nc" id="L626">    s11 += s23 * 666643;</span>
+<span class="nc" id="L627">    s12 += s23 * 470296;</span>
+<span class="nc" id="L628">    s13 += s23 * 654183;</span>
+<span class="nc" id="L629">    s14 -= s23 * 997805;</span>
+<span class="nc" id="L630">    s15 += s23 * 136657;</span>
+<span class="nc" id="L631">    s16 -= s23 * 683901;</span>
+    // not used again
+    //s23 = 0;
+
+<span class="nc" id="L635">    s10 += s22 * 666643;</span>
+<span class="nc" id="L636">    s11 += s22 * 470296;</span>
+<span class="nc" id="L637">    s12 += s22 * 654183;</span>
+<span class="nc" id="L638">    s13 -= s22 * 997805;</span>
+<span class="nc" id="L639">    s14 += s22 * 136657;</span>
+<span class="nc" id="L640">    s15 -= s22 * 683901;</span>
+    // not used again
+    //s22 = 0;
+
+<span class="nc" id="L644">    s9 += s21 * 666643;</span>
+<span class="nc" id="L645">    s10 += s21 * 470296;</span>
+<span class="nc" id="L646">    s11 += s21 * 654183;</span>
+<span class="nc" id="L647">    s12 -= s21 * 997805;</span>
+<span class="nc" id="L648">    s13 += s21 * 136657;</span>
+<span class="nc" id="L649">    s14 -= s21 * 683901;</span>
+    // not used again
+    //s21 = 0;
+
+<span class="nc" id="L653">    s8 += s20 * 666643;</span>
+<span class="nc" id="L654">    s9 += s20 * 470296;</span>
+<span class="nc" id="L655">    s10 += s20 * 654183;</span>
+<span class="nc" id="L656">    s11 -= s20 * 997805;</span>
+<span class="nc" id="L657">    s12 += s20 * 136657;</span>
+<span class="nc" id="L658">    s13 -= s20 * 683901;</span>
+    // not used again
+    //s20 = 0;
+
+<span class="nc" id="L662">    s7 += s19 * 666643;</span>
+<span class="nc" id="L663">    s8 += s19 * 470296;</span>
+<span class="nc" id="L664">    s9 += s19 * 654183;</span>
+<span class="nc" id="L665">    s10 -= s19 * 997805;</span>
+<span class="nc" id="L666">    s11 += s19 * 136657;</span>
+<span class="nc" id="L667">    s12 -= s19 * 683901;</span>
+    // not used again
+    //s19 = 0;
+
+<span class="nc" id="L671">    s6 += s18 * 666643;</span>
+<span class="nc" id="L672">    s7 += s18 * 470296;</span>
+<span class="nc" id="L673">    s8 += s18 * 654183;</span>
+<span class="nc" id="L674">    s9 -= s18 * 997805;</span>
+<span class="nc" id="L675">    s10 += s18 * 136657;</span>
+<span class="nc" id="L676">    s11 -= s18 * 683901;</span>
+    // not used again
+    //s18 = 0;
+
+<span class="nc" id="L680">    carry6 = (s6 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L681">    s7 += carry6;</span>
+<span class="nc" id="L682">    s6 -= carry6 &lt;&lt; 21;</span>
+<span class="nc" id="L683">    carry8 = (s8 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L684">    s9 += carry8;</span>
+<span class="nc" id="L685">    s8 -= carry8 &lt;&lt; 21;</span>
+<span class="nc" id="L686">    carry10 = (s10 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L687">    s11 += carry10;</span>
+<span class="nc" id="L688">    s10 -= carry10 &lt;&lt; 21;</span>
+<span class="nc" id="L689">    carry12 = (s12 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L690">    s13 += carry12;</span>
+<span class="nc" id="L691">    s12 -= carry12 &lt;&lt; 21;</span>
+<span class="nc" id="L692">    carry14 = (s14 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L693">    s15 += carry14;</span>
+<span class="nc" id="L694">    s14 -= carry14 &lt;&lt; 21;</span>
+<span class="nc" id="L695">    carry16 = (s16 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L696">    s17 += carry16;</span>
+<span class="nc" id="L697">    s16 -= carry16 &lt;&lt; 21;</span>
+
+<span class="nc" id="L699">    carry7 = (s7 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L700">    s8 += carry7;</span>
+<span class="nc" id="L701">    s7 -= carry7 &lt;&lt; 21;</span>
+<span class="nc" id="L702">    carry9 = (s9 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L703">    s10 += carry9;</span>
+<span class="nc" id="L704">    s9 -= carry9 &lt;&lt; 21;</span>
+<span class="nc" id="L705">    carry11 = (s11 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L706">    s12 += carry11;</span>
+<span class="nc" id="L707">    s11 -= carry11 &lt;&lt; 21;</span>
+<span class="nc" id="L708">    carry13 = (s13 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L709">    s14 += carry13;</span>
+<span class="nc" id="L710">    s13 -= carry13 &lt;&lt; 21;</span>
+<span class="nc" id="L711">    carry15 = (s15 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L712">    s16 += carry15;</span>
+<span class="nc" id="L713">    s15 -= carry15 &lt;&lt; 21;</span>
+
+<span class="nc" id="L715">    s5 += s17 * 666643;</span>
+<span class="nc" id="L716">    s6 += s17 * 470296;</span>
+<span class="nc" id="L717">    s7 += s17 * 654183;</span>
+<span class="nc" id="L718">    s8 -= s17 * 997805;</span>
+<span class="nc" id="L719">    s9 += s17 * 136657;</span>
+<span class="nc" id="L720">    s10 -= s17 * 683901;</span>
+    // not used again
+    //s17 = 0;
+
+<span class="nc" id="L724">    s4 += s16 * 666643;</span>
+<span class="nc" id="L725">    s5 += s16 * 470296;</span>
+<span class="nc" id="L726">    s6 += s16 * 654183;</span>
+<span class="nc" id="L727">    s7 -= s16 * 997805;</span>
+<span class="nc" id="L728">    s8 += s16 * 136657;</span>
+<span class="nc" id="L729">    s9 -= s16 * 683901;</span>
+    // not used again
+    //s16 = 0;
+
+<span class="nc" id="L733">    s3 += s15 * 666643;</span>
+<span class="nc" id="L734">    s4 += s15 * 470296;</span>
+<span class="nc" id="L735">    s5 += s15 * 654183;</span>
+<span class="nc" id="L736">    s6 -= s15 * 997805;</span>
+<span class="nc" id="L737">    s7 += s15 * 136657;</span>
+<span class="nc" id="L738">    s8 -= s15 * 683901;</span>
+    // not used again
+    //s15 = 0;
+
+<span class="nc" id="L742">    s2 += s14 * 666643;</span>
+<span class="nc" id="L743">    s3 += s14 * 470296;</span>
+<span class="nc" id="L744">    s4 += s14 * 654183;</span>
+<span class="nc" id="L745">    s5 -= s14 * 997805;</span>
+<span class="nc" id="L746">    s6 += s14 * 136657;</span>
+<span class="nc" id="L747">    s7 -= s14 * 683901;</span>
+    // not used again
+    //s14 = 0;
+
+<span class="nc" id="L751">    s1 += s13 * 666643;</span>
+<span class="nc" id="L752">    s2 += s13 * 470296;</span>
+<span class="nc" id="L753">    s3 += s13 * 654183;</span>
+<span class="nc" id="L754">    s4 -= s13 * 997805;</span>
+<span class="nc" id="L755">    s5 += s13 * 136657;</span>
+<span class="nc" id="L756">    s6 -= s13 * 683901;</span>
+    // not used again
+    //s13 = 0;
+
+<span class="nc" id="L760">    s0 += s12 * 666643;</span>
+<span class="nc" id="L761">    s1 += s12 * 470296;</span>
+<span class="nc" id="L762">    s2 += s12 * 654183;</span>
+<span class="nc" id="L763">    s3 -= s12 * 997805;</span>
+<span class="nc" id="L764">    s4 += s12 * 136657;</span>
+<span class="nc" id="L765">    s5 -= s12 * 683901;</span>
+    // set below
+    //s12 = 0;
+
+<span class="nc" id="L769">    carry0 = (s0 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L770">    s1 += carry0;</span>
+<span class="nc" id="L771">    s0 -= carry0 &lt;&lt; 21;</span>
+<span class="nc" id="L772">    carry2 = (s2 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L773">    s3 += carry2;</span>
+<span class="nc" id="L774">    s2 -= carry2 &lt;&lt; 21;</span>
+<span class="nc" id="L775">    carry4 = (s4 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L776">    s5 += carry4;</span>
+<span class="nc" id="L777">    s4 -= carry4 &lt;&lt; 21;</span>
+<span class="nc" id="L778">    carry6 = (s6 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L779">    s7 += carry6;</span>
+<span class="nc" id="L780">    s6 -= carry6 &lt;&lt; 21;</span>
+<span class="nc" id="L781">    carry8 = (s8 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L782">    s9 += carry8;</span>
+<span class="nc" id="L783">    s8 -= carry8 &lt;&lt; 21;</span>
+<span class="nc" id="L784">    carry10 = (s10 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L785">    s11 += carry10;</span>
+<span class="nc" id="L786">    s10 -= carry10 &lt;&lt; 21;</span>
+
+<span class="nc" id="L788">    carry1 = (s1 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L789">    s2 += carry1;</span>
+<span class="nc" id="L790">    s1 -= carry1 &lt;&lt; 21;</span>
+<span class="nc" id="L791">    carry3 = (s3 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L792">    s4 += carry3;</span>
+<span class="nc" id="L793">    s3 -= carry3 &lt;&lt; 21;</span>
+<span class="nc" id="L794">    carry5 = (s5 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L795">    s6 += carry5;</span>
+<span class="nc" id="L796">    s5 -= carry5 &lt;&lt; 21;</span>
+<span class="nc" id="L797">    carry7 = (s7 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L798">    s8 += carry7;</span>
+<span class="nc" id="L799">    s7 -= carry7 &lt;&lt; 21;</span>
+<span class="nc" id="L800">    carry9 = (s9 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L801">    s10 += carry9;</span>
+<span class="nc" id="L802">    s9 -= carry9 &lt;&lt; 21;</span>
+    //carry11 = (s11 + (1&lt;&lt;20)) &gt;&gt; 21; s12 += carry11; s11 -= carry11 &lt;&lt; 21;
+<span class="nc" id="L804">    carry11 = (s11 + (1 &lt;&lt; 20)) &gt;&gt; 21;</span>
+<span class="nc" id="L805">    s12 = carry11;</span>
+<span class="nc" id="L806">    s11 -= carry11 &lt;&lt; 21;</span>
+
+<span class="nc" id="L808">    s0 += s12 * 666643;</span>
+<span class="nc" id="L809">    s1 += s12 * 470296;</span>
+<span class="nc" id="L810">    s2 += s12 * 654183;</span>
+<span class="nc" id="L811">    s3 -= s12 * 997805;</span>
+<span class="nc" id="L812">    s4 += s12 * 136657;</span>
+<span class="nc" id="L813">    s5 -= s12 * 683901;</span>
+    // set below
+    //s12 = 0;
+
+<span class="nc" id="L817">    carry0 = s0 &gt;&gt; 21;</span>
+<span class="nc" id="L818">    s1 += carry0;</span>
+<span class="nc" id="L819">    s0 -= carry0 &lt;&lt; 21;</span>
+<span class="nc" id="L820">    carry1 = s1 &gt;&gt; 21;</span>
+<span class="nc" id="L821">    s2 += carry1;</span>
+<span class="nc" id="L822">    s1 -= carry1 &lt;&lt; 21;</span>
+<span class="nc" id="L823">    carry2 = s2 &gt;&gt; 21;</span>
+<span class="nc" id="L824">    s3 += carry2;</span>
+<span class="nc" id="L825">    s2 -= carry2 &lt;&lt; 21;</span>
+<span class="nc" id="L826">    carry3 = s3 &gt;&gt; 21;</span>
+<span class="nc" id="L827">    s4 += carry3;</span>
+<span class="nc" id="L828">    s3 -= carry3 &lt;&lt; 21;</span>
+<span class="nc" id="L829">    carry4 = s4 &gt;&gt; 21;</span>
+<span class="nc" id="L830">    s5 += carry4;</span>
+<span class="nc" id="L831">    s4 -= carry4 &lt;&lt; 21;</span>
+<span class="nc" id="L832">    carry5 = s5 &gt;&gt; 21;</span>
+<span class="nc" id="L833">    s6 += carry5;</span>
+<span class="nc" id="L834">    s5 -= carry5 &lt;&lt; 21;</span>
+<span class="nc" id="L835">    carry6 = s6 &gt;&gt; 21;</span>
+<span class="nc" id="L836">    s7 += carry6;</span>
+<span class="nc" id="L837">    s6 -= carry6 &lt;&lt; 21;</span>
+<span class="nc" id="L838">    carry7 = s7 &gt;&gt; 21;</span>
+<span class="nc" id="L839">    s8 += carry7;</span>
+<span class="nc" id="L840">    s7 -= carry7 &lt;&lt; 21;</span>
+<span class="nc" id="L841">    carry8 = s8 &gt;&gt; 21;</span>
+<span class="nc" id="L842">    s9 += carry8;</span>
+<span class="nc" id="L843">    s8 -= carry8 &lt;&lt; 21;</span>
+<span class="nc" id="L844">    carry9 = s9 &gt;&gt; 21;</span>
+<span class="nc" id="L845">    s10 += carry9;</span>
+<span class="nc" id="L846">    s9 -= carry9 &lt;&lt; 21;</span>
+<span class="nc" id="L847">    carry10 = s10 &gt;&gt; 21;</span>
+<span class="nc" id="L848">    s11 += carry10;</span>
+<span class="nc" id="L849">    s10 -= carry10 &lt;&lt; 21;</span>
+    //carry11 = s11 &gt;&gt; 21; s12 += carry11; s11 -= carry11 &lt;&lt; 21;
+<span class="nc" id="L851">    carry11 = s11 &gt;&gt; 21;</span>
+<span class="nc" id="L852">    s12 = carry11;</span>
+<span class="nc" id="L853">    s11 -= carry11 &lt;&lt; 21;</span>
+
+<span class="nc" id="L855">    s0 += s12 * 666643;</span>
+<span class="nc" id="L856">    s1 += s12 * 470296;</span>
+<span class="nc" id="L857">    s2 += s12 * 654183;</span>
+<span class="nc" id="L858">    s3 -= s12 * 997805;</span>
+<span class="nc" id="L859">    s4 += s12 * 136657;</span>
+<span class="nc" id="L860">    s5 -= s12 * 683901;</span>
+    // not used again
+    //s12 = 0;
+
+<span class="nc" id="L864">    carry0 = s0 &gt;&gt; 21;</span>
+<span class="nc" id="L865">    s1 += carry0;</span>
+<span class="nc" id="L866">    s0 -= carry0 &lt;&lt; 21;</span>
+<span class="nc" id="L867">    carry1 = s1 &gt;&gt; 21;</span>
+<span class="nc" id="L868">    s2 += carry1;</span>
+<span class="nc" id="L869">    s1 -= carry1 &lt;&lt; 21;</span>
+<span class="nc" id="L870">    carry2 = s2 &gt;&gt; 21;</span>
+<span class="nc" id="L871">    s3 += carry2;</span>
+<span class="nc" id="L872">    s2 -= carry2 &lt;&lt; 21;</span>
+<span class="nc" id="L873">    carry3 = s3 &gt;&gt; 21;</span>
+<span class="nc" id="L874">    s4 += carry3;</span>
+<span class="nc" id="L875">    s3 -= carry3 &lt;&lt; 21;</span>
+<span class="nc" id="L876">    carry4 = s4 &gt;&gt; 21;</span>
+<span class="nc" id="L877">    s5 += carry4;</span>
+<span class="nc" id="L878">    s4 -= carry4 &lt;&lt; 21;</span>
+<span class="nc" id="L879">    carry5 = s5 &gt;&gt; 21;</span>
+<span class="nc" id="L880">    s6 += carry5;</span>
+<span class="nc" id="L881">    s5 -= carry5 &lt;&lt; 21;</span>
+<span class="nc" id="L882">    carry6 = s6 &gt;&gt; 21;</span>
+<span class="nc" id="L883">    s7 += carry6;</span>
+<span class="nc" id="L884">    s6 -= carry6 &lt;&lt; 21;</span>
+<span class="nc" id="L885">    carry7 = s7 &gt;&gt; 21;</span>
+<span class="nc" id="L886">    s8 += carry7;</span>
+<span class="nc" id="L887">    s7 -= carry7 &lt;&lt; 21;</span>
+<span class="nc" id="L888">    carry8 = s8 &gt;&gt; 21;</span>
+<span class="nc" id="L889">    s9 += carry8;</span>
+<span class="nc" id="L890">    s8 -= carry8 &lt;&lt; 21;</span>
+<span class="nc" id="L891">    carry9 = s9 &gt;&gt; 21;</span>
+<span class="nc" id="L892">    s10 += carry9;</span>
+<span class="nc" id="L893">    s9 -= carry9 &lt;&lt; 21;</span>
+<span class="nc" id="L894">    carry10 = s10 &gt;&gt; 21;</span>
+<span class="nc" id="L895">    s11 += carry10;</span>
+<span class="nc" id="L896">    s10 -= carry10 &lt;&lt; 21;</span>
+
+<span class="nc" id="L898">    byte[] result = new byte[32];</span>
+<span class="nc" id="L899">    result[0] = (byte) s0;</span>
+<span class="nc" id="L900">    result[1] = (byte) (s0 &gt;&gt; 8);</span>
+<span class="nc" id="L901">    result[2] = (byte) ((s0 &gt;&gt; 16) | (s1 &lt;&lt; 5));</span>
+<span class="nc" id="L902">    result[3] = (byte) (s1 &gt;&gt; 3);</span>
+<span class="nc" id="L903">    result[4] = (byte) (s1 &gt;&gt; 11);</span>
+<span class="nc" id="L904">    result[5] = (byte) ((s1 &gt;&gt; 19) | (s2 &lt;&lt; 2));</span>
+<span class="nc" id="L905">    result[6] = (byte) (s2 &gt;&gt; 6);</span>
+<span class="nc" id="L906">    result[7] = (byte) ((s2 &gt;&gt; 14) | (s3 &lt;&lt; 7));</span>
+<span class="nc" id="L907">    result[8] = (byte) (s3 &gt;&gt; 1);</span>
+<span class="nc" id="L908">    result[9] = (byte) (s3 &gt;&gt; 9);</span>
+<span class="nc" id="L909">    result[10] = (byte) ((s3 &gt;&gt; 17) | (s4 &lt;&lt; 4));</span>
+<span class="nc" id="L910">    result[11] = (byte) (s4 &gt;&gt; 4);</span>
+<span class="nc" id="L911">    result[12] = (byte) (s4 &gt;&gt; 12);</span>
+<span class="nc" id="L912">    result[13] = (byte) ((s4 &gt;&gt; 20) | (s5 &lt;&lt; 1));</span>
+<span class="nc" id="L913">    result[14] = (byte) (s5 &gt;&gt; 7);</span>
+<span class="nc" id="L914">    result[15] = (byte) ((s5 &gt;&gt; 15) | (s6 &lt;&lt; 6));</span>
+<span class="nc" id="L915">    result[16] = (byte) (s6 &gt;&gt; 2);</span>
+<span class="nc" id="L916">    result[17] = (byte) (s6 &gt;&gt; 10);</span>
+<span class="nc" id="L917">    result[18] = (byte) ((s6 &gt;&gt; 18) | (s7 &lt;&lt; 3));</span>
+<span class="nc" id="L918">    result[19] = (byte) (s7 &gt;&gt; 5);</span>
+<span class="nc" id="L919">    result[20] = (byte) (s7 &gt;&gt; 13);</span>
+<span class="nc" id="L920">    result[21] = (byte) s8;</span>
+<span class="nc" id="L921">    result[22] = (byte) (s8 &gt;&gt; 8);</span>
+<span class="nc" id="L922">    result[23] = (byte) ((s8 &gt;&gt; 16) | (s9 &lt;&lt; 5));</span>
+<span class="nc" id="L923">    result[24] = (byte) (s9 &gt;&gt; 3);</span>
+<span class="nc" id="L924">    result[25] = (byte) (s9 &gt;&gt; 11);</span>
+<span class="nc" id="L925">    result[26] = (byte) ((s9 &gt;&gt; 19) | (s10 &lt;&lt; 2));</span>
+<span class="nc" id="L926">    result[27] = (byte) (s10 &gt;&gt; 6);</span>
+<span class="nc" id="L927">    result[28] = (byte) ((s10 &gt;&gt; 14) | (s11 &lt;&lt; 7));</span>
+<span class="nc" id="L928">    result[29] = (byte) (s11 &gt;&gt; 1);</span>
+<span class="nc" id="L929">    result[30] = (byte) (s11 &gt;&gt; 9);</span>
+<span class="nc" id="L930">    result[31] = (byte) (s11 &gt;&gt; 17);</span>
+<span class="nc" id="L931">    return result;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

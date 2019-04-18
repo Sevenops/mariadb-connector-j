@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SslFactory.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.protocol.tls</a> &gt; <span class="el_source">SslFactory.java</span></div><h1>SslFactory.java</h1><pre class="source lang-java linenums">package org.mariadb.jdbc.internal.protocol.tls;
+
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.security.GeneralSecurityException;
+import java.security.KeyManagementException;
+import java.security.KeyStore;
+import java.security.NoSuchAlgorithmException;
+import java.sql.SQLException;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import org.mariadb.jdbc.internal.logging.Logger;
+import org.mariadb.jdbc.internal.logging.LoggerFactory;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+<span class="nc" id="L23">public class SslFactory {</span>
+
+<span class="nc" id="L25">  private static final Logger logger = LoggerFactory.getLogger(SslFactory.class);</span>
+
+  /**
+   * Create an SSL factory according to connection string options.
+   *
+   * @param options   connection options
+   * @return SSL socket factory
+   * @throws SQLException in case of error initializing context.
+   */
+  public static SSLSocketFactory getSslSocketFactory(Options options) throws SQLException {
+
+<span class="nc" id="L36">    TrustManager[] trustManager = null;</span>
+<span class="nc" id="L37">    KeyManager[] keyManager = null;</span>
+
+<span class="nc bnc" id="L39" title="All 6 branches missed.">    if (options.trustServerCertificate || options.serverSslCert != null</span>
+        || options.trustStore != null) {
+<span class="nc" id="L41">      trustManager = new X509TrustManager[]{new MariaDbX509TrustManager(options)};</span>
+    }
+
+<span class="nc bnc" id="L44" title="All 2 branches missed.">    if (options.keyStore != null) {</span>
+<span class="nc" id="L45">      keyManager = new KeyManager[]{</span>
+<span class="nc" id="L46">          loadClientCerts(options.keyStore, options.keyStorePassword, options.keyPassword, options.keyStoreType)};</span>
+    } else {
+<span class="nc" id="L48">      String keyStore = System.getProperty(&quot;javax.net.ssl.keyStore&quot;);</span>
+<span class="nc" id="L49">      String keyStorePassword = System.getProperty(&quot;javax.net.ssl.keyStorePassword&quot;);</span>
+<span class="nc bnc" id="L50" title="All 2 branches missed.">      if (keyStore != null) {</span>
+        try {
+<span class="nc" id="L52">          keyManager = new KeyManager[]{</span>
+<span class="nc" id="L53">              loadClientCerts(keyStore, keyStorePassword, keyStorePassword, options.keyStoreType)};</span>
+<span class="nc" id="L54">        } catch (SQLException queryException) {</span>
+<span class="nc" id="L55">          keyManager = null;</span>
+<span class="nc" id="L56">          logger.error(&quot;Error loading keymanager from system properties&quot;, queryException);</span>
+<span class="nc" id="L57">        }</span>
+      }
+    }
+
+    try {
+<span class="nc" id="L62">      SSLContext sslContext = SSLContext.getInstance(&quot;TLS&quot;);</span>
+<span class="nc" id="L63">      sslContext.init(keyManager, trustManager, null);</span>
+<span class="nc" id="L64">      return sslContext.getSocketFactory();</span>
+<span class="nc" id="L65">    } catch (KeyManagementException keyManagementEx) {</span>
+<span class="nc" id="L66">      throw ExceptionMapper.connException(&quot;Could not initialize SSL context&quot;, keyManagementEx);</span>
+<span class="nc" id="L67">    } catch (NoSuchAlgorithmException noSuchAlgorithmEx) {</span>
+<span class="nc" id="L68">      throw ExceptionMapper</span>
+<span class="nc" id="L69">          .connException(&quot;SSLContext TLS Algorithm not unknown&quot;, noSuchAlgorithmEx);</span>
+    }
+  }
+
+  private static KeyManager loadClientCerts(String keyStoreUrl, String keyStorePassword,
+                                            String keyPassword, String storeType) throws SQLException {
+<span class="nc" id="L75">    InputStream inStream = null;</span>
+    try {
+
+      char[] keyStorePasswordChars =
+<span class="nc bnc" id="L79" title="All 2 branches missed.">          keyStorePassword == null ? null : keyStorePassword.toCharArray();</span>
+
+      try {
+<span class="nc" id="L82">        inStream = new URL(keyStoreUrl).openStream();</span>
+<span class="nc" id="L83">      } catch (IOException ioexception) {</span>
+<span class="nc" id="L84">        inStream = new FileInputStream(keyStoreUrl);</span>
+<span class="nc" id="L85">      }</span>
+
+<span class="nc bnc" id="L87" title="All 2 branches missed.">      KeyStore ks = KeyStore.getInstance(storeType != null ? storeType : KeyStore.getDefaultType());</span>
+<span class="nc" id="L88">      ks.load(inStream, keyStorePasswordChars);</span>
+      char[] keyStoreChars =
+<span class="nc bnc" id="L90" title="All 2 branches missed.">          (keyPassword == null) ? keyStorePasswordChars : keyPassword.toCharArray();</span>
+<span class="nc" id="L91">      return new MariaDbX509KeyManager(ks, keyStoreChars);</span>
+<span class="nc" id="L92">    } catch (GeneralSecurityException generalSecurityEx) {</span>
+<span class="nc" id="L93">      throw ExceptionMapper.connException(&quot;Failed to create keyStore instance&quot;, generalSecurityEx);</span>
+<span class="nc" id="L94">    } catch (FileNotFoundException fileNotFoundEx) {</span>
+<span class="nc" id="L95">      throw ExceptionMapper</span>
+<span class="nc" id="L96">          .connException(&quot;Failed to find keyStore file. Option keyStore=&quot; + keyStoreUrl,</span>
+              fileNotFoundEx);
+<span class="nc" id="L98">    } catch (IOException ioEx) {</span>
+<span class="nc" id="L99">      throw ExceptionMapper</span>
+<span class="nc" id="L100">          .connException(&quot;Failed to read keyStore file. Option keyStore=&quot; + keyStoreUrl, ioEx);</span>
+    } finally {
+      try {
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        if (inStream != null) {</span>
+<span class="nc" id="L104">          inStream.close();</span>
+        }
+<span class="nc" id="L106">      } catch (IOException ioEx) {</span>
+        //ignore error
+<span class="nc" id="L108">      }</span>
+    }
+
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

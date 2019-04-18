@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractMultiSend.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.protocol</a> &gt; <span class="el_source">AbstractMultiSend.java</span></div><h1>AbstractMultiSend.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.protocol;
+
+import static org.mariadb.jdbc.internal.util.SqlStates.INTERRUPTED_EXCEPTION;
+
+import java.io.IOException;
+import java.sql.SQLException;
+import java.sql.SQLTimeoutException;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
+import org.mariadb.jdbc.internal.ColumnType;
+import org.mariadb.jdbc.internal.com.read.dao.Results;
+import org.mariadb.jdbc.internal.com.send.ComStmtPrepare;
+import org.mariadb.jdbc.internal.com.send.parameters.ParameterHolder;
+import org.mariadb.jdbc.internal.io.output.PacketOutputStream;
+import org.mariadb.jdbc.internal.util.BulkStatus;
+import org.mariadb.jdbc.internal.util.dao.ClientPrepareResult;
+import org.mariadb.jdbc.internal.util.dao.PrepareResult;
+import org.mariadb.jdbc.internal.util.dao.ServerPrepareResult;
+
+public abstract class AbstractMultiSend {
+
+  private final Protocol protocol;
+  private final PacketOutputStream writer;
+  private final Results results;
+  private final boolean binaryProtocol;
+  private final boolean readPrepareStmtResult;
+<span class="nc" id="L81">  protected int statementId = -1;</span>
+  protected ColumnType[] parameterTypeHeader;
+  private List&lt;ParameterHolder[]&gt; parametersList;
+  private PrepareResult prepareResult;
+  private List&lt;String&gt; queries;
+  private String sql;
+
+  /**
+   * Bulk execute for Server PreparedStatement.executeBatch (when no COM_MULTI)
+   *
+   * @param protocol              protocol
+   * @param writer                outputStream
+   * @param results               query results
+   * @param serverPrepareResult   Prepare result
+   * @param parametersList        parameters
+   * @param readPrepareStmtResult must execute prepare result
+   * @param sql                   sql query.
+   */
+  public AbstractMultiSend(Protocol protocol, PacketOutputStream writer, Results results,
+      ServerPrepareResult serverPrepareResult,
+<span class="nc" id="L101">      List&lt;ParameterHolder[]&gt; parametersList, boolean readPrepareStmtResult, String sql) {</span>
+<span class="nc" id="L102">    this.protocol = protocol;</span>
+<span class="nc" id="L103">    this.writer = writer;</span>
+<span class="nc" id="L104">    this.results = results;</span>
+<span class="nc" id="L105">    this.prepareResult = serverPrepareResult;</span>
+<span class="nc" id="L106">    this.parametersList = parametersList;</span>
+<span class="nc" id="L107">    this.binaryProtocol = true;</span>
+<span class="nc" id="L108">    this.readPrepareStmtResult = readPrepareStmtResult;</span>
+<span class="nc" id="L109">    this.sql = sql;</span>
+<span class="nc" id="L110">  }</span>
+
+  /**
+   * Bulk execute for client-side PreparedStatement.executeBatch (no prepare).
+   *
+   * @param protocol            current protocol
+   * @param writer              outputStream
+   * @param results             results
+   * @param clientPrepareResult clientPrepareResult
+   * @param parametersList      parameters
+   */
+  public AbstractMultiSend(Protocol protocol, PacketOutputStream writer, Results results,
+<span class="nc" id="L122">      final ClientPrepareResult clientPrepareResult, List&lt;ParameterHolder[]&gt; parametersList) {</span>
+<span class="nc" id="L123">    this.protocol = protocol;</span>
+<span class="nc" id="L124">    this.writer = writer;</span>
+<span class="nc" id="L125">    this.results = results;</span>
+<span class="nc" id="L126">    this.prepareResult = clientPrepareResult;</span>
+<span class="nc" id="L127">    this.parametersList = parametersList;</span>
+<span class="nc" id="L128">    this.binaryProtocol = false;</span>
+<span class="nc" id="L129">    this.readPrepareStmtResult = false;</span>
+<span class="nc" id="L130">  }</span>
+
+  /**
+   * Bulk execute for statement.executeBatch().
+   *
+   * @param protocol protocol
+   * @param writer   outputStream
+   * @param results  results
+   * @param queries  query list
+   */
+  public AbstractMultiSend(Protocol protocol, PacketOutputStream writer, Results results,
+<span class="nc" id="L141">      List&lt;String&gt; queries) {</span>
+<span class="nc" id="L142">    this.protocol = protocol;</span>
+<span class="nc" id="L143">    this.writer = writer;</span>
+<span class="nc" id="L144">    this.results = results;</span>
+<span class="nc" id="L145">    this.queries = queries;</span>
+<span class="nc" id="L146">    this.binaryProtocol = false;</span>
+<span class="nc" id="L147">    this.readPrepareStmtResult = false;</span>
+<span class="nc" id="L148">  }</span>
+
+  public abstract void sendCmd(PacketOutputStream writer, Results results,
+      List&lt;ParameterHolder[]&gt; parametersList, List&lt;String&gt; queries, int paramCount,
+      BulkStatus status,
+      PrepareResult prepareResult) throws SQLException, IOException;
+
+  public abstract SQLException handleResultException(SQLException qex, Results results,
+      List&lt;ParameterHolder[]&gt; parametersList, List&lt;String&gt; queries, int currentCounter,
+      int sendCmdCounter, int paramCount, PrepareResult prepareResult);
+
+  public abstract int getParamCount();
+
+  public abstract int getTotalExecutionNumber();
+
+
+  public PrepareResult getPrepareResult() {
+<span class="nc" id="L165">    return prepareResult;</span>
+  }
+
+  /**
+   * Execute Bulk execution (send packets by batch of  useBatchMultiSendNumber or when max packet is
+   * reached) before reading results.
+   *
+   * @return prepare result
+   * @throws SQLException if any error occur
+   */
+  public PrepareResult executeBatch() throws SQLException {
+<span class="nc" id="L176">    int paramCount = getParamCount();</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">    if (binaryProtocol) {</span>
+<span class="nc bnc" id="L178" title="All 2 branches missed.">      if (readPrepareStmtResult) {</span>
+<span class="nc" id="L179">        parameterTypeHeader = new ColumnType[paramCount];</span>
+<span class="nc bnc" id="L180" title="All 2 branches missed.">        if (prepareResult == null</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">            &amp;&amp; protocol.getOptions().cachePrepStmts</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">            &amp;&amp; protocol.getOptions().useServerPrepStmts) {</span>
+<span class="nc" id="L183">          String key = protocol.getDatabase() + &quot;-&quot; + sql;</span>
+<span class="nc" id="L184">          prepareResult = protocol.prepareStatementCache().get(key);</span>
+<span class="nc bnc" id="L185" title="All 2 branches missed.">          if (prepareResult != null &amp;&amp; !((ServerPrepareResult) prepareResult)</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">              .incrementShareCounter()) {</span>
+            //in cache but been de-allocated
+<span class="nc" id="L188">            prepareResult = null;</span>
+          }
+        }
+<span class="nc" id="L191">        statementId =</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">            (prepareResult == null) ? -1 : ((ServerPrepareResult) prepareResult).getStatementId();</span>
+<span class="nc bnc" id="L193" title="All 2 branches missed.">      } else if (prepareResult != null) {</span>
+<span class="nc" id="L194">        statementId = ((ServerPrepareResult) prepareResult).getStatementId();</span>
+      }
+    }
+<span class="nc" id="L197">    return executeBatchStandard(paramCount);</span>
+  }
+
+  /**
+   * Execute Bulk execution (send packets by batch of  useBatchMultiSendNumber or when max packet is
+   * reached) before reading results.
+   *
+   * @param estimatedParameterCount parameter counter
+   * @return prepare result
+   * @throws SQLException if any error occur
+   */
+  private PrepareResult executeBatchStandard(int estimatedParameterCount) throws SQLException {
+<span class="nc" id="L209">    int totalExecutionNumber = getTotalExecutionNumber();</span>
+<span class="nc" id="L210">    SQLException exception = null;</span>
+<span class="nc" id="L211">    BulkStatus status = new BulkStatus();</span>
+
+<span class="nc" id="L213">    ComStmtPrepare comStmtPrepare = null;</span>
+<span class="nc" id="L214">    FutureTask&lt;AsyncMultiReadResult&gt; futureReadTask = null;</span>
+
+    int requestNumberByBulk;
+<span class="nc" id="L217">    int paramCount = estimatedParameterCount;</span>
+    try {
+      do {
+<span class="nc" id="L220">        status.sendEnded = false;</span>
+<span class="nc" id="L221">        status.sendSubCmdCounter = 0;</span>
+<span class="nc" id="L222">        requestNumberByBulk = Math.min(totalExecutionNumber - status.sendCmdCounter,</span>
+<span class="nc" id="L223">            protocol.getOptions().useBatchMultiSendNumber);</span>
+<span class="nc" id="L224">        protocol.changeSocketTcpNoDelay(false); //enable NAGLE algorithm temporary.</span>
+
+        //add prepare sub-command
+<span class="nc bnc" id="L227" title="All 4 branches missed.">        if (readPrepareStmtResult &amp;&amp; prepareResult == null) {</span>
+
+<span class="nc" id="L229">          comStmtPrepare = new ComStmtPrepare(protocol, sql);</span>
+<span class="nc" id="L230">          comStmtPrepare.send(writer);</span>
+
+          //read prepare result
+<span class="nc" id="L233">          prepareResult = comStmtPrepare.read(protocol.getReader(), protocol.isEofDeprecated());</span>
+<span class="nc" id="L234">          statementId = ((ServerPrepareResult) prepareResult).getStatementId();</span>
+<span class="nc" id="L235">          paramCount = getParamCount();</span>
+        }
+
+<span class="nc" id="L238">        boolean useCurrentThread = false;</span>
+
+<span class="nc bnc" id="L240" title="All 2 branches missed.">        for (; status.sendSubCmdCounter &lt; requestNumberByBulk; ) {</span>
+<span class="nc" id="L241">          sendCmd(writer, results, parametersList, queries, paramCount, status, prepareResult);</span>
+<span class="nc" id="L242">          status.sendSubCmdCounter++;</span>
+<span class="nc" id="L243">          status.sendCmdCounter++;</span>
+<span class="nc bnc" id="L244" title="All 2 branches missed.">          if (useCurrentThread) {</span>
+            try {
+<span class="nc" id="L246">              protocol.getResult(results);</span>
+<span class="nc" id="L247">            } catch (SQLException qex) {</span>
+<span class="nc bnc" id="L248" title="All 4 branches missed.">              if (((readPrepareStmtResult &amp;&amp; prepareResult == null) || !protocol</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">                  .getOptions().continueBatchOnError)) {</span>
+<span class="nc" id="L250">                throw qex;</span>
+              } else {
+<span class="nc" id="L252">                exception = qex;</span>
+              }
+<span class="nc" id="L254">            }</span>
+<span class="nc bnc" id="L255" title="All 2 branches missed.">          } else if (futureReadTask == null) {</span>
+            try {
+<span class="nc" id="L257">              futureReadTask = new FutureTask&lt;&gt;(new AsyncMultiRead(comStmtPrepare, status,</span>
+                  protocol, false, this, paramCount,
+                  results, parametersList, queries, prepareResult));
+<span class="nc" id="L260">              AbstractQueryProtocol.readScheduler.execute(futureReadTask);</span>
+<span class="nc" id="L261">            } catch (RejectedExecutionException r) {</span>
+<span class="nc" id="L262">              useCurrentThread = true;</span>
+              try {
+<span class="nc" id="L264">                protocol.getResult(results);</span>
+<span class="nc" id="L265">              } catch (SQLException qex) {</span>
+<span class="nc bnc" id="L266" title="All 4 branches missed.">                if (((readPrepareStmtResult &amp;&amp; prepareResult == null) || !protocol</span>
+<span class="nc bnc" id="L267" title="All 2 branches missed.">                    .getOptions().continueBatchOnError)) {</span>
+<span class="nc" id="L268">                  throw qex;</span>
+                } else {
+<span class="nc" id="L270">                  exception = qex;</span>
+                }
+<span class="nc" id="L272">              }</span>
+<span class="nc" id="L273">            }</span>
+          }
+        }
+
+<span class="nc" id="L277">        status.sendEnded = true;</span>
+<span class="nc bnc" id="L278" title="All 2 branches missed.">        if (!useCurrentThread) {</span>
+<span class="nc" id="L279">          protocol.changeSocketTcpNoDelay(protocol.getOptions().tcpNoDelay);</span>
+          try {
+<span class="nc" id="L281">            AsyncMultiReadResult asyncMultiReadResult = futureReadTask.get();</span>
+
+<span class="nc bnc" id="L283" title="All 4 branches missed.">            if (binaryProtocol &amp;&amp; prepareResult == null</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">                &amp;&amp; asyncMultiReadResult.getPrepareResult() != null) {</span>
+<span class="nc" id="L285">              prepareResult = asyncMultiReadResult.getPrepareResult();</span>
+<span class="nc" id="L286">              statementId = ((ServerPrepareResult) prepareResult).getStatementId();</span>
+<span class="nc" id="L287">              paramCount = prepareResult.getParamCount();</span>
+            }
+
+<span class="nc bnc" id="L290" title="All 2 branches missed.">            if (asyncMultiReadResult.getException() != null) {</span>
+<span class="nc bnc" id="L291" title="All 4 branches missed.">              if (((readPrepareStmtResult &amp;&amp; prepareResult == null) || !protocol</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">                  .getOptions().continueBatchOnError)) {</span>
+<span class="nc" id="L293">                throw asyncMultiReadResult.getException();</span>
+              } else {
+<span class="nc" id="L295">                exception = asyncMultiReadResult.getException();</span>
+              }
+            }
+<span class="nc" id="L298">          } catch (ExecutionException executionException) {</span>
+<span class="nc bnc" id="L299" title="All 2 branches missed.">            if (executionException.getCause() == null) {</span>
+<span class="nc" id="L300">              throw new SQLException(&quot;Error reading results &quot; + executionException.getMessage());</span>
+            }
+<span class="nc" id="L302">            throw new SQLException(</span>
+<span class="nc" id="L303">                &quot;Error reading results &quot; + executionException.getCause().getMessage());</span>
+<span class="nc" id="L304">          } catch (InterruptedException interruptedException) {</span>
+<span class="nc" id="L305">            protocol.setActiveFutureTask(futureReadTask);</span>
+<span class="nc" id="L306">            Thread.currentThread().interrupt();</span>
+<span class="nc" id="L307">            throw new SQLException(&quot;Interrupted awaiting response &quot;,</span>
+<span class="nc" id="L308">                INTERRUPTED_EXCEPTION.getSqlState(), interruptedException);</span>
+          } finally {
+            //bulk can prepare, and so if prepare cache is enable, can replace an already cached prepareStatement
+            //this permit to release those old prepared statement without conflict.
+<span class="nc" id="L312">            protocol.forceReleaseWaitingPrepareStatement();</span>
+          }
+        }
+
+<span class="nc bnc" id="L316" title="All 2 branches missed.">        if (protocol.isInterrupted()) {</span>
+          //interrupted during read, must throw an exception manually
+<span class="nc" id="L318">          futureReadTask.cancel(true);</span>
+<span class="nc" id="L319">          throw new SQLTimeoutException(&quot;Timeout during batch execution&quot;);</span>
+        }
+<span class="nc" id="L321">        futureReadTask = null;</span>
+
+<span class="nc bnc" id="L323" title="All 2 branches missed.">      } while (status.sendCmdCounter &lt; totalExecutionNumber);</span>
+
+<span class="nc bnc" id="L325" title="All 2 branches missed.">      if (exception != null) {</span>
+<span class="nc" id="L326">        throw exception;</span>
+      }
+
+<span class="nc" id="L329">      return prepareResult;</span>
+
+<span class="nc" id="L331">    } catch (IOException e) {</span>
+<span class="nc" id="L332">      status.sendEnded = true;</span>
+<span class="nc" id="L333">      status.sendCmdCounter = 0; //to ensure read doesn't hang</span>
+<span class="nc" id="L334">      throw protocol.handleIoException(e);</span>
+    }
+
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

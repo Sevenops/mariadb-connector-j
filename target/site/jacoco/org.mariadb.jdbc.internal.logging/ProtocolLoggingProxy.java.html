@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProtocolLoggingProxy.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.logging</a> &gt; <span class="el_source">ProtocolLoggingProxy.java</span></div><h1>ProtocolLoggingProxy.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.logging;
+
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.nio.charset.Charset;
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
+import java.util.List;
+import org.mariadb.jdbc.internal.com.send.parameters.ParameterHolder;
+import org.mariadb.jdbc.internal.protocol.Protocol;
+import org.mariadb.jdbc.internal.util.LogQueryTool;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.dao.ClientPrepareResult;
+import org.mariadb.jdbc.internal.util.dao.PrepareResult;
+import org.mariadb.jdbc.internal.util.dao.ServerPrepareResult;
+
+public class ProtocolLoggingProxy implements InvocationHandler {
+
+<span class="nc" id="L72">  private static final NumberFormat numberFormat = DecimalFormat.getInstance();</span>
+<span class="nc" id="L73">  private static final Logger logger = LoggerFactory.getLogger(ProtocolLoggingProxy.class);</span>
+  private final boolean profileSql;
+  private final Long slowQueryThresholdNanos;
+  private final int maxQuerySizeToLog;
+  private final Protocol protocol;
+  private final LogQueryTool logQuery;
+
+  /**
+   * Constructor. Will create a proxy around protocol to log queries.
+   *
+   * @param protocol protocol to proxy
+   * @param options  options
+   */
+<span class="nc" id="L86">  public ProtocolLoggingProxy(Protocol protocol, Options options) {</span>
+<span class="nc" id="L87">    this.protocol = protocol;</span>
+<span class="nc" id="L88">    this.profileSql = options.profileSql;</span>
+<span class="nc" id="L89">    this.slowQueryThresholdNanos = options.slowQueryThresholdNanos;</span>
+<span class="nc" id="L90">    this.maxQuerySizeToLog = options.maxQuerySizeToLog;</span>
+<span class="nc" id="L91">    this.logQuery = new LogQueryTool(options);</span>
+<span class="nc" id="L92">  }</span>
+
+  @Override
+  public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+<span class="nc" id="L96">    long startTime = System.nanoTime();</span>
+    try {
+
+<span class="nc bnc" id="L99" title="All 2 branches missed.">      switch (method.getName()) {</span>
+
+        case &quot;executeQuery&quot;:
+        case &quot;executePreparedQuery&quot;:
+        case &quot;executeBatchStmt&quot;:
+        case &quot;executeBatchClient&quot;:
+        case &quot;executeBatchServer&quot;:
+
+<span class="nc" id="L107">          Object returnObj = method.invoke(protocol, args);</span>
+<span class="nc bnc" id="L108" title="All 6 branches missed.">          if (logger.isInfoEnabled() &amp;&amp; (profileSql</span>
+              || (slowQueryThresholdNanos != null
+<span class="nc bnc" id="L110" title="All 2 branches missed.">              &amp;&amp; System.nanoTime() - startTime &gt; slowQueryThresholdNanos))) {</span>
+
+<span class="nc" id="L112">            String sql = logQuery(method.getName(), args);</span>
+<span class="nc" id="L113">            logger.info(&quot;conn={}({}) - {} ms - Query: {}&quot;,</span>
+<span class="nc" id="L114">                protocol.getServerThreadId(),</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">                protocol.isMasterConnection() ? &quot;M&quot; : &quot;S&quot;,</span>
+<span class="nc" id="L116">                numberFormat.format(((double) System.nanoTime() - startTime) / 1000000),</span>
+<span class="nc" id="L117">                logQuery.subQuery(sql));</span>
+          }
+<span class="nc" id="L119">          return returnObj;</span>
+
+        default:
+<span class="nc" id="L122">          return method.invoke(protocol, args);</span>
+      }
+
+<span class="nc" id="L125">    } catch (InvocationTargetException e) {</span>
+<span class="nc" id="L126">      throw e.getCause();</span>
+    }
+  }
+
+  @SuppressWarnings(&quot;unchecked&quot;)
+  private String logQuery(String methodName, Object[] args) {
+<span class="nc bnc" id="L132" title="All 6 branches missed.">    switch (methodName) {</span>
+      case &quot;executeQuery&quot;:
+<span class="nc bnc" id="L134" title="All 4 branches missed.">        switch (args.length) {</span>
+          case 1:
+<span class="nc" id="L136">            return (String) args[0];</span>
+          case 3:
+<span class="nc" id="L138">            return (String) args[2];</span>
+          case 4:
+          case 5:
+<span class="nc bnc" id="L141" title="All 2 branches missed.">            if (args[3] instanceof Charset) {</span>
+<span class="nc" id="L142">              return (String) args[2];</span>
+            }
+<span class="nc" id="L144">            ClientPrepareResult clientPrepareResult = (ClientPrepareResult) args[2];</span>
+<span class="nc" id="L145">            return getQueryFromPrepareParameters(</span>
+                clientPrepareResult,
+                (ParameterHolder[]) args[3],
+<span class="nc" id="L148">                clientPrepareResult.getParamCount());</span>
+          default:
+            //no default
+        }
+<span class="nc" id="L152">        break;</span>
+
+      case &quot;executeBatchClient&quot;:
+<span class="nc" id="L155">        ClientPrepareResult clientPrepareResult = (ClientPrepareResult) args[2];</span>
+<span class="nc" id="L156">        return getQueryFromPrepareParameters(clientPrepareResult.getSql(),</span>
+            (List&lt;ParameterHolder[]&gt;) args[3],
+<span class="nc" id="L158">            clientPrepareResult.getParamCount());</span>
+
+      case &quot;executeBatchStmt&quot;:
+<span class="nc" id="L161">        List&lt;String&gt; multipleQueries = (List&lt;String&gt;) args[2];</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">        if (multipleQueries.size() == 1) {</span>
+<span class="nc" id="L163">          return multipleQueries.get(0);</span>
+        } else {
+<span class="nc" id="L165">          StringBuilder sb = new StringBuilder();</span>
+<span class="nc bnc" id="L166" title="All 2 branches missed.">          for (String multipleQuery : multipleQueries) {</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">            if (maxQuerySizeToLog &gt; 0</span>
+<span class="nc bnc" id="L168" title="All 2 branches missed.">                &amp;&amp; (sb.length() + multipleQuery.length() + 1) &gt; maxQuerySizeToLog) {</span>
+<span class="nc" id="L169">              sb.append(multipleQuery, 1, Math.max(1, maxQuerySizeToLog - sb.length()));</span>
+<span class="nc" id="L170">              break;</span>
+            }
+<span class="nc" id="L172">            sb.append(multipleQuery).append(&quot;;&quot;);</span>
+<span class="nc bnc" id="L173" title="All 4 branches missed.">            if (maxQuerySizeToLog &gt; 0 &amp;&amp; sb.length() &gt;= maxQuerySizeToLog) {</span>
+<span class="nc" id="L174">              break;</span>
+            }
+<span class="nc" id="L176">          }</span>
+<span class="nc" id="L177">          return sb.toString();</span>
+        }
+
+      case &quot;executeBatchServer&quot;:
+<span class="nc" id="L181">        List&lt;ParameterHolder[]&gt; parameterList = (List&lt;ParameterHolder[]&gt;) args[4];</span>
+<span class="nc" id="L182">        ServerPrepareResult serverPrepareResult = (ServerPrepareResult) args[1];</span>
+<span class="nc" id="L183">        return getQueryFromPrepareParameters(serverPrepareResult.getSql(), parameterList,</span>
+<span class="nc" id="L184">            serverPrepareResult.getParamCount());</span>
+
+      case &quot;executePreparedQuery&quot;:
+<span class="nc" id="L187">        ServerPrepareResult prepareResult = (ServerPrepareResult) args[1];</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">        if (args[3] instanceof ParameterHolder[]) {</span>
+<span class="nc" id="L189">          return getQueryFromPrepareParameters(prepareResult, (ParameterHolder[]) args[3],</span>
+<span class="nc" id="L190">              prepareResult.getParamCount());</span>
+        } else {
+<span class="nc" id="L192">          return getQueryFromPrepareParameters(prepareResult.getSql(),</span>
+              (List&lt;ParameterHolder[]&gt;) args[3],
+<span class="nc" id="L194">              prepareResult.getParameters().length);</span>
+        }
+
+      default:
+        //no default
+    }
+<span class="nc" id="L200">    return &quot;-unknown-&quot;;</span>
+  }
+
+  private String getQueryFromPrepareParameters(String sql, List&lt;ParameterHolder[]&gt; parameterList,
+      int parameterLength) {
+
+<span class="nc bnc" id="L206" title="All 2 branches missed.">    if (parameterLength == 0) {</span>
+<span class="nc" id="L207">      return sql;</span>
+    } else {
+<span class="nc" id="L209">      StringBuilder sb = new StringBuilder(sql).append(&quot;, parameters &quot;);</span>
+<span class="nc bnc" id="L210" title="All 2 branches missed.">      for (int paramNo = 0; paramNo &lt; parameterList.size(); paramNo++) {</span>
+<span class="nc" id="L211">        ParameterHolder[] parameters = parameterList.get(paramNo);</span>
+
+<span class="nc bnc" id="L213" title="All 2 branches missed.">        if (paramNo != 0) {</span>
+<span class="nc" id="L214">          sb.append(&quot;,&quot;);</span>
+        }
+<span class="nc" id="L216">        sb.append(&quot;[&quot;);</span>
+<span class="nc bnc" id="L217" title="All 2 branches missed.">        for (int i = 0; i &lt; parameterLength; i++) {</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">          if (i != 0) {</span>
+<span class="nc" id="L219">            sb.append(&quot;,&quot;);</span>
+          }
+<span class="nc" id="L221">          sb.append(parameters[i].toString());</span>
+        }
+<span class="nc bnc" id="L223" title="All 4 branches missed.">        if (maxQuerySizeToLog &gt; 0 &amp;&amp; sb.length() &gt; maxQuerySizeToLog) {</span>
+<span class="nc" id="L224">          break;</span>
+        } else {
+<span class="nc" id="L226">          sb.append(&quot;]&quot;);</span>
+        }
+      }
+<span class="nc" id="L229">      return sb.toString();</span>
+    }
+  }
+
+  private String getQueryFromPrepareParameters(PrepareResult serverPrepareResult,
+      ParameterHolder[] paramHolders, int parameterLength) {
+<span class="nc" id="L235">    StringBuilder sb = new StringBuilder(serverPrepareResult.getSql());</span>
+<span class="nc bnc" id="L236" title="All 2 branches missed.">    if (paramHolders.length &gt; 0) {</span>
+<span class="nc" id="L237">      sb.append(&quot;, parameters [&quot;);</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">      for (int i = 0; i &lt; parameterLength; i++) {</span>
+<span class="nc bnc" id="L239" title="All 2 branches missed.">        if (i != 0) {</span>
+<span class="nc" id="L240">          sb.append(&quot;,&quot;);</span>
+        }
+<span class="nc" id="L242">        sb.append(paramHolders[i].toString());</span>
+<span class="nc bnc" id="L243" title="All 4 branches missed.">        if (maxQuerySizeToLog &gt; 0 &amp;&amp; sb.length() &gt; maxQuerySizeToLog) {</span>
+<span class="nc" id="L244">          break;</span>
+        }
+      }
+<span class="nc" id="L247">      return sb.append(&quot;]&quot;).toString();</span>
+    }
+<span class="nc" id="L249">    return serverPrepareResult.getSql();</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

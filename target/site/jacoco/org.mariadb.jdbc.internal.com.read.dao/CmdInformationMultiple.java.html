@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CmdInformationMultiple.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.read.dao</a> &gt; <span class="el_source">CmdInformationMultiple.java</span></div><h1>CmdInformationMultiple.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.com.read.dao;
+
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import org.mariadb.jdbc.internal.com.read.resultset.SelectResultSet;
+import org.mariadb.jdbc.internal.protocol.Protocol;
+
+public class CmdInformationMultiple implements CmdInformation {
+
+
+  private final ArrayList&lt;Long&gt; insertIds;
+  private final ArrayList&lt;Long&gt; updateCounts;
+  private final int expectedSize;
+  private final int autoIncrement;
+<span class="nc" id="L70">  private int insertIdNumber = 0;</span>
+  private int moreResults;
+  private boolean hasException;
+  private boolean rewritten;
+
+  /**
+   * Object containing update / insert ids, optimized for only multiple result.
+   *
+   * @param expectedSize  expected batch size.
+   * @param autoIncrement connection auto increment value.
+   */
+<span class="nc" id="L81">  public CmdInformationMultiple(int expectedSize, int autoIncrement) {</span>
+<span class="nc" id="L82">    insertIds = new ArrayList&lt;&gt;(expectedSize);</span>
+<span class="nc" id="L83">    updateCounts = new ArrayList&lt;&gt;(expectedSize);</span>
+<span class="nc" id="L84">    this.expectedSize = expectedSize;</span>
+<span class="nc" id="L85">    this.autoIncrement = autoIncrement;</span>
+<span class="nc" id="L86">  }</span>
+
+  @Override
+  public void addErrorStat() {
+<span class="nc" id="L90">    hasException = true;</span>
+<span class="nc" id="L91">    updateCounts.add((long) Statement.EXECUTE_FAILED);</span>
+<span class="nc" id="L92">  }</span>
+
+  /**
+   * Clear error state, used for clear exception after first batch query, when fall back to
+   * per-query execution.
+   */
+  @Override
+  public void reset() {
+<span class="nc" id="L100">    insertIds.clear();</span>
+<span class="nc" id="L101">    updateCounts.clear();</span>
+<span class="nc" id="L102">    insertIdNumber = 0;</span>
+<span class="nc" id="L103">    moreResults = 0;</span>
+<span class="nc" id="L104">    hasException = false;</span>
+<span class="nc" id="L105">    rewritten = false;</span>
+<span class="nc" id="L106">  }</span>
+
+
+  public void addResultSetStat() {
+<span class="nc" id="L110">    updateCounts.add((long) RESULT_SET_VALUE);</span>
+<span class="nc" id="L111">  }</span>
+
+  @Override
+  public void addSuccessStat(long updateCount, long insertId) {
+<span class="nc" id="L115">    insertIds.add(insertId);</span>
+<span class="nc" id="L116">    insertIdNumber += updateCount;</span>
+<span class="nc" id="L117">    updateCounts.add(updateCount);</span>
+<span class="nc" id="L118">  }</span>
+
+  @Override
+  public int[] getServerUpdateCounts() {
+<span class="nc" id="L122">    int[] ret = new int[updateCounts.size()];</span>
+
+<span class="nc" id="L124">    Iterator&lt;Long&gt; iterator = updateCounts.iterator();</span>
+<span class="nc" id="L125">    int pos = 0;</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">    while (iterator.hasNext()) {</span>
+<span class="nc" id="L127">      ret[pos++] = iterator.next().intValue();</span>
+    }
+
+<span class="nc" id="L130">    return ret;</span>
+  }
+
+  @Override
+  public int[] getUpdateCounts() {
+<span class="nc bnc" id="L135" title="All 2 branches missed.">    if (rewritten) {</span>
+<span class="nc" id="L136">      int[] ret = new int[expectedSize];</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">      Arrays.fill(ret, hasException ? Statement.EXECUTE_FAILED : Statement.SUCCESS_NO_INFO);</span>
+<span class="nc" id="L138">      return ret;</span>
+    }
+<span class="nc" id="L140">    int[] ret = new int[Math.max(updateCounts.size(), expectedSize)];</span>
+
+<span class="nc" id="L142">    Iterator&lt;Long&gt; iterator = updateCounts.iterator();</span>
+<span class="nc" id="L143">    int pos = 0;</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">    while (iterator.hasNext()) {</span>
+<span class="nc" id="L145">      ret[pos++] = iterator.next().intValue();</span>
+    }
+
+    //in case of Exception
+<span class="nc bnc" id="L149" title="All 2 branches missed.">    while (pos &lt; ret.length) {</span>
+<span class="nc" id="L150">      ret[pos++] = Statement.EXECUTE_FAILED;</span>
+    }
+
+<span class="nc" id="L153">    return ret;</span>
+  }
+
+
+  @Override
+  public long[] getLargeUpdateCounts() {
+<span class="nc bnc" id="L159" title="All 2 branches missed.">    if (rewritten) {</span>
+<span class="nc" id="L160">      long[] ret = new long[expectedSize];</span>
+<span class="nc bnc" id="L161" title="All 2 branches missed.">      Arrays.fill(ret, hasException ? Statement.EXECUTE_FAILED : Statement.SUCCESS_NO_INFO);</span>
+<span class="nc" id="L162">      return ret;</span>
+    }
+
+<span class="nc" id="L165">    long[] ret = new long[Math.max(updateCounts.size(), expectedSize)];</span>
+
+<span class="nc" id="L167">    Iterator&lt;Long&gt; iterator = updateCounts.iterator();</span>
+<span class="nc" id="L168">    int pos = 0;</span>
+<span class="nc bnc" id="L169" title="All 2 branches missed.">    while (iterator.hasNext()) {</span>
+<span class="nc" id="L170">      ret[pos++] = iterator.next();</span>
+    }
+
+    //in case of Exception
+<span class="nc bnc" id="L174" title="All 2 branches missed.">    while (pos &lt; ret.length) {</span>
+<span class="nc" id="L175">      ret[pos++] = Statement.EXECUTE_FAILED;</span>
+    }
+
+<span class="nc" id="L178">    return ret;</span>
+  }
+
+  @Override
+  public int getUpdateCount() {
+<span class="nc bnc" id="L183" title="All 2 branches missed.">    if (moreResults &gt;= updateCounts.size()) {</span>
+<span class="nc" id="L184">      return -1;</span>
+    }
+<span class="nc" id="L186">    return updateCounts.get(moreResults).intValue();</span>
+  }
+
+  @Override
+  public long getLargeUpdateCount() {
+<span class="nc bnc" id="L191" title="All 2 branches missed.">    if (moreResults &gt;= updateCounts.size()) {</span>
+<span class="nc" id="L192">      return -1;</span>
+    }
+<span class="nc" id="L194">    return updateCounts.get(moreResults);</span>
+  }
+
+  @Override
+  public ResultSet getBatchGeneratedKeys(Protocol protocol) {
+<span class="nc" id="L199">    long[] ret = new long[insertIdNumber];</span>
+<span class="nc" id="L200">    int position = 0;</span>
+    long insertId;
+<span class="nc" id="L202">    Iterator&lt;Long&gt; idIterator = insertIds.iterator();</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">    for (Long updateCount : updateCounts) {</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">      if (updateCount != Statement.EXECUTE_FAILED</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">          &amp;&amp; updateCount != RESULT_SET_VALUE</span>
+<span class="nc bnc" id="L206" title="All 2 branches missed.">          &amp;&amp; (insertId = idIterator.next()) &gt; 0) {</span>
+<span class="nc bnc" id="L207" title="All 2 branches missed.">        for (int i = 0; i &lt; updateCount; i++) {</span>
+<span class="nc" id="L208">          ret[position++] = insertId + i * autoIncrement;</span>
+        }
+      }
+<span class="nc" id="L211">    }</span>
+<span class="nc" id="L212">    return SelectResultSet.createGeneratedData(ret, protocol, true);</span>
+  }
+
+  /**
+   * Return GeneratedKeys containing insert ids. Insert ids are calculated using autoincrement
+   * value.
+   *
+   * @param protocol current protocol
+   * @return a resultSet with insert ids.
+   */
+  public ResultSet getGeneratedKeys(Protocol protocol) {
+<span class="nc" id="L223">    long[] ret = new long[insertIdNumber];</span>
+<span class="nc" id="L224">    int position = 0;</span>
+    long insertId;
+<span class="nc" id="L226">    Iterator&lt;Long&gt; idIterator = insertIds.iterator();</span>
+<span class="nc" id="L227">    Iterator&lt;Long&gt; updateIterator = updateCounts.iterator();</span>
+
+<span class="nc bnc" id="L229" title="All 2 branches missed.">    for (int element = 0; element &lt;= moreResults; element++) {</span>
+<span class="nc" id="L230">      long updateCount = updateIterator.next();</span>
+<span class="nc bnc" id="L231" title="All 4 branches missed.">      if (updateCount != Statement.EXECUTE_FAILED</span>
+          &amp;&amp; updateCount != RESULT_SET_VALUE
+<span class="nc bnc" id="L233" title="All 4 branches missed.">          &amp;&amp; (insertId = idIterator.next()) &gt; 0</span>
+          &amp;&amp; element == moreResults) {
+<span class="nc bnc" id="L235" title="All 2 branches missed.">        for (int i = 0; i &lt; updateCount; i++) {</span>
+<span class="nc" id="L236">          ret[position++] = insertId + i * autoIncrement;</span>
+        }
+      }
+    }
+<span class="nc" id="L240">    return SelectResultSet.createGeneratedData(ret, protocol, true);</span>
+  }
+
+  public int getCurrentStatNumber() {
+<span class="nc" id="L244">    return updateCounts.size();</span>
+  }
+
+
+  @Override
+  public boolean moreResults() {
+<span class="nc bnc" id="L250" title="All 2 branches missed.">    return moreResults++ &lt; updateCounts.size() - 1</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">        &amp;&amp; updateCounts.get(moreResults) == RESULT_SET_VALUE;</span>
+  }
+
+  @Override
+  public boolean isCurrentUpdateCount() {
+<span class="nc bnc" id="L256" title="All 2 branches missed.">    return updateCounts.get(moreResults) != RESULT_SET_VALUE;</span>
+  }
+
+  public void setRewrite(boolean rewritten) {
+<span class="nc" id="L260">    this.rewritten = rewritten;</span>
+<span class="nc" id="L261">  }</span>
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

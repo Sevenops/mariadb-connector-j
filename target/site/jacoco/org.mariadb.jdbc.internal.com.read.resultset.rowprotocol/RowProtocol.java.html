@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RowProtocol.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.read.resultset.rowprotocol</a> &gt; <span class="el_source">RowProtocol.java</span></div><h1>RowProtocol.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.com.read.resultset.rowprotocol;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.sql.Date;
+import java.sql.SQLException;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.OffsetTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.util.Calendar;
+import java.util.TimeZone;
+import java.util.regex.Pattern;
+import org.mariadb.jdbc.internal.com.read.resultset.ColumnInformation;
+import org.mariadb.jdbc.internal.util.Options;
+
+public abstract class RowProtocol {
+
+  public static final int BIT_LAST_FIELD_NOT_NULL = 0b000000;
+  public static final int BIT_LAST_FIELD_NULL = 0b000001;
+  public static final int BIT_LAST_ZERO_DATE = 0b000010;
+
+  public static final int TINYINT1_IS_BIT = 1;
+  public static final int YEAR_IS_DATE_TYPE = 2;
+
+
+  public static final DateTimeFormatter TEXT_LOCAL_DATE_TIME;
+  public static final DateTimeFormatter TEXT_OFFSET_DATE_TIME;
+  public static final DateTimeFormatter TEXT_ZONED_DATE_TIME;
+
+<span class="nc" id="L87">  public static final Pattern isIntegerRegex = Pattern.compile(&quot;^-?\\d+\\.[0-9]+$&quot;);</span>
+  protected static final int NULL_LENGTH = -1;
+
+  static {
+<span class="nc" id="L91">    TEXT_LOCAL_DATE_TIME = new DateTimeFormatterBuilder()</span>
+<span class="nc" id="L92">        .parseCaseInsensitive()</span>
+<span class="nc" id="L93">        .append(DateTimeFormatter.ISO_LOCAL_DATE)</span>
+<span class="nc" id="L94">        .appendLiteral(' ')</span>
+<span class="nc" id="L95">        .append(DateTimeFormatter.ISO_LOCAL_TIME)</span>
+<span class="nc" id="L96">        .toFormatter();</span>
+
+<span class="nc" id="L98">    TEXT_OFFSET_DATE_TIME = new DateTimeFormatterBuilder()</span>
+<span class="nc" id="L99">        .parseCaseInsensitive()</span>
+<span class="nc" id="L100">        .append(TEXT_LOCAL_DATE_TIME)</span>
+<span class="nc" id="L101">        .appendOffsetId()</span>
+<span class="nc" id="L102">        .toFormatter();</span>
+
+<span class="nc" id="L104">    TEXT_ZONED_DATE_TIME = new DateTimeFormatterBuilder()</span>
+<span class="nc" id="L105">        .append(TEXT_OFFSET_DATE_TIME)</span>
+<span class="nc" id="L106">        .optionalStart()</span>
+<span class="nc" id="L107">        .appendLiteral('[')</span>
+<span class="nc" id="L108">        .parseCaseSensitive()</span>
+<span class="nc" id="L109">        .appendZoneRegionId()</span>
+<span class="nc" id="L110">        .appendLiteral(']')</span>
+<span class="nc" id="L111">        .toFormatter();</span>
+<span class="nc" id="L112">  }</span>
+
+  protected final int maxFieldSize;
+  protected final Options options;
+  public int lastValueNull;
+  public byte[] buf;
+  public int pos;
+  public int length;
+  protected int index;
+
+<span class="nc" id="L122">  public RowProtocol(int maxFieldSize, Options options) {</span>
+<span class="nc" id="L123">    this.maxFieldSize = maxFieldSize;</span>
+<span class="nc" id="L124">    this.options = options;</span>
+<span class="nc" id="L125">  }</span>
+
+  public void resetRow(byte[] buf) {
+<span class="nc" id="L128">    this.buf = buf;</span>
+<span class="nc" id="L129">    index = -1;</span>
+<span class="nc" id="L130">  }</span>
+
+  public abstract void setPosition(int position);
+
+  public int getLengthMaxFieldSize() {
+<span class="nc bnc" id="L135" title="All 4 branches missed.">    return maxFieldSize != 0 &amp;&amp; maxFieldSize &lt; length ? maxFieldSize : length;</span>
+  }
+
+  public int getMaxFieldSize() {
+<span class="nc" id="L139">    return maxFieldSize;</span>
+  }
+
+
+  public abstract String getInternalString(ColumnInformation columnInfo, Calendar cal,
+      TimeZone timeZone) throws SQLException;
+
+  public abstract int getInternalInt(ColumnInformation columnInfo) throws SQLException;
+
+  public abstract long getInternalLong(ColumnInformation columnInfo) throws SQLException;
+
+  public abstract float getInternalFloat(ColumnInformation columnInfo) throws SQLException;
+
+  public abstract double getInternalDouble(ColumnInformation columnInfo) throws SQLException;
+
+  public abstract BigDecimal getInternalBigDecimal(ColumnInformation columnInfo)
+      throws SQLException;
+
+  public abstract Date getInternalDate(ColumnInformation columnInfo, Calendar cal,
+      TimeZone timeZone) throws SQLException;
+
+  public abstract Time getInternalTime(ColumnInformation columnInfo, Calendar cal,
+      TimeZone timeZone) throws SQLException;
+
+  public abstract Timestamp getInternalTimestamp(ColumnInformation columnInfo,
+      Calendar userCalendar, TimeZone timeZone) throws SQLException;
+
+  public abstract Object getInternalObject(ColumnInformation columnInfo, TimeZone timeZone)
+      throws SQLException;
+
+  public abstract boolean getInternalBoolean(ColumnInformation columnInfo) throws SQLException;
+
+  public abstract byte getInternalByte(ColumnInformation columnInfo) throws SQLException;
+
+  public abstract short getInternalShort(ColumnInformation columnInfo) throws SQLException;
+
+  public abstract String getInternalTimeString(ColumnInformation columnInfo);
+
+  public abstract BigInteger getInternalBigInteger(ColumnInformation columnInfo)
+      throws SQLException;
+
+  public abstract ZonedDateTime getInternalZonedDateTime(ColumnInformation columnInfo, Class clazz,
+      TimeZone timeZone) throws SQLException;
+
+  public abstract OffsetTime getInternalOffsetTime(ColumnInformation columnInfo, TimeZone timeZone)
+      throws SQLException;
+
+  public abstract LocalTime getInternalLocalTime(ColumnInformation columnInfo, TimeZone timeZone)
+      throws SQLException;
+
+  public abstract LocalDate getInternalLocalDate(ColumnInformation columnInfo, TimeZone timeZone)
+      throws SQLException;
+
+  public abstract boolean isBinaryEncoded();
+
+  public boolean lastValueWasNull() {
+<span class="nc bnc" id="L195" title="All 2 branches missed.">    return (lastValueNull &amp; BIT_LAST_FIELD_NULL) != 0;</span>
+  }
+
+  protected String zeroFillingIfNeeded(String value, ColumnInformation columnInformation) {
+<span class="nc bnc" id="L199" title="All 2 branches missed.">    if (columnInformation.isZeroFill()) {</span>
+<span class="nc" id="L200">      StringBuilder zeroAppendStr = new StringBuilder();</span>
+<span class="nc" id="L201">      long zeroToAdd = columnInformation.getDisplaySize() - value.length();</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">      while (zeroToAdd-- &gt; 0) {</span>
+<span class="nc" id="L203">        zeroAppendStr.append(&quot;0&quot;);</span>
+      }
+<span class="nc" id="L205">      return zeroAppendStr.append(value).toString();</span>
+    }
+<span class="nc" id="L207">    return value;</span>
+  }
+
+  protected int getInternalTinyInt(ColumnInformation columnInfo) {
+<span class="nc bnc" id="L211" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L212">      return 0;</span>
+    }
+<span class="nc" id="L214">    int value = buf[pos];</span>
+<span class="nc bnc" id="L215" title="All 2 branches missed.">    if (!columnInfo.isSigned()) {</span>
+<span class="nc" id="L216">      value = (buf[pos] &amp; 0xff);</span>
+    }
+<span class="nc" id="L218">    return value;</span>
+  }
+
+
+  protected long parseBit() {
+<span class="nc bnc" id="L223" title="All 2 branches missed.">    if (length == 1) {</span>
+<span class="nc" id="L224">      return buf[pos];</span>
+    }
+<span class="nc" id="L226">    long val = 0;</span>
+<span class="nc" id="L227">    int ind = 0;</span>
+    do {
+<span class="nc" id="L229">      val += ((long) (buf[pos + ind] &amp; 0xff)) &lt;&lt; (8 * (length - ++ind));</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">    } while (ind &lt; length);</span>
+<span class="nc" id="L231">    return val;</span>
+  }
+
+  protected int getInternalSmallInt(ColumnInformation columnInfo) {
+<span class="nc bnc" id="L235" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L236">      return 0;</span>
+    }
+<span class="nc" id="L238">    int value = ((buf[pos] &amp; 0xff) + ((buf[pos + 1] &amp; 0xff) &lt;&lt; 8));</span>
+<span class="nc bnc" id="L239" title="All 2 branches missed.">    if (!columnInfo.isSigned()) {</span>
+<span class="nc" id="L240">      return value &amp; 0xffff;</span>
+    }
+    //short cast here is important : -1 will be received as -1, -1 -&gt; 65535
+<span class="nc" id="L243">    return (short) value;</span>
+  }
+
+  protected long getInternalMediumInt(ColumnInformation columnInfo) {
+<span class="nc bnc" id="L247" title="All 2 branches missed.">    if (lastValueWasNull()) {</span>
+<span class="nc" id="L248">      return 0;</span>
+    }
+<span class="nc" id="L250">    long value = ((buf[pos] &amp; 0xff)</span>
+        + ((buf[pos + 1] &amp; 0xff) &lt;&lt; 8)
+        + ((buf[pos + 2] &amp; 0xff) &lt;&lt; 16)
+        + ((buf[pos + 3] &amp; 0xff) &lt;&lt; 24));
+<span class="nc bnc" id="L254" title="All 2 branches missed.">    if (!columnInfo.isSigned()) {</span>
+<span class="nc" id="L255">      value = value &amp; 0xffffffffL;</span>
+    }
+<span class="nc" id="L257">    return value;</span>
+  }
+
+  protected void rangeCheck(Object className, long minValue, long maxValue, BigDecimal value,
+      ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L262" title="All 2 branches missed.">    if (value.compareTo(BigDecimal.valueOf(minValue)) &lt; 0</span>
+<span class="nc bnc" id="L263" title="All 2 branches missed.">        || value.compareTo(BigDecimal.valueOf(maxValue)) &gt; 0) {</span>
+<span class="nc" id="L264">      throw new SQLException(</span>
+<span class="nc" id="L265">          &quot;Out of range value for column '&quot; + columnInfo.getName() + &quot;' : value &quot; + value</span>
+              + &quot; is not in &quot;
+              + className + &quot; range&quot;, &quot;22003&quot;, 1264);
+    }
+<span class="nc" id="L269">  }</span>
+
+  protected void rangeCheck(Object className, long minValue, long maxValue, long value,
+      ColumnInformation columnInfo) throws SQLException {
+<span class="nc bnc" id="L273" title="All 4 branches missed.">    if (value &lt; minValue || value &gt; maxValue) {</span>
+<span class="nc" id="L274">      throw new SQLException(</span>
+<span class="nc" id="L275">          &quot;Out of range value for column '&quot; + columnInfo.getName() + &quot;' : value &quot; + value</span>
+              + &quot; is not in &quot;
+              + className + &quot; range&quot;, &quot;22003&quot;, 1264);
+    }
+<span class="nc" id="L279">  }</span>
+
+
+  protected int extractNanos(String timestring) throws SQLException {
+<span class="nc" id="L283">    int index = timestring.indexOf('.');</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">    if (index == -1) {</span>
+<span class="nc" id="L285">      return 0;</span>
+    }
+<span class="nc" id="L287">    int nanos = 0;</span>
+<span class="nc bnc" id="L288" title="All 2 branches missed.">    for (int i = index + 1; i &lt; index + 10; i++) {</span>
+      int digit;
+<span class="nc bnc" id="L290" title="All 2 branches missed.">      if (i &gt;= timestring.length()) {</span>
+<span class="nc" id="L291">        digit = 0;</span>
+      } else {
+<span class="nc" id="L293">        char value = timestring.charAt(i);</span>
+<span class="nc bnc" id="L294" title="All 4 branches missed.">        if (value &lt; '0' || value &gt; '9') {</span>
+<span class="nc" id="L295">          throw new SQLException(</span>
+              &quot;cannot parse sub-second part in timestamp string '&quot; + timestring + &quot;'&quot;);
+        }
+<span class="nc" id="L298">        digit = value - '0';</span>
+      }
+<span class="nc" id="L300">      nanos = nanos * 10 + digit;</span>
+    }
+<span class="nc" id="L302">    return nanos;</span>
+  }
+
+  /**
+   * Reports whether the last column read had a value of Null. Note that you must first call one of
+   * the getter methods on a column to try to read its value and then call the method wasNull to see
+   * if the value read was Null.
+   *
+   * @return true true if the last column value read was null and false otherwise
+   */
+  public boolean wasNull() {
+<span class="nc bnc" id="L313" title="All 4 branches missed.">    return (lastValueNull &amp; BIT_LAST_FIELD_NULL) != 0</span>
+        || (lastValueNull &amp; BIT_LAST_ZERO_DATE) != 0;
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

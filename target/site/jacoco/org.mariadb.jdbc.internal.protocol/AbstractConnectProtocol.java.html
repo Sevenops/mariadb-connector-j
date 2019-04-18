@@ -1,0 +1,1449 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractConnectProtocol.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.protocol</a> &gt; <span class="el_source">AbstractConnectProtocol.java</span></div><h1>AbstractConnectProtocol.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.protocol;
+
+import static org.mariadb.jdbc.internal.com.Packet.COM_QUERY;
+import static org.mariadb.jdbc.internal.com.Packet.EOF;
+import static org.mariadb.jdbc.internal.com.Packet.ERROR;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.SocketException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.SQLNonTransientConnectionException;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.TimeZone;
+import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
+import javax.net.ssl.SSLException;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+import org.mariadb.jdbc.HostAddress;
+import org.mariadb.jdbc.MariaDbConnection;
+import org.mariadb.jdbc.UrlParser;
+import org.mariadb.jdbc.internal.MariaDbServerCapabilities;
+import org.mariadb.jdbc.internal.com.read.Buffer;
+import org.mariadb.jdbc.internal.com.read.ErrorPacket;
+import org.mariadb.jdbc.internal.com.read.OkPacket;
+import org.mariadb.jdbc.internal.com.read.ReadInitialHandShakePacket;
+import org.mariadb.jdbc.internal.com.read.dao.Results;
+
+import org.mariadb.jdbc.internal.com.send.SendClosePacket;
+import org.mariadb.jdbc.internal.com.send.SendHandshakeResponsePacket;
+import org.mariadb.jdbc.internal.com.send.SendSslConnectionRequestPacket;
+import org.mariadb.jdbc.internal.com.send.authentication.AuthenticationPlugin;
+import org.mariadb.jdbc.internal.com.send.authentication.OldPasswordPlugin;
+import org.mariadb.jdbc.internal.failover.FailoverProxy;
+import org.mariadb.jdbc.internal.io.LruTraceCache;
+import org.mariadb.jdbc.internal.io.input.DecompressPacketInputStream;
+import org.mariadb.jdbc.internal.io.input.PacketInputStream;
+import org.mariadb.jdbc.internal.io.input.StandardPacketInputStream;
+import org.mariadb.jdbc.internal.io.output.CompressPacketOutputStream;
+import org.mariadb.jdbc.internal.io.output.PacketOutputStream;
+import org.mariadb.jdbc.internal.io.output.StandardPacketOutputStream;
+import org.mariadb.jdbc.internal.logging.Logger;
+import org.mariadb.jdbc.internal.logging.LoggerFactory;
+import org.mariadb.jdbc.internal.protocol.authentication.AuthenticationProviderHolder;
+import org.mariadb.jdbc.internal.protocol.authentication.DefaultAuthenticationProvider;
+import org.mariadb.jdbc.internal.protocol.tls.HostnameVerifierImpl;
+import org.mariadb.jdbc.internal.protocol.tls.SslFactory;
+import org.mariadb.jdbc.internal.util.Options;
+import org.mariadb.jdbc.internal.util.ServerPrepareStatementCache;
+import org.mariadb.jdbc.internal.util.Utils;
+import org.mariadb.jdbc.internal.util.constant.HaMode;
+import org.mariadb.jdbc.internal.util.constant.ParameterConstant;
+import org.mariadb.jdbc.internal.util.constant.ServerStatus;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+import org.mariadb.jdbc.internal.util.pool.GlobalStateInfo;
+
+public abstract class AbstractConnectProtocol implements Protocol {
+
+<span class="nc" id="L125">  private static final byte[] SESSION_QUERY = (&quot;SELECT @@max_allowed_packet,&quot;</span>
+      + &quot;@@system_time_zone,&quot;
+      + &quot;@@time_zone,&quot;
+<span class="nc" id="L128">      + &quot;@@auto_increment_increment&quot;).getBytes(StandardCharsets.UTF_8);</span>
+<span class="nc" id="L129">  private static final byte[] IS_MASTER_QUERY = &quot;select @@innodb_read_only&quot;</span>
+<span class="nc" id="L130">      .getBytes(StandardCharsets.UTF_8);</span>
+<span class="nc" id="L131">  private static final Logger logger = LoggerFactory.getLogger(AbstractConnectProtocol.class);</span>
+  protected final ReentrantLock lock;
+  protected final UrlParser urlParser;
+  protected final Options options;
+  private final String username;
+  private final String password;
+<span class="nc" id="L137">  private final LruTraceCache traceCache = new LruTraceCache();</span>
+  private final GlobalStateInfo globalInfo;
+<span class="nc" id="L139">  public boolean hasWarnings = false;</span>
+<span class="nc" id="L140">  public Results activeStreamingResult = null;</span>
+  public short serverStatus;
+  protected int autoIncrementIncrement;
+  protected Socket socket;
+  protected PacketOutputStream writer;
+<span class="nc" id="L145">  protected boolean readOnly = false;</span>
+  protected PacketInputStream reader;
+  protected FailoverProxy proxy;
+<span class="nc" id="L148">  protected volatile boolean connected = false;</span>
+<span class="nc" id="L149">  protected boolean explicitClosed = false;</span>
+  protected String database;
+  protected long serverThreadId;
+  protected ServerPrepareStatementCache serverPrepareStatementCache;
+<span class="nc" id="L153">  protected boolean eofDeprecated = false;</span>
+  protected long serverCapabilities;
+  private HostAddress currentHost;
+  private boolean hostFailed;
+  private String serverVersion;
+  private boolean serverMariaDb;
+  private int majorVersion;
+  private int minorVersion;
+  private int patchVersion;
+  private TimeZone timeZone;
+
+  /**
+   * Get a protocol instance.
+   *
+   * @param urlParser  connection URL information
+   * @param globalInfo server global variables information
+   * @param lock       the lock for thread synchronisation
+   */
+
+  public AbstractConnectProtocol(final UrlParser urlParser, final GlobalStateInfo globalInfo,
+<span class="nc" id="L173">      final ReentrantLock lock) {</span>
+<span class="nc" id="L174">    urlParser.auroraPipelineQuirks();</span>
+<span class="nc" id="L175">    this.lock = lock;</span>
+<span class="nc" id="L176">    this.urlParser = urlParser;</span>
+<span class="nc" id="L177">    this.options = urlParser.getOptions();</span>
+<span class="nc bnc" id="L178" title="All 2 branches missed.">    this.database = (urlParser.getDatabase() == null ? &quot;&quot; : urlParser.getDatabase());</span>
+<span class="nc bnc" id="L179" title="All 2 branches missed.">    this.username = (urlParser.getUsername() == null ? &quot;&quot; : urlParser.getUsername());</span>
+<span class="nc bnc" id="L180" title="All 2 branches missed.">    this.password = (urlParser.getPassword() == null ? &quot;&quot; : urlParser.getPassword());</span>
+<span class="nc" id="L181">    this.globalInfo = globalInfo;</span>
+<span class="nc bnc" id="L182" title="All 4 branches missed.">    if (options.cachePrepStmts &amp;&amp; options.useServerPrepStmts) {</span>
+<span class="nc" id="L183">      serverPrepareStatementCache = ServerPrepareStatementCache</span>
+<span class="nc" id="L184">          .newInstance(options.prepStmtCacheSize, this);</span>
+    }
+<span class="nc" id="L186">  }</span>
+
+  private static void closeSocket(PacketInputStream packetInputStream,
+      PacketOutputStream packetOutputStream, Socket socket) {
+    try {
+      try {
+<span class="nc" id="L192">        long maxCurrentMillis = System.currentTimeMillis() + 10;</span>
+<span class="nc" id="L193">        socket.shutdownOutput();</span>
+<span class="nc" id="L194">        socket.setSoTimeout(3);</span>
+<span class="nc" id="L195">        InputStream is = socket.getInputStream();</span>
+        //noinspection StatementWithEmptyBody
+<span class="nc bnc" id="L197" title="All 4 branches missed.">        while (is.read() != -1 &amp;&amp; System.currentTimeMillis() &lt; maxCurrentMillis) {</span>
+          //read byte
+        }
+<span class="nc" id="L200">      } catch (Throwable t) {</span>
+        //eat exception
+<span class="nc" id="L202">      }</span>
+<span class="nc" id="L203">      packetOutputStream.close();</span>
+<span class="nc" id="L204">      packetInputStream.close();</span>
+<span class="nc" id="L205">    } catch (IOException e) {</span>
+      //eat
+    } finally {
+      try {
+<span class="nc" id="L209">        socket.close();</span>
+<span class="nc" id="L210">      } catch (IOException e) {</span>
+        //socket closed, if any error, so not throwing error
+<span class="nc" id="L212">      }</span>
+    }
+<span class="nc" id="L214">  }</span>
+
+  /**
+   * Closes socket and stream readers/writers Attempts graceful shutdown.
+   */
+  public void close() {
+<span class="nc bnc" id="L220" title="All 2 branches missed.">    if (lock != null) {</span>
+<span class="nc" id="L221">      lock.lock();</span>
+    }
+<span class="nc" id="L223">    this.connected = false;</span>
+    try {
+      /* If a streaming result set is open, close it.*/
+<span class="nc" id="L226">      skip();</span>
+<span class="nc" id="L227">    } catch (Exception e) {</span>
+      /* eat exception */
+<span class="nc" id="L229">    }</span>
+
+<span class="nc" id="L231">    SendClosePacket.send(writer);</span>
+<span class="nc" id="L232">    closeSocket(reader, writer, socket);</span>
+<span class="nc" id="L233">    cleanMemory();</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">    if (lock != null) {</span>
+<span class="nc" id="L235">      lock.unlock();</span>
+    }
+<span class="nc" id="L237">  }</span>
+
+  /**
+   * Force closes socket and stream readers/writers.
+   */
+  public void abort() {
+<span class="nc" id="L243">    this.explicitClosed = true;</span>
+
+<span class="nc" id="L245">    boolean lockStatus = false;</span>
+<span class="nc bnc" id="L246" title="All 2 branches missed.">    if (lock != null) {</span>
+<span class="nc" id="L247">      lockStatus = lock.tryLock();</span>
+    }
+<span class="nc" id="L249">    this.connected = false;</span>
+
+<span class="nc" id="L251">    abortActiveStream();</span>
+
+<span class="nc bnc" id="L253" title="All 2 branches missed.">    if (!lockStatus) {</span>
+      //lock not available : query is running
+      // force end by executing an KILL connection
+<span class="nc" id="L256">      forceAbort();</span>
+      try {
+<span class="nc" id="L258">        socket.setSoLinger(true, 0);</span>
+<span class="nc" id="L259">      } catch (IOException ioException) {</span>
+        //eat
+<span class="nc" id="L261">      }</span>
+    } else {
+<span class="nc" id="L263">      SendClosePacket.send(writer);</span>
+    }
+
+<span class="nc" id="L266">    closeSocket(reader, writer, socket);</span>
+<span class="nc" id="L267">    cleanMemory();</span>
+<span class="nc bnc" id="L268" title="All 2 branches missed.">    if (lockStatus) {</span>
+<span class="nc" id="L269">      lock.unlock();</span>
+    }
+<span class="nc" id="L271">  }</span>
+
+  private void forceAbort() {
+<span class="nc" id="L274">    try (MasterProtocol copiedProtocol = new MasterProtocol(urlParser, new GlobalStateInfo(),</span>
+        new ReentrantLock())) {
+<span class="nc" id="L276">      copiedProtocol.setHostAddress(getHostAddress());</span>
+<span class="nc" id="L277">      copiedProtocol.connect();</span>
+      //no lock, because there is already a query running that possessed the lock.
+<span class="nc" id="L279">      copiedProtocol.executeQuery(&quot;KILL &quot; + serverThreadId);</span>
+<span class="nc" id="L280">    } catch (SQLException sqle) {</span>
+      //eat
+<span class="nc" id="L282">    }</span>
+<span class="nc" id="L283">  }</span>
+
+  private void abortActiveStream() {
+    try {
+      /* If a streaming result set is open, abort it.*/
+<span class="nc bnc" id="L288" title="All 2 branches missed.">      if (activeStreamingResult != null) {</span>
+<span class="nc" id="L289">        activeStreamingResult.abort();</span>
+<span class="nc" id="L290">        activeStreamingResult = null;</span>
+      }
+<span class="nc" id="L292">    } catch (Exception e) {</span>
+      /* eat exception */
+<span class="nc" id="L294">    }</span>
+<span class="nc" id="L295">  }</span>
+
+  /**
+   * Skip packets not read that are not needed. Packets are read according to needs. If some data
+   * have not been read before next execution, skip it.
+   * &lt;i&gt;Lock must be set before using this method&lt;/i&gt;
+   *
+   * @throws SQLException exception
+   */
+  public void skip() throws SQLException {
+<span class="nc bnc" id="L305" title="All 2 branches missed.">    if (activeStreamingResult != null) {</span>
+<span class="nc" id="L306">      activeStreamingResult.loadFully(true, this);</span>
+<span class="nc" id="L307">      activeStreamingResult = null;</span>
+    }
+<span class="nc" id="L309">  }</span>
+
+  private void cleanMemory() {
+<span class="nc bnc" id="L312" title="All 4 branches missed.">    if (options.cachePrepStmts &amp;&amp; options.useServerPrepStmts) {</span>
+<span class="nc" id="L313">      serverPrepareStatementCache.clear();</span>
+    }
+<span class="nc bnc" id="L315" title="All 2 branches missed.">    if (options.enablePacketDebug) {</span>
+<span class="nc" id="L316">      traceCache.clearMemory();</span>
+    }
+<span class="nc" id="L318">  }</span>
+
+  public void setServerStatus(short serverStatus) {
+<span class="nc" id="L321">    this.serverStatus = serverStatus;</span>
+<span class="nc" id="L322">  }</span>
+
+  /**
+   * Remove flag has more results.
+   */
+  public void removeHasMoreResults() {
+<span class="nc bnc" id="L328" title="All 2 branches missed.">    if (hasMoreResults()) {</span>
+<span class="nc" id="L329">      this.serverStatus = (short) (serverStatus ^ ServerStatus.MORE_RESULTS_EXISTS);</span>
+    }
+<span class="nc" id="L331">  }</span>
+
+  /**
+   * InitializeSocketOption.
+   */
+  private void initializeSocketOption() {
+    try {
+
+<span class="nc" id="L339">      socket.setTcpNoDelay(options.tcpNoDelay);</span>
+
+<span class="nc bnc" id="L341" title="All 2 branches missed.">      if (options.tcpKeepAlive) {</span>
+<span class="nc" id="L342">        socket.setKeepAlive(true);</span>
+      }
+<span class="nc bnc" id="L344" title="All 2 branches missed.">      if (options.tcpRcvBuf != null) {</span>
+<span class="nc" id="L345">        socket.setReceiveBufferSize(options.tcpRcvBuf);</span>
+      }
+<span class="nc bnc" id="L347" title="All 2 branches missed.">      if (options.tcpSndBuf != null) {</span>
+<span class="nc" id="L348">        socket.setSendBufferSize(options.tcpSndBuf);</span>
+      }
+<span class="nc bnc" id="L350" title="All 2 branches missed.">      if (options.tcpAbortiveClose) {</span>
+<span class="nc" id="L351">        socket.setSoLinger(true, 0);</span>
+      }
+<span class="nc" id="L353">    } catch (Exception e) {</span>
+<span class="nc" id="L354">      logger.debug(&quot;Failed to set socket option&quot;, e);</span>
+<span class="nc" id="L355">    }</span>
+<span class="nc" id="L356">  }</span>
+
+  /**
+   * Connect to currentHost.
+   *
+   * @throws SQLException exception
+   */
+  public void connect() throws SQLException {
+<span class="nc bnc" id="L364" title="All 2 branches missed.">    if (!isClosed()) {</span>
+<span class="nc" id="L365">      close();</span>
+    }
+
+    try {
+<span class="nc bnc" id="L369" title="All 2 branches missed.">      connect((currentHost != null) ? currentHost.host : null,</span>
+<span class="nc bnc" id="L370" title="All 2 branches missed.">          (currentHost != null) ? currentHost.port : 3306);</span>
+<span class="nc" id="L371">    } catch (IOException ioException) {</span>
+<span class="nc" id="L372">      throw ExceptionMapper.connException(</span>
+<span class="nc" id="L373">          &quot;Could not connect to &quot; + currentHost + &quot;. &quot; + ioException.getMessage() + getTraces(),</span>
+          ioException);
+<span class="nc" id="L375">    }</span>
+<span class="nc" id="L376">  }</span>
+
+  /**
+   * Connect the client and perform handshake.
+   *
+   * @param host host
+   * @param port port
+   * @throws SQLException handshake error, e.g wrong user or password
+   * @throws IOException  connection error (host/port not available)
+   */
+  private void connect(String host, int port) throws SQLException, IOException {
+    try {
+<span class="nc" id="L388">      socket = Utils.createSocket(urlParser, host);</span>
+<span class="nc bnc" id="L389" title="All 2 branches missed.">      if (options.socketTimeout != null) {</span>
+<span class="nc" id="L390">        socket.setSoTimeout(options.socketTimeout);</span>
+      }
+
+<span class="nc" id="L393">      initializeSocketOption();</span>
+
+      // Bind the socket to a particular interface if the connection property
+      // localSocketAddress has been defined.
+<span class="nc bnc" id="L397" title="All 2 branches missed.">      if (options.localSocketAddress != null) {</span>
+<span class="nc" id="L398">        InetSocketAddress localAddress = new InetSocketAddress(options.localSocketAddress, 0);</span>
+<span class="nc" id="L399">        socket.bind(localAddress);</span>
+      }
+
+<span class="nc bnc" id="L402" title="All 2 branches missed.">      if (!socket.isConnected()) {</span>
+        InetSocketAddress sockAddr =
+<span class="nc bnc" id="L404" title="All 2 branches missed.">            urlParser.getOptions().pipe == null ? new InetSocketAddress(host, port) : null;</span>
+<span class="nc bnc" id="L405" title="All 2 branches missed.">        if (options.connectTimeout != 0) {</span>
+<span class="nc" id="L406">          socket.connect(sockAddr, options.connectTimeout);</span>
+        } else {
+<span class="nc" id="L408">          socket.connect(sockAddr);</span>
+        }
+      }
+
+<span class="nc" id="L412">      handleConnectionPhases(host);</span>
+
+<span class="nc" id="L414">      connected = true;</span>
+
+<span class="nc bnc" id="L416" title="All 2 branches missed.">      if (options.useCompression) {</span>
+<span class="nc" id="L417">        writer = new CompressPacketOutputStream(writer.getOutputStream(),</span>
+            options.maxQuerySizeToLog);
+<span class="nc" id="L419">        reader = new DecompressPacketInputStream(</span>
+<span class="nc" id="L420">            ((StandardPacketInputStream) reader).getInputStream(),</span>
+            options.maxQuerySizeToLog);
+<span class="nc bnc" id="L422" title="All 2 branches missed.">        if (options.enablePacketDebug) {</span>
+<span class="nc" id="L423">          writer.setTraceCache(traceCache);</span>
+<span class="nc" id="L424">          reader.setTraceCache(traceCache);</span>
+        }
+      }
+
+<span class="nc" id="L428">      boolean mustLoadAdditionalInfo = true;</span>
+<span class="nc bnc" id="L429" title="All 2 branches missed.">      if (globalInfo != null) {</span>
+<span class="nc bnc" id="L430" title="All 2 branches missed.">        if (globalInfo.isAutocommit() == options.autocommit) {</span>
+<span class="nc" id="L431">          mustLoadAdditionalInfo = false;</span>
+        }
+      }
+
+<span class="nc bnc" id="L435" title="All 2 branches missed.">      if (mustLoadAdditionalInfo) {</span>
+<span class="nc" id="L436">        Map&lt;String, String&gt; serverData = new TreeMap&lt;&gt;();</span>
+<span class="nc bnc" id="L437" title="All 4 branches missed.">        if (options.usePipelineAuth &amp;&amp; !options.createDatabaseIfNotExist) {</span>
+          try {
+<span class="nc" id="L439">            sendPipelineAdditionalData();</span>
+<span class="nc" id="L440">            readPipelineAdditionalData(serverData);</span>
+<span class="nc" id="L441">          } catch (SQLException sqle) {</span>
+<span class="nc bnc" id="L442" title="All 2 branches missed.">            if (&quot;08&quot;.equals(sqle.getSQLState())) {</span>
+<span class="nc" id="L443">              throw sqle;</span>
+            }
+            //in case pipeline is not supported
+            //(proxy flush socket after reading first packet)
+<span class="nc" id="L447">            additionalData(serverData);</span>
+<span class="nc" id="L448">          }</span>
+        } else {
+<span class="nc" id="L450">          additionalData(serverData);</span>
+        }
+
+<span class="nc" id="L453">        writer.setMaxAllowedPacket(Integer.parseInt(serverData.get(&quot;max_allowed_packet&quot;)));</span>
+<span class="nc" id="L454">        autoIncrementIncrement = Integer.parseInt(serverData.get(&quot;auto_increment_increment&quot;));</span>
+<span class="nc" id="L455">        loadCalendar(serverData.get(&quot;time_zone&quot;), serverData.get(&quot;system_time_zone&quot;));</span>
+
+<span class="nc" id="L457">      } else {</span>
+
+<span class="nc" id="L459">        writer.setMaxAllowedPacket((int) globalInfo.getMaxAllowedPacket());</span>
+<span class="nc" id="L460">        autoIncrementIncrement = globalInfo.getAutoIncrementIncrement();</span>
+<span class="nc" id="L461">        loadCalendar(globalInfo.getTimeZone(), globalInfo.getSystemTimeZone());</span>
+      }
+
+<span class="nc" id="L464">      reader.setServerThreadId(this.serverThreadId, isMasterConnection());</span>
+<span class="nc" id="L465">      writer.setServerThreadId(this.serverThreadId, isMasterConnection());</span>
+
+<span class="nc" id="L467">      activeStreamingResult = null;</span>
+<span class="nc" id="L468">      hostFailed = false;</span>
+<span class="nc" id="L469">    } catch (IOException | SQLException ioException) {</span>
+<span class="nc" id="L470">      ensureClosingSocketOnException();</span>
+<span class="nc" id="L471">      throw ioException;</span>
+<span class="nc" id="L472">    }</span>
+<span class="nc" id="L473">  }</span>
+
+  /**
+   * Send all additional needed values. Command are send one after the other, assuming that command
+   * are less than 65k (minimum hosts TCP/IP buffer size)
+   *
+   * @throws IOException if socket exception occur
+   */
+  private void sendPipelineAdditionalData() throws IOException {
+<span class="nc" id="L482">    sendSessionInfos();</span>
+<span class="nc" id="L483">    sendRequestSessionVariables();</span>
+    //for aurora, check that connection is master
+<span class="nc" id="L485">    sendPipelineCheckMaster();</span>
+<span class="nc" id="L486">  }</span>
+
+  private void sendSessionInfos() throws IOException {
+    // In JDBC, connection must start in autocommit mode
+    // [CONJ-269] we cannot rely on serverStatus &amp; ServerStatus.AUTOCOMMIT before this command to avoid this command.
+    // if autocommit=0 is set on server configuration, DB always send Autocommit on serverStatus flag
+    // after setting autocommit, we can rely on serverStatus value
+<span class="nc" id="L493">    StringBuilder sessionOption = new StringBuilder(&quot;autocommit=&quot;)</span>
+<span class="nc bnc" id="L494" title="All 2 branches missed.">        .append(options.autocommit ? &quot;1&quot; : &quot;0&quot;);</span>
+<span class="nc bnc" id="L495" title="All 2 branches missed.">    if ((serverCapabilities &amp; MariaDbServerCapabilities.CLIENT_SESSION_TRACK) != 0) {</span>
+<span class="nc" id="L496">      sessionOption.append(&quot;, session_track_schema=1&quot;);</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">      if (options.rewriteBatchedStatements) {</span>
+<span class="nc" id="L498">        sessionOption.append(&quot;, session_track_system_variables='auto_increment_increment' &quot;);</span>
+      }
+    }
+
+<span class="nc bnc" id="L502" title="All 2 branches missed.">    if (options.jdbcCompliantTruncation) {</span>
+<span class="nc" id="L503">      sessionOption.append(&quot;, sql_mode = concat(@@sql_mode,',STRICT_TRANS_TABLES')&quot;);</span>
+    }
+
+<span class="nc bnc" id="L506" title="All 4 branches missed.">    if (options.sessionVariables != null &amp;&amp; !options.sessionVariables.isEmpty()) {</span>
+<span class="nc" id="L507">      sessionOption.append(&quot;,&quot;).append(Utils.parseSessionVariables(options.sessionVariables));</span>
+    }
+
+<span class="nc" id="L510">    writer.startPacket(0);</span>
+<span class="nc" id="L511">    writer.write(COM_QUERY);</span>
+<span class="nc" id="L512">    writer.write(&quot;set &quot; + sessionOption.toString());</span>
+<span class="nc" id="L513">    writer.flush();</span>
+<span class="nc" id="L514">  }</span>
+
+  private void sendRequestSessionVariables() throws IOException {
+<span class="nc" id="L517">    writer.startPacket(0);</span>
+<span class="nc" id="L518">    writer.write(COM_QUERY);</span>
+<span class="nc" id="L519">    writer.write(SESSION_QUERY);</span>
+<span class="nc" id="L520">    writer.flush();</span>
+<span class="nc" id="L521">  }</span>
+
+  private void readRequestSessionVariables(Map&lt;String, String&gt; serverData) throws SQLException {
+<span class="nc" id="L524">    Results results = new Results();</span>
+<span class="nc" id="L525">    getResult(results);</span>
+
+<span class="nc" id="L527">    results.commandEnd();</span>
+<span class="nc" id="L528">    ResultSet resultSet = results.getResultSet();</span>
+<span class="nc bnc" id="L529" title="All 2 branches missed.">    if (resultSet != null) {</span>
+<span class="nc" id="L530">      resultSet.next();</span>
+
+<span class="nc" id="L532">      serverData.put(&quot;max_allowed_packet&quot;, resultSet.getString(1));</span>
+<span class="nc" id="L533">      serverData.put(&quot;system_time_zone&quot;, resultSet.getString(2));</span>
+<span class="nc" id="L534">      serverData.put(&quot;time_zone&quot;, resultSet.getString(3));</span>
+<span class="nc" id="L535">      serverData.put(&quot;auto_increment_increment&quot;, resultSet.getString(4));</span>
+
+    } else {
+<span class="nc" id="L538">      throw new SQLException(&quot;Error reading SessionVariables results. Socket is connected ? &quot;</span>
+<span class="nc" id="L539">          + socket.isConnected());</span>
+    }
+<span class="nc" id="L541">  }</span>
+
+  private void sendCreateDatabaseIfNotExist(String quotedDb) throws IOException {
+<span class="nc" id="L544">    writer.startPacket(0);</span>
+<span class="nc" id="L545">    writer.write(COM_QUERY);</span>
+<span class="nc" id="L546">    writer.write(&quot;CREATE DATABASE IF NOT EXISTS &quot; + quotedDb);</span>
+<span class="nc" id="L547">    writer.flush();</span>
+<span class="nc" id="L548">  }</span>
+
+  private void sendUseDatabaseIfNotExist(String quotedDb) throws IOException {
+<span class="nc" id="L551">    writer.startPacket(0);</span>
+<span class="nc" id="L552">    writer.write(COM_QUERY);</span>
+<span class="nc" id="L553">    writer.write(&quot;USE &quot; + quotedDb);</span>
+<span class="nc" id="L554">    writer.flush();</span>
+<span class="nc" id="L555">  }</span>
+
+  private void readPipelineAdditionalData(Map&lt;String, String&gt; serverData) throws SQLException {
+
+<span class="nc" id="L559">    SQLException resultingException = null;</span>
+    //read set session OKPacket
+    try {
+<span class="nc" id="L562">      getResult(new Results());</span>
+<span class="nc" id="L563">    } catch (SQLException sqlException) {</span>
+      //must read all results, will be thrown only when all results are read.
+<span class="nc" id="L565">      resultingException = sqlException;</span>
+<span class="nc" id="L566">    }</span>
+
+<span class="nc" id="L568">    boolean canTrySessionWithShow = false;</span>
+    try {
+<span class="nc" id="L570">      readRequestSessionVariables(serverData);</span>
+<span class="nc" id="L571">    } catch (SQLException sqlException) {</span>
+<span class="nc bnc" id="L572" title="All 2 branches missed.">      if (resultingException == null) {</span>
+<span class="nc" id="L573">        resultingException = ExceptionMapper</span>
+<span class="nc" id="L574">            .connException(&quot;could not load system variables&quot;, sqlException);</span>
+<span class="nc" id="L575">        canTrySessionWithShow = true;</span>
+      }
+<span class="nc" id="L577">    }</span>
+
+    try {
+<span class="nc" id="L580">      readPipelineCheckMaster();</span>
+<span class="nc" id="L581">    } catch (SQLException sqlException) {</span>
+<span class="nc" id="L582">      canTrySessionWithShow = false;</span>
+<span class="nc bnc" id="L583" title="All 2 branches missed.">      if (resultingException == null) {</span>
+<span class="nc" id="L584">        throw ExceptionMapper</span>
+<span class="nc" id="L585">            .connException(&quot;could not identified if server is master&quot;, sqlException);</span>
+      }
+<span class="nc" id="L587">    }</span>
+
+<span class="nc bnc" id="L589" title="All 2 branches missed.">    if (canTrySessionWithShow) {</span>
+      //fallback in case of galera non primary nodes that permit only show / set command,
+      //not SELECT when not part of quorum
+<span class="nc" id="L592">      requestSessionDataWithShow(serverData);</span>
+    }
+
+<span class="nc bnc" id="L595" title="All 2 branches missed.">    if (resultingException != null) {</span>
+<span class="nc" id="L596">      throw resultingException;</span>
+    }
+<span class="nc" id="L598">    connected = true;</span>
+
+<span class="nc" id="L600">  }</span>
+
+  private void requestSessionDataWithShow(Map&lt;String, String&gt; serverData) throws SQLException {
+    try {
+<span class="nc" id="L604">      Results results = new Results();</span>
+<span class="nc" id="L605">      executeQuery(true, results, &quot;SHOW VARIABLES WHERE Variable_name in (&quot;</span>
+          + &quot;'max_allowed_packet',&quot;
+          + &quot;'system_time_zone',&quot;
+          + &quot;'time_zone',&quot;
+          + &quot;'auto_increment_increment')&quot;);
+<span class="nc" id="L610">      results.commandEnd();</span>
+<span class="nc" id="L611">      ResultSet resultSet = results.getResultSet();</span>
+<span class="nc bnc" id="L612" title="All 2 branches missed.">      if (resultSet != null) {</span>
+<span class="nc bnc" id="L613" title="All 2 branches missed.">        while (resultSet.next()) {</span>
+<span class="nc bnc" id="L614" title="All 2 branches missed.">          if (logger.isDebugEnabled()) {</span>
+<span class="nc" id="L615">            logger.debug(&quot;server data {} = {}&quot;,</span>
+<span class="nc" id="L616">                resultSet.getString(1),</span>
+<span class="nc" id="L617">                resultSet.getString(2));</span>
+          }
+<span class="nc" id="L619">          serverData.put(resultSet.getString(1), resultSet.getString(2));</span>
+        }
+<span class="nc bnc" id="L621" title="All 2 branches missed.">        if (serverData.size() &lt; 4) {</span>
+<span class="nc" id="L622">          throw ExceptionMapper.connException(</span>
+<span class="nc" id="L623">              &quot;could not load system variables. socket connected: &quot; + socket.isConnected());</span>
+        }
+      }
+
+<span class="nc" id="L627">    } catch (SQLException sqlException) {</span>
+<span class="nc" id="L628">      throw ExceptionMapper.connException(&quot;could not load system variables&quot;, sqlException);</span>
+<span class="nc" id="L629">    }</span>
+<span class="nc" id="L630">  }</span>
+
+  private void additionalData(Map&lt;String, String&gt; serverData) throws IOException, SQLException {
+
+<span class="nc" id="L634">    sendSessionInfos();</span>
+<span class="nc" id="L635">    getResult(new Results());</span>
+
+    try {
+<span class="nc" id="L638">      sendRequestSessionVariables();</span>
+<span class="nc" id="L639">      readRequestSessionVariables(serverData);</span>
+<span class="nc" id="L640">    } catch (SQLException sqlException) {</span>
+<span class="nc" id="L641">      requestSessionDataWithShow(serverData);</span>
+<span class="nc" id="L642">    }</span>
+
+    //for aurora, check that connection is master
+<span class="nc" id="L645">    sendPipelineCheckMaster();</span>
+<span class="nc" id="L646">    readPipelineCheckMaster();</span>
+
+<span class="nc bnc" id="L648" title="All 4 branches missed.">    if (options.createDatabaseIfNotExist &amp;&amp; !database.isEmpty()) {</span>
+      // Try to create the database if it does not exist
+<span class="nc" id="L650">      String quotedDb = MariaDbConnection.quoteIdentifier(this.database);</span>
+<span class="nc" id="L651">      sendCreateDatabaseIfNotExist(quotedDb);</span>
+<span class="nc" id="L652">      getResult(new Results());</span>
+
+<span class="nc" id="L654">      sendUseDatabaseIfNotExist(quotedDb);</span>
+<span class="nc" id="L655">      getResult(new Results());</span>
+    }
+<span class="nc" id="L657">  }</span>
+
+  private void ensureClosingSocketOnException() {
+<span class="nc bnc" id="L660" title="All 2 branches missed.">    if (socket != null) {</span>
+      try {
+<span class="nc" id="L662">        socket.close();</span>
+<span class="nc" id="L663">      } catch (IOException ioe) {</span>
+        //eat exception
+<span class="nc" id="L665">      }</span>
+    }
+<span class="nc" id="L667">  }</span>
+
+  /**
+   * Is the connection closed.
+   *
+   * @return true if the connection is closed
+   */
+  public boolean isClosed() {
+<span class="nc bnc" id="L675" title="All 2 branches missed.">    return !this.connected;</span>
+  }
+
+  private void handleConnectionPhases(String host) throws SQLException {
+    try {
+<span class="nc" id="L680">      reader = new StandardPacketInputStream(socket.getInputStream(), options);</span>
+<span class="nc" id="L681">      writer = new StandardPacketOutputStream(socket.getOutputStream(), options);</span>
+
+<span class="nc bnc" id="L683" title="All 2 branches missed.">      if (options.enablePacketDebug) {</span>
+<span class="nc" id="L684">        writer.setTraceCache(traceCache);</span>
+<span class="nc" id="L685">        reader.setTraceCache(traceCache);</span>
+      }
+
+<span class="nc" id="L688">      final ReadInitialHandShakePacket greetingPacket = new ReadInitialHandShakePacket(reader);</span>
+<span class="nc" id="L689">      this.serverThreadId = greetingPacket.getServerThreadId();</span>
+<span class="nc" id="L690">      reader.setServerThreadId(this.serverThreadId, null);</span>
+<span class="nc" id="L691">      writer.setServerThreadId(this.serverThreadId, null);</span>
+
+<span class="nc" id="L693">      this.serverVersion = greetingPacket.getServerVersion();</span>
+<span class="nc" id="L694">      this.serverMariaDb = greetingPacket.isServerMariaDb();</span>
+<span class="nc" id="L695">      this.serverCapabilities = greetingPacket.getServerCapabilities();</span>
+
+<span class="nc" id="L697">      parseVersion();</span>
+<span class="nc" id="L698">      byte exchangeCharset = decideLanguage(greetingPacket.getServerLanguage() &amp; 0xFF);</span>
+<span class="nc" id="L699">      long clientCapabilities = initializeClientCapabilities(serverCapabilities);</span>
+
+<span class="nc" id="L701">      byte packetSeq = 1;</span>
+<span class="nc bnc" id="L702" title="All 2 branches missed.">      if (options.useSsl</span>
+<span class="nc bnc" id="L703" title="All 2 branches missed.">          &amp;&amp; (greetingPacket.getServerCapabilities() &amp; MariaDbServerCapabilities.SSL) != 0) {</span>
+<span class="nc" id="L704">        clientCapabilities |= MariaDbServerCapabilities.SSL;</span>
+<span class="nc" id="L705">        SendSslConnectionRequestPacket.send(writer, clientCapabilities, exchangeCharset);</span>
+
+<span class="nc" id="L707">        SSLSocketFactory sslSocketFactory = SslFactory.getSslSocketFactory(options);</span>
+<span class="nc" id="L708">        SSLSocket sslSocket = (SSLSocket) sslSocketFactory.createSocket(socket,</span>
+<span class="nc bnc" id="L709" title="All 2 branches missed.">                socket.getInetAddress() == null ? null : socket.getInetAddress().getHostAddress(), socket.getPort(), true);</span>
+
+<span class="nc" id="L711">        enabledSslProtocolSuites(sslSocket);</span>
+<span class="nc" id="L712">        enabledSslCipherSuites(sslSocket);</span>
+
+<span class="nc" id="L714">        sslSocket.setUseClientMode(true);</span>
+<span class="nc" id="L715">        sslSocket.startHandshake();</span>
+
+        // perform hostname verification
+        // (rfc2818 indicate that if &quot;client has external information as to the expected identity of the server,
+        // the hostname check MAY be omitted&quot;)
+<span class="nc bnc" id="L720" title="All 4 branches missed.">        if (!options.disableSslHostnameVerification &amp;&amp; !options.trustServerCertificate) {</span>
+<span class="nc" id="L721">          HostnameVerifierImpl hostnameVerifier = new HostnameVerifierImpl();</span>
+<span class="nc" id="L722">          SSLSession session = sslSocket.getSession();</span>
+<span class="nc bnc" id="L723" title="All 2 branches missed.">          if (!hostnameVerifier.verify(host, session, serverThreadId)) {</span>
+
+            //Use proprietary verify method in order to have an exception with a better description of error.
+            try {
+<span class="nc" id="L727">              Certificate[] certs = session.getPeerCertificates();</span>
+<span class="nc" id="L728">              X509Certificate cert = (X509Certificate) certs[0];</span>
+<span class="nc" id="L729">              hostnameVerifier.verify(host, cert, serverThreadId);</span>
+<span class="nc" id="L730">            } catch (SSLException ex) {</span>
+<span class="nc" id="L731">              throw new SQLNonTransientConnectionException(</span>
+<span class="nc" id="L732">                  &quot;SSL hostname verification failed : &quot; + ex.getMessage()</span>
+                      + &quot;\nThis verification can be disabled using the option \&quot;disableSslHostnameVerification\&quot; &quot;
+                      + &quot;but won't prevent man-in-the-middle attacks anymore&quot;, &quot;08006&quot;);
+<span class="nc" id="L735">            }</span>
+          }
+        }
+
+<span class="nc" id="L739">        socket = sslSocket;</span>
+<span class="nc" id="L740">        writer = new StandardPacketOutputStream(socket.getOutputStream(), options);</span>
+<span class="nc" id="L741">        reader = new StandardPacketInputStream(socket.getInputStream(), options);</span>
+
+<span class="nc bnc" id="L743" title="All 2 branches missed.">        if (options.enablePacketDebug) {</span>
+<span class="nc" id="L744">          writer.setTraceCache(traceCache);</span>
+<span class="nc" id="L745">          reader.setTraceCache(traceCache);</span>
+        }
+<span class="nc" id="L747">        packetSeq++;</span>
+<span class="nc bnc" id="L748" title="All 2 branches missed.">      } else if (options.useSsl) {</span>
+<span class="nc" id="L749">        throw new SQLException(&quot;Trying to connect with ssl, but ssl not enabled in the server&quot;);</span>
+      }
+
+<span class="nc" id="L752">      authentication(exchangeCharset, clientCapabilities, packetSeq, greetingPacket);</span>
+
+<span class="nc" id="L754">    } catch (IOException ioException) {</span>
+<span class="nc bnc" id="L755" title="All 2 branches missed.">      if (reader != null) {</span>
+        try {
+<span class="nc" id="L757">          reader.close();</span>
+<span class="nc" id="L758">        } catch (IOException ee) {</span>
+          //eat exception
+<span class="nc" id="L760">        }</span>
+      }
+<span class="nc bnc" id="L762" title="All 2 branches missed.">      if (currentHost == null) {</span>
+<span class="nc" id="L763">        throw ExceptionMapper.connException(</span>
+<span class="nc" id="L764">            &quot;Could not connect to socket : &quot; + ioException.getMessage(),</span>
+            ioException);
+      }
+<span class="nc" id="L767">      throw ExceptionMapper.connException(</span>
+          &quot;Could not connect to &quot; + currentHost.host + &quot;:&quot; + currentHost.port + &quot; : &quot; + ioException
+<span class="nc" id="L769">              .getMessage(),</span>
+          ioException);
+<span class="nc" id="L771">    }</span>
+<span class="nc" id="L772">  }</span>
+
+  private void authentication(byte exchangeCharset, long clientCapabilities, byte packetSeq,
+      ReadInitialHandShakePacket greetingPacket)
+      throws SQLException, IOException {
+
+    //send handshake response
+<span class="nc" id="L779">    SendHandshakeResponsePacket.send(writer, this.username,</span>
+        this.password,
+        this.currentHost,
+        database,
+        clientCapabilities,
+        serverCapabilities,
+        exchangeCharset,
+        packetSeq,
+        options,
+        greetingPacket);
+
+<span class="nc" id="L790">    writer.permitTrace(false);</span>
+
+<span class="nc" id="L792">    Buffer buffer = reader.getPacket(false);</span>
+<span class="nc" id="L793">    AtomicInteger sequence = new AtomicInteger(reader.getLastPacketSeq());</span>
+
+    authentication_loop:
+    while (true) {
+<span class="nc bnc" id="L797" title="All 4 branches missed.">      switch (buffer.getByteAt(0) &amp; 0xFF) {</span>
+
+        case 0xFE:
+          /**********************************************************************
+           * Authentication Switch Request
+           * see https://mariadb.com/kb/en/library/connection/#authentication-switch-request
+           *********************************************************************/
+<span class="nc" id="L804">          sequence.set(reader.getLastPacketSeq());</span>
+          AuthenticationPlugin authenticationPlugin;
+<span class="nc bnc" id="L806" title="All 2 branches missed.">          if ((serverCapabilities &amp; MariaDbServerCapabilities.PLUGIN_AUTH) != 0) {</span>
+<span class="nc" id="L807">            buffer.readByte();</span>
+            byte[] authData;
+            String plugin;
+<span class="nc bnc" id="L810" title="All 2 branches missed.">            if (buffer.remaining() &gt; 0) {</span>
+              //AuthSwitchRequest packet.
+<span class="nc" id="L812">              plugin = buffer.readStringNullEnd(Charset.forName(&quot;ASCII&quot;));</span>
+<span class="nc" id="L813">              authData = buffer.readRawBytes(buffer.remaining());</span>
+            } else {
+              //OldAuthSwitchRequest
+<span class="nc" id="L816">              plugin = DefaultAuthenticationProvider.MYSQL_OLD_PASSWORD;</span>
+<span class="nc" id="L817">              authData = Utils.copyWithLength(greetingPacket.getSeed(), 8);</span>
+            }
+
+            //Authentication according to plugin.
+            //see AuthenticationProviderHolder for implement other plugin
+<span class="nc" id="L822">            authenticationPlugin = AuthenticationProviderHolder.getAuthenticationProvider()</span>
+<span class="nc" id="L823">                    .processAuthPlugin(plugin, password, authData, options);</span>
+<span class="nc" id="L824">          } else {</span>
+<span class="nc" id="L825">            authenticationPlugin = new OldPasswordPlugin(</span>
+                    this.password,
+<span class="nc" id="L827">                    Utils.copyWithLength(greetingPacket.getSeed(), 8));</span>
+          }
+<span class="nc" id="L829">          buffer = authenticationPlugin.process(writer, reader, sequence);</span>
+<span class="nc" id="L830">          break;</span>
+
+        case 0xFF:
+          /**********************************************************************
+           * ERR_Packet
+           * see https://mariadb.com/kb/en/library/err_packet/
+           *********************************************************************/
+<span class="nc" id="L837">          ErrorPacket errorPacket = new ErrorPacket(buffer);</span>
+<span class="nc bnc" id="L838" title="All 2 branches missed.">          if (password != null</span>
+<span class="nc bnc" id="L839" title="All 2 branches missed.">                  &amp;&amp; !password.isEmpty()</span>
+<span class="nc bnc" id="L840" title="All 2 branches missed.">                  &amp;&amp; errorPacket.getErrorNumber() == 1045</span>
+<span class="nc bnc" id="L841" title="All 2 branches missed.">                  &amp;&amp; &quot;28000&quot;.equals(errorPacket.getSqlState())) {</span>
+            //Access denied
+<span class="nc" id="L843">            throw new SQLException(errorPacket.getMessage()</span>
+<span class="nc" id="L844">                    + &quot;\nCurrent charset is &quot; + Charset.defaultCharset().displayName()</span>
+                    + &quot;. If password has been set using other charset, consider &quot;
+                    + &quot;using option 'passwordCharacterEncoding'&quot;,
+<span class="nc" id="L847">                    errorPacket.getSqlState(), errorPacket.getErrorNumber());</span>
+          }
+<span class="nc" id="L849">          throw new SQLException(errorPacket.getMessage(), errorPacket.getSqlState(),</span>
+<span class="nc" id="L850">                  errorPacket.getErrorNumber());</span>
+
+        case 0x00:
+          /**********************************************************************
+           * Authenticated !
+           * OK_Packet
+           * see https://mariadb.com/kb/en/library/ok_packet/
+           *********************************************************************/
+<span class="nc" id="L858">          serverStatus = new OkPacket(buffer).getServerStatus();</span>
+<span class="nc" id="L859">          break authentication_loop;</span>
+
+        default:
+<span class="nc" id="L862">            throw new SQLException(&quot;unexpected data during authentication (header=&quot; + (buffer.getByteAt(0) &amp; 0xFF));</span>
+
+      }
+    }
+<span class="nc" id="L866">    writer.permitTrace(true);</span>
+<span class="nc" id="L867">  }</span>
+
+  private long initializeClientCapabilities(long serverCapabilities) {
+<span class="nc" id="L870">    long capabilities = MariaDbServerCapabilities.IGNORE_SPACE</span>
+        | MariaDbServerCapabilities.CLIENT_PROTOCOL_41
+        | MariaDbServerCapabilities.TRANSACTIONS
+        | MariaDbServerCapabilities.SECURE_CONNECTION
+        | MariaDbServerCapabilities.LOCAL_FILES
+        | MariaDbServerCapabilities.MULTI_RESULTS
+        | MariaDbServerCapabilities.PS_MULTI_RESULTS
+        | MariaDbServerCapabilities.PLUGIN_AUTH
+        | MariaDbServerCapabilities.CONNECT_ATTRS
+        | MariaDbServerCapabilities.PLUGIN_AUTH_LENENC_CLIENT_DATA
+        | MariaDbServerCapabilities.CLIENT_SESSION_TRACK;
+
+    // MySQL/MariaDB has two ways of calculating row count, eg for an UPDATE statement.
+    // The default (and JDBC standard) is &quot;found rows&quot;. The other option is &quot;affected rows&quot;.
+    // See https://jira.mariadb.org/browse/CONJ-384
+<span class="nc bnc" id="L885" title="All 2 branches missed.">    if (!options.useAffectedRows) {</span>
+<span class="nc" id="L886">      capabilities |= MariaDbServerCapabilities.FOUND_ROWS;</span>
+    }
+
+<span class="nc bnc" id="L889" title="All 4 branches missed.">    if (options.allowMultiQueries || (options.rewriteBatchedStatements)) {</span>
+<span class="nc" id="L890">      capabilities |= MariaDbServerCapabilities.MULTI_STATEMENTS;</span>
+    }
+
+<span class="nc bnc" id="L893" title="All 2 branches missed.">    if ((serverCapabilities &amp; MariaDbServerCapabilities.CLIENT_DEPRECATE_EOF) != 0) {</span>
+<span class="nc" id="L894">      capabilities |= MariaDbServerCapabilities.CLIENT_DEPRECATE_EOF;</span>
+<span class="nc" id="L895">      eofDeprecated = true;</span>
+    }
+
+<span class="nc bnc" id="L898" title="All 2 branches missed.">    if (options.useCompression) {</span>
+<span class="nc bnc" id="L899" title="All 2 branches missed.">      if ((serverCapabilities &amp; MariaDbServerCapabilities.COMPRESS) == 0) {</span>
+        //ensure that server has compress capacity - MaxScale doesn't
+<span class="nc" id="L901">        options.useCompression = false;</span>
+      } else {
+<span class="nc" id="L903">        capabilities |= MariaDbServerCapabilities.COMPRESS;</span>
+      }
+    }
+
+<span class="nc bnc" id="L907" title="All 2 branches missed.">    if (options.interactiveClient) {</span>
+<span class="nc" id="L908">      capabilities |= MariaDbServerCapabilities.CLIENT_INTERACTIVE;</span>
+    }
+
+    // If a database is given, but createDatabaseIfNotExist is not defined or is false,
+    // then just try to connect to the given database
+<span class="nc bnc" id="L913" title="All 4 branches missed.">    if (!database.isEmpty() &amp;&amp; !options.createDatabaseIfNotExist) {</span>
+<span class="nc" id="L914">      capabilities |= MariaDbServerCapabilities.CONNECT_WITH_DB;</span>
+    }
+<span class="nc" id="L916">    return capabilities;</span>
+  }
+
+  private void loadCalendar(final String srvTimeZone, final String srvSystemTimeZone)
+      throws SQLException {
+<span class="nc bnc" id="L921" title="All 2 branches missed.">    if (options.useLegacyDatetimeCode) {</span>
+      //legacy use client timezone
+<span class="nc" id="L923">      timeZone = Calendar.getInstance().getTimeZone();</span>
+    } else {
+      //use server time zone
+<span class="nc" id="L926">      String tz = options.serverTimezone;</span>
+<span class="nc bnc" id="L927" title="All 2 branches missed.">      if (tz == null) {</span>
+<span class="nc" id="L928">        tz = srvTimeZone;</span>
+<span class="nc bnc" id="L929" title="All 2 branches missed.">        if (&quot;SYSTEM&quot;.equals(tz)) {</span>
+<span class="nc" id="L930">          tz = srvSystemTimeZone;</span>
+        }
+      }
+      //handle custom timezone id
+<span class="nc bnc" id="L934" title="All 4 branches missed.">      if (tz != null &amp;&amp; tz.length() &gt;= 2</span>
+<span class="nc bnc" id="L935" title="All 4 branches missed.">          &amp;&amp; (tz.startsWith(&quot;+&quot;) || tz.startsWith(&quot;-&quot;))</span>
+<span class="nc bnc" id="L936" title="All 2 branches missed.">          &amp;&amp; Character.isDigit(tz.charAt(1))) {</span>
+<span class="nc" id="L937">        tz = &quot;GMT&quot; + tz;</span>
+      }
+
+      try {
+<span class="nc" id="L941">        timeZone = Utils.getTimeZone(tz);</span>
+<span class="nc" id="L942">      } catch (SQLException e) {</span>
+<span class="nc bnc" id="L943" title="All 2 branches missed.">        if (options.serverTimezone != null) {</span>
+<span class="nc" id="L944">          throw new SQLException(&quot;The server time_zone '&quot; + tz</span>
+              + &quot;' defined in the 'serverTimezone' parameter cannot be parsed &quot;
+              + &quot;by java TimeZone implementation. See java.util.TimeZone#getAvailableIDs() for available TimeZone, depending on your &quot;
+              + &quot;JRE implementation.&quot;, &quot;01S00&quot;);
+        } else {
+<span class="nc" id="L949">          throw new SQLException(&quot;The server time_zone '&quot; + tz</span>
+              + &quot;' cannot be parsed. The server time zone must defined in the &quot;
+              + &quot;jdbc url string with the 'serverTimezone' parameter (or server time zone must be defined explicitly with &quot;
+              + &quot;sessionVariables=time_zone='Canada/Atlantic' for example).  See &quot;
+              + &quot;java.util.TimeZone#getAvailableIDs() for available TimeZone, depending on your JRE implementation.&quot;,
+              &quot;01S00&quot;);
+        }
+<span class="nc" id="L956">      }</span>
+    }
+
+<span class="nc" id="L959">  }</span>
+
+  /**
+   * Check that current connection is a master connection (not read-only).
+   *
+   * @return true if master
+   * @throws SQLException if requesting infos for server fail.
+   */
+  public boolean checkIfMaster() throws SQLException {
+<span class="nc" id="L968">    return isMasterConnection();</span>
+  }
+
+  /**
+   * Default collation used for string exchanges with server. (always use utf8)
+   *
+   * @param serverLanguage server default collation
+   * @return collation byte
+   */
+  private byte decideLanguage(int serverLanguage) {
+    //force UTF8mb4 if possible, UTF8 if not.
+<span class="nc bnc" id="L979" title="All 8 branches missed.">    if (serverLanguage == 45        //utf8mb4_general_ci</span>
+        || serverLanguage == 46 //utf8mb4_bin
+        || (serverLanguage &gt;= 224 &amp;&amp; serverLanguage &lt;= 247)) {
+<span class="nc" id="L982">      return (byte) serverLanguage;</span>
+<span class="nc bnc" id="L983" title="All 10 branches missed.">    } else if (serverLanguage == 33        //utf8_general_ci</span>
+        || serverLanguage == 83 //utf8_bin
+        || serverLanguage == 223 //utf8_general_mysql500_ci
+        || (serverLanguage &gt;= 192 &amp;&amp; serverLanguage &lt;= 215)) {
+<span class="nc" id="L987">      return (byte) serverLanguage;</span>
+    }
+<span class="nc bnc" id="L989" title="All 4 branches missed.">    if (getMajorServerVersion() == 5 &amp;&amp; getMinorServerVersion() &lt;= 1) {</span>
+<span class="nc" id="L990">      return (byte) 33; //utf8_general_ci</span>
+    }
+<span class="nc" id="L992">    return (byte) 224; //UTF8MB4_UNICODE_CI;</span>
+
+  }
+
+  /**
+   * Check that next read packet is a End-of-file packet.
+   *
+   * @throws SQLException if not a End-of-file packet
+   * @throws IOException  if connection error occur
+   */
+  public void readEofPacket() throws SQLException, IOException {
+<span class="nc" id="L1003">    Buffer buffer = reader.getPacket(true);</span>
+<span class="nc bnc" id="L1004" title="All 3 branches missed.">    switch (buffer.getByteAt(0)) {</span>
+      case EOF:
+<span class="nc" id="L1006">        buffer.skipByte();</span>
+<span class="nc bnc" id="L1007" title="All 2 branches missed.">        this.hasWarnings = buffer.readShort() &gt; 0;</span>
+<span class="nc" id="L1008">        this.serverStatus = buffer.readShort();</span>
+<span class="nc" id="L1009">        break;</span>
+
+      case ERROR:
+<span class="nc" id="L1012">        ErrorPacket ep = new ErrorPacket(buffer);</span>
+<span class="nc" id="L1013">        throw new SQLException(&quot;Could not connect: &quot; + ep.getMessage(), ep.getSqlState(),</span>
+<span class="nc" id="L1014">            ep.getErrorNumber());</span>
+
+      default:
+<span class="nc" id="L1017">        throw new SQLException(&quot;Unexpected packet type &quot; + buffer.getByteAt(0)</span>
+            + &quot; instead of EOF&quot;);
+    }
+<span class="nc" id="L1020">  }</span>
+
+  /**
+   * Check that next read packet is a End-of-file packet.
+   *
+   * @throws SQLException if not a End-of-file packet
+   * @throws IOException  if connection error occur
+   */
+  public void skipEofPacket() throws SQLException, IOException {
+<span class="nc" id="L1029">    Buffer buffer = reader.getPacket(true);</span>
+<span class="nc bnc" id="L1030" title="All 3 branches missed.">    switch (buffer.getByteAt(0)) {</span>
+      case EOF:
+<span class="nc" id="L1032">        break;</span>
+
+      case ERROR:
+<span class="nc" id="L1035">        ErrorPacket ep = new ErrorPacket(buffer);</span>
+<span class="nc" id="L1036">        throw new SQLException(&quot;Could not connect: &quot; + ep.getMessage(), ep.getSqlState(),</span>
+<span class="nc" id="L1037">            ep.getErrorNumber());</span>
+
+      default:
+<span class="nc" id="L1040">        throw new SQLException(&quot;Unexpected packet type &quot; + buffer.getByteAt(0)</span>
+            + &quot; instead of EOF&quot;);
+    }
+<span class="nc" id="L1043">  }</span>
+
+  public void setHostFailedWithoutProxy() {
+<span class="nc" id="L1046">    hostFailed = true;</span>
+<span class="nc" id="L1047">    close();</span>
+<span class="nc" id="L1048">  }</span>
+
+  public UrlParser getUrlParser() {
+<span class="nc" id="L1051">    return urlParser;</span>
+  }
+
+  /**
+   * Indicate if current protocol is a master protocol.
+   *
+   * @return is master flag
+   */
+  public boolean isMasterConnection() {
+<span class="nc bnc" id="L1060" title="All 4 branches missed.">    return currentHost == null || ParameterConstant.TYPE_MASTER.equals(currentHost.type);</span>
+  }
+
+  /**
+   * Send query to identify if server is master.
+   *
+   * @throws IOException in case of socket error.
+   */
+  private void sendPipelineCheckMaster() throws IOException {
+<span class="nc bnc" id="L1069" title="All 2 branches missed.">    if (urlParser.getHaMode() == HaMode.AURORA) {</span>
+<span class="nc" id="L1070">      writer.startPacket(0);</span>
+<span class="nc" id="L1071">      writer.write(COM_QUERY);</span>
+<span class="nc" id="L1072">      writer.write(IS_MASTER_QUERY);</span>
+<span class="nc" id="L1073">      writer.flush();</span>
+    }
+<span class="nc" id="L1075">  }</span>
+
+  public void readPipelineCheckMaster() throws SQLException {
+    //nothing if not aurora
+<span class="nc" id="L1079">  }</span>
+
+  public boolean mustBeMasterConnection() {
+<span class="nc" id="L1082">    return true;</span>
+  }
+
+  public boolean noBackslashEscapes() {
+<span class="nc bnc" id="L1086" title="All 2 branches missed.">    return ((serverStatus &amp; ServerStatus.NO_BACKSLASH_ESCAPES) != 0);</span>
+  }
+
+  /**
+   * Connect without proxy. (use basic failover implementation)
+   *
+   * @throws SQLException exception
+   */
+  public void connectWithoutProxy() throws SQLException {
+<span class="nc bnc" id="L1095" title="All 2 branches missed.">    if (!isClosed()) {</span>
+<span class="nc" id="L1096">      close();</span>
+    }
+
+<span class="nc" id="L1099">    List&lt;HostAddress&gt; addrs = urlParser.getHostAddresses();</span>
+<span class="nc" id="L1100">    LinkedList&lt;HostAddress&gt; hosts = new LinkedList&lt;&gt;(addrs);</span>
+
+<span class="nc bnc" id="L1102" title="All 2 branches missed.">    if (urlParser.getHaMode().equals(HaMode.LOADBALANCE)) {</span>
+<span class="nc" id="L1103">      Collections.shuffle(hosts);</span>
+    }
+
+    //CONJ-293 : handle name-pipe without host
+<span class="nc bnc" id="L1107" title="All 4 branches missed.">    if (hosts.isEmpty() &amp;&amp; options.pipe != null) {</span>
+      try {
+<span class="nc" id="L1109">        connect(null, 0);</span>
+<span class="nc" id="L1110">        return;</span>
+<span class="nc" id="L1111">      } catch (IOException ioException) {</span>
+<span class="nc" id="L1112">        throw ExceptionMapper.connException(</span>
+<span class="nc" id="L1113">            &quot;Could not connect to named pipe '&quot; + options.pipe + &quot;' : &quot; + ioException.getMessage()</span>
+<span class="nc" id="L1114">                + getTraces(),</span>
+            ioException);
+      }
+    }
+
+    // There could be several addresses given in the URL spec, try all of them, and throw exception if all hosts
+    // fail.
+<span class="nc bnc" id="L1121" title="All 2 branches missed.">    while (!hosts.isEmpty()) {</span>
+<span class="nc" id="L1122">      currentHost = hosts.poll();</span>
+      try {
+<span class="nc" id="L1124">        connect(currentHost.host, currentHost.port);</span>
+<span class="nc" id="L1125">        return;</span>
+<span class="nc" id="L1126">      } catch (SQLException e) {</span>
+<span class="nc bnc" id="L1127" title="All 2 branches missed.">        if (hosts.isEmpty()) {</span>
+<span class="nc" id="L1128">          throw ExceptionMapper.getException(e, null, null, false);</span>
+        }
+<span class="nc" id="L1130">      } catch (IOException ioException) {</span>
+<span class="nc bnc" id="L1131" title="All 2 branches missed.">        if (hosts.isEmpty()) {</span>
+<span class="nc" id="L1132">          throw ExceptionMapper.connException(</span>
+<span class="nc" id="L1133">              &quot;Could not connect to &quot; + HostAddress.toString(addrs) + &quot; : &quot; + ioException</span>
+<span class="nc" id="L1134">                  .getMessage() + getTraces(),</span>
+              ioException);
+        }
+<span class="nc" id="L1137">      }</span>
+    }
+<span class="nc" id="L1139">  }</span>
+
+  public boolean shouldReconnectWithoutProxy() {
+<span class="nc bnc" id="L1142" title="All 4 branches missed.">    return (((serverStatus &amp; ServerStatus.IN_TRANSACTION) == 0) &amp;&amp; hostFailed &amp;&amp; urlParser</span>
+<span class="nc bnc" id="L1143" title="All 2 branches missed.">        .getOptions().autoReconnect);</span>
+  }
+
+  public String getServerVersion() {
+<span class="nc" id="L1147">    return serverVersion;</span>
+  }
+
+  public boolean getReadonly() {
+<span class="nc" id="L1151">    return readOnly;</span>
+  }
+
+  public void setReadonly(final boolean readOnly) {
+<span class="nc" id="L1155">    this.readOnly = readOnly;</span>
+<span class="nc" id="L1156">  }</span>
+
+  public HostAddress getHostAddress() {
+<span class="nc" id="L1159">    return currentHost;</span>
+  }
+
+  public void setHostAddress(HostAddress host) {
+<span class="nc" id="L1163">    this.currentHost = host;</span>
+<span class="nc" id="L1164">    this.readOnly = ParameterConstant.TYPE_SLAVE.equals(this.currentHost.type);</span>
+<span class="nc" id="L1165">  }</span>
+
+  public String getHost() {
+<span class="nc bnc" id="L1168" title="All 2 branches missed.">    return (currentHost == null) ? null : currentHost.host;</span>
+  }
+
+  public FailoverProxy getProxy() {
+<span class="nc" id="L1172">    return proxy;</span>
+  }
+
+  public void setProxy(FailoverProxy proxy) {
+<span class="nc" id="L1176">    this.proxy = proxy;</span>
+<span class="nc" id="L1177">  }</span>
+
+  public int getPort() {
+<span class="nc bnc" id="L1180" title="All 2 branches missed.">    return (currentHost == null) ? 3306 : currentHost.port;</span>
+  }
+
+  public String getDatabase() {
+<span class="nc" id="L1184">    return database;</span>
+  }
+
+  public String getUsername() {
+<span class="nc" id="L1188">    return username;</span>
+  }
+
+  private void parseVersion() {
+<span class="nc" id="L1192">    int length = serverVersion.length();</span>
+    char car;
+<span class="nc" id="L1194">    int offset = 0;</span>
+<span class="nc" id="L1195">    int type = 0;</span>
+<span class="nc" id="L1196">    int val = 0;</span>
+<span class="nc bnc" id="L1197" title="All 2 branches missed.">    for (; offset &lt; length; offset++) {</span>
+<span class="nc" id="L1198">      car = serverVersion.charAt(offset);</span>
+<span class="nc bnc" id="L1199" title="All 4 branches missed.">      if (car &lt; '0' || car &gt; '9') {</span>
+<span class="nc bnc" id="L1200" title="All 4 branches missed.">        switch (type) {</span>
+          case 0:
+<span class="nc" id="L1202">            majorVersion = val;</span>
+<span class="nc" id="L1203">            break;</span>
+          case 1:
+<span class="nc" id="L1205">            minorVersion = val;</span>
+<span class="nc" id="L1206">            break;</span>
+          case 2:
+<span class="nc" id="L1208">            patchVersion = val;</span>
+<span class="nc" id="L1209">            return;</span>
+          default:
+            break;
+        }
+<span class="nc" id="L1213">        type++;</span>
+<span class="nc" id="L1214">        val = 0;</span>
+      } else {
+<span class="nc" id="L1216">        val = val * 10 + car - 48;</span>
+      }
+    }
+
+    //serverVersion finished by number like &quot;5.5.57&quot;, assign patchVersion
+<span class="nc bnc" id="L1221" title="All 2 branches missed.">    if (type == 2) {</span>
+<span class="nc" id="L1222">      patchVersion = val;</span>
+    }
+<span class="nc" id="L1224">  }</span>
+
+  public int getMajorServerVersion() {
+<span class="nc" id="L1227">    return majorVersion;</span>
+
+  }
+
+  public int getMinorServerVersion() {
+<span class="nc" id="L1232">    return minorVersion;</span>
+  }
+
+  /**
+   * Return possible protocols : values of option enabledSslProtocolSuites is set, or default to
+   * &quot;TLSv1,TLSv1.1&quot;. MariaDB versions &amp;ge; 10.0.15 and &amp;ge; 5.5.41 supports TLSv1.2 if compiled
+   * with openSSL (default). MySQL community versions &amp;ge; 5.7.10 is compile with yaSSL, so max TLS
+   * is TLSv1.1.
+   *
+   * @param sslSocket current sslSocket
+   * @throws SQLException if protocol isn't a supported protocol
+   */
+  private void enabledSslProtocolSuites(SSLSocket sslSocket) throws SQLException {
+<span class="nc bnc" id="L1245" title="All 2 branches missed.">    if (options.enabledSslProtocolSuites != null) {</span>
+<span class="nc" id="L1246">      List&lt;String&gt; possibleProtocols = Arrays.asList(sslSocket.getSupportedProtocols());</span>
+<span class="nc" id="L1247">      String[] protocols = options.enabledSslProtocolSuites.split(&quot;[,;\\s]+&quot;);</span>
+<span class="nc bnc" id="L1248" title="All 2 branches missed.">      for (String protocol : protocols) {</span>
+<span class="nc bnc" id="L1249" title="All 2 branches missed.">        if (!possibleProtocols.contains(protocol)) {</span>
+<span class="nc" id="L1250">          throw new SQLException(</span>
+              &quot;Unsupported SSL protocol '&quot; + protocol + &quot;'. Supported protocols : &quot;
+<span class="nc" id="L1252">                  + possibleProtocols.toString().replace(&quot;[&quot;, &quot;&quot;).replace(&quot;]&quot;, &quot;&quot;));</span>
+        }
+      }
+<span class="nc" id="L1255">      sslSocket.setEnabledProtocols(protocols);</span>
+    }
+<span class="nc" id="L1257">  }</span>
+
+  /**
+   * Set ssl socket cipher according to options.
+   *
+   * @param sslSocket current ssl socket
+   * @throws SQLException if a cipher isn't known
+   */
+  private void enabledSslCipherSuites(SSLSocket sslSocket) throws SQLException {
+<span class="nc bnc" id="L1266" title="All 2 branches missed.">    if (options.enabledSslCipherSuites != null) {</span>
+<span class="nc" id="L1267">      List&lt;String&gt; possibleCiphers = Arrays.asList(sslSocket.getSupportedCipherSuites());</span>
+<span class="nc" id="L1268">      String[] ciphers = options.enabledSslCipherSuites.split(&quot;[,;\\s]+&quot;);</span>
+<span class="nc bnc" id="L1269" title="All 2 branches missed.">      for (String cipher : ciphers) {</span>
+<span class="nc bnc" id="L1270" title="All 2 branches missed.">        if (!possibleCiphers.contains(cipher)) {</span>
+<span class="nc" id="L1271">          throw new SQLException(&quot;Unsupported SSL cipher '&quot; + cipher + &quot;'. Supported ciphers : &quot;</span>
+<span class="nc" id="L1272">              + possibleCiphers.toString().replace(&quot;[&quot;, &quot;&quot;).replace(&quot;]&quot;, &quot;&quot;));</span>
+        }
+      }
+<span class="nc" id="L1275">      sslSocket.setEnabledCipherSuites(ciphers);</span>
+    }
+<span class="nc" id="L1277">  }</span>
+
+  /**
+   * Utility method to check if database version is greater than parameters.
+   *
+   * @param major major version
+   * @param minor minor version
+   * @param patch patch version
+   * @return true if version is greater than parameters
+   */
+  public boolean versionGreaterOrEqual(int major, int minor, int patch) {
+<span class="nc bnc" id="L1288" title="All 2 branches missed.">    if (this.majorVersion &gt; major) {</span>
+<span class="nc" id="L1289">      return true;</span>
+    }
+
+<span class="nc bnc" id="L1292" title="All 2 branches missed.">    if (this.majorVersion &lt; major) {</span>
+<span class="nc" id="L1293">      return false;</span>
+    }
+
+    /*
+     * Major versions are equal, compare minor versions
+     */
+<span class="nc bnc" id="L1299" title="All 2 branches missed.">    if (this.minorVersion &gt; minor) {</span>
+<span class="nc" id="L1300">      return true;</span>
+    }
+<span class="nc bnc" id="L1302" title="All 2 branches missed.">    if (this.minorVersion &lt; minor) {</span>
+<span class="nc" id="L1303">      return false;</span>
+    }
+
+    //Minor versions are equal, compare patch version.
+<span class="nc bnc" id="L1307" title="All 2 branches missed.">    return this.patchVersion &gt;= patch;</span>
+  }
+
+  public boolean getPinGlobalTxToPhysicalConnection() {
+<span class="nc" id="L1311">    return this.options.pinGlobalTxToPhysicalConnection;</span>
+  }
+
+  /**
+   * Has warnings.
+   *
+   * @return true if as warnings.
+   */
+  public boolean hasWarnings() {
+<span class="nc" id="L1320">    lock.lock();</span>
+    try {
+<span class="nc" id="L1322">      return hasWarnings;</span>
+    } finally {
+<span class="nc" id="L1324">      lock.unlock();</span>
+    }
+  }
+
+  /**
+   * Is connected.
+   *
+   * @return true if connected
+   */
+  public boolean isConnected() {
+<span class="nc" id="L1334">    lock.lock();</span>
+    try {
+<span class="nc" id="L1336">      return connected;</span>
+    } finally {
+<span class="nc" id="L1338">      lock.unlock();</span>
+    }
+  }
+
+  public long getServerThreadId() {
+<span class="nc" id="L1343">    return serverThreadId;</span>
+  }
+
+  @Override
+  public Socket getSocket() {
+<span class="nc" id="L1348">    return socket;</span>
+  }
+
+  public boolean isExplicitClosed() {
+<span class="nc" id="L1352">    return explicitClosed;</span>
+  }
+
+  public TimeZone getTimeZone() {
+<span class="nc" id="L1356">    return timeZone;</span>
+  }
+
+  public Options getOptions() {
+<span class="nc" id="L1360">    return options;</span>
+  }
+
+  public void setHasWarnings(boolean hasWarnings) {
+<span class="nc" id="L1364">    this.hasWarnings = hasWarnings;</span>
+<span class="nc" id="L1365">  }</span>
+
+  public Results getActiveStreamingResult() {
+<span class="nc" id="L1368">    return activeStreamingResult;</span>
+  }
+
+  public void setActiveStreamingResult(Results activeStreamingResult) {
+<span class="nc" id="L1372">    this.activeStreamingResult = activeStreamingResult;</span>
+<span class="nc" id="L1373">  }</span>
+
+  /**
+   * Remove exception result and since totally fetched, set fetch size to 0.
+   */
+  public void removeActiveStreamingResult() {
+<span class="nc bnc" id="L1379" title="All 2 branches missed.">    if (this.activeStreamingResult != null) {</span>
+<span class="nc" id="L1380">      this.activeStreamingResult.removeFetchSize();</span>
+<span class="nc" id="L1381">      this.activeStreamingResult = null;</span>
+    }
+<span class="nc" id="L1383">  }</span>
+
+  @Override
+  public ReentrantLock getLock() {
+<span class="nc" id="L1387">    return lock;</span>
+  }
+
+  @Override
+  public boolean hasMoreResults() {
+<span class="nc bnc" id="L1392" title="All 2 branches missed.">    return (serverStatus &amp; ServerStatus.MORE_RESULTS_EXISTS) != 0;</span>
+  }
+
+  public ServerPrepareStatementCache prepareStatementCache() {
+<span class="nc" id="L1396">    return serverPrepareStatementCache;</span>
+  }
+
+  public abstract void executeQuery(final String sql) throws SQLException;
+
+  /**
+   * Change Socket TcpNoDelay option.
+   *
+   * @param setTcpNoDelay value to set.
+   */
+  public void changeSocketTcpNoDelay(boolean setTcpNoDelay) {
+    try {
+<span class="nc" id="L1408">      socket.setTcpNoDelay(setTcpNoDelay);</span>
+<span class="nc" id="L1409">    } catch (SocketException socketException) {</span>
+      //eat exception
+<span class="nc" id="L1411">    }</span>
+<span class="nc" id="L1412">  }</span>
+
+  public void changeSocketSoTimeout(int setSoTimeout) throws SocketException {
+<span class="nc" id="L1415">    socket.setSoTimeout(setSoTimeout);</span>
+<span class="nc" id="L1416">  }</span>
+
+  public boolean isServerMariaDb() {
+<span class="nc" id="L1419">    return serverMariaDb;</span>
+  }
+
+  public PacketInputStream getReader() {
+<span class="nc" id="L1423">    return reader;</span>
+  }
+
+  public PacketOutputStream getWriter() {
+<span class="nc" id="L1427">    return writer;</span>
+  }
+
+  public boolean isEofDeprecated() {
+<span class="nc" id="L1431">    return eofDeprecated;</span>
+  }
+
+  public boolean sessionStateAware() {
+<span class="nc bnc" id="L1435" title="All 2 branches missed.">    return (serverCapabilities &amp; MariaDbServerCapabilities.CLIENT_SESSION_TRACK) != 0;</span>
+  }
+
+  /**
+   * Get a String containing readable information about last 10 send/received packets.
+   * @return String value
+   */
+  public String getTraces() {
+<span class="nc bnc" id="L1443" title="All 2 branches missed.">    if (options.enablePacketDebug) {</span>
+<span class="nc" id="L1444">      return traceCache.printStack();</span>
+    }
+<span class="nc" id="L1446">    return &quot;&quot;;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

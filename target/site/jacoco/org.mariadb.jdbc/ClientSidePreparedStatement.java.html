@@ -1,0 +1,563 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClientSidePreparedStatement.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc</a> &gt; <span class="el_source">ClientSidePreparedStatement.java</span></div><h1>ClientSidePreparedStatement.java</h1><pre class="source lang-java linenums">
+/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc;
+
+import java.sql.ParameterMetaData;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.SQLSyntaxErrorException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+import org.mariadb.jdbc.internal.com.read.dao.Results;
+import org.mariadb.jdbc.internal.com.read.resultset.SelectResultSet;
+import org.mariadb.jdbc.internal.com.send.parameters.ParameterHolder;
+import org.mariadb.jdbc.internal.logging.Logger;
+import org.mariadb.jdbc.internal.logging.LoggerFactory;
+import org.mariadb.jdbc.internal.util.dao.ClientPrepareResult;
+import org.mariadb.jdbc.internal.util.exceptions.ExceptionMapper;
+
+
+public class ClientSidePreparedStatement extends BasePrepareStatement {
+
+<span class="nc" id="L75">  private static final Logger logger = LoggerFactory</span>
+<span class="nc" id="L76">      .getLogger(ClientSidePreparedStatement.class);</span>
+<span class="nc" id="L77">  private final List&lt;ParameterHolder[]&gt; parameterList = new ArrayList&lt;&gt;();</span>
+  private ClientPrepareResult prepareResult;
+  private String sqlQuery;
+  private ParameterHolder[] parameters;
+<span class="nc" id="L81">  private ResultSetMetaData resultSetMetaData = null;</span>
+<span class="nc" id="L82">  private ParameterMetaData parameterMetaData = null;</span>
+
+  /**
+   * Constructor.
+   *
+   * @param connection           connection
+   * @param sql                  sql query
+   * @param resultSetScrollType  one of the following &lt;code&gt;ResultSet&lt;/code&gt; constants:
+   *                             &lt;code&gt;ResultSet.TYPE_FORWARD_ONLY&lt;/code&gt;,
+   *                             &lt;code&gt;ResultSet.TYPE_SCROLL_INSENSITIVE&lt;/code&gt;, or
+   *                             &lt;code&gt;ResultSet.TYPE_SCROLL_SENSITIVE&lt;/code&gt;
+   * @param resultSetConcurrency a concurrency type; one of &lt;code&gt;ResultSet.CONCUR_READ_ONLY&lt;/code&gt;
+   *                             or
+   *                             &lt;code&gt;ResultSet.CONCUR_UPDATABLE&lt;/code&gt;
+   * @param autoGeneratedKeys    a flag indicating whether auto-generated keys should be returned;
+   *                             one of
+   *                             &lt;code&gt;Statement.RETURN_GENERATED_KEYS&lt;/code&gt;
+   *                             or &lt;code&gt;Statement.NO_GENERATED_KEYS&lt;/code&gt;
+   * @throws SQLException exception
+   */
+  public ClientSidePreparedStatement(MariaDbConnection connection, String sql,
+      int resultSetScrollType,
+      int resultSetConcurrency, int autoGeneratedKeys) throws SQLException {
+<span class="nc" id="L105">    super(connection, resultSetScrollType, resultSetConcurrency, autoGeneratedKeys);</span>
+<span class="nc" id="L106">    sqlQuery = sql;</span>
+
+<span class="nc bnc" id="L108" title="All 2 branches missed.">    if (options.rewriteBatchedStatements) {</span>
+<span class="nc" id="L109">      prepareResult = ClientPrepareResult</span>
+<span class="nc" id="L110">          .rewritableParts(sqlQuery, protocol.noBackslashEscapes());</span>
+    } else {
+<span class="nc" id="L112">      prepareResult = ClientPrepareResult.parameterParts(sqlQuery, protocol.noBackslashEscapes());</span>
+    }
+<span class="nc" id="L114">    parameters = new ParameterHolder[prepareResult.getParamCount()];</span>
+<span class="nc" id="L115">  }</span>
+
+  /**
+   * Clone statement.
+   *
+   * @param connection connection
+   * @return Clone statement.
+   * @throws CloneNotSupportedException if any error occur.
+   */
+  public ClientSidePreparedStatement clone(MariaDbConnection connection)
+      throws CloneNotSupportedException {
+<span class="nc" id="L126">    ClientSidePreparedStatement clone = (ClientSidePreparedStatement) super.clone(connection);</span>
+<span class="nc" id="L127">    clone.sqlQuery = sqlQuery;</span>
+<span class="nc" id="L128">    clone.prepareResult = prepareResult;</span>
+<span class="nc" id="L129">    clone.parameters = new ParameterHolder[prepareResult.getParamCount()];</span>
+<span class="nc" id="L130">    clone.resultSetMetaData = resultSetMetaData;</span>
+<span class="nc" id="L131">    clone.parameterMetaData = parameterMetaData;</span>
+<span class="nc" id="L132">    return clone;</span>
+  }
+
+  /**
+   * Executes the SQL statement in this &lt;code&gt;PreparedStatement&lt;/code&gt; object, which may be any kind
+   * of SQL statement. Some prepared statements return multiple results; the &lt;code&gt;execute&lt;/code&gt;
+   * method handles these complex statements as well as the simpler form of statements handled by
+   * the methods &lt;code&gt;executeQuery&lt;/code&gt; and &lt;code&gt;executeUpdate&lt;/code&gt;.
+   * &lt;br&gt;
+   * The &lt;code&gt;execute&lt;/code&gt; method returns a &lt;code&gt;boolean&lt;/code&gt; to indicate the form of the
+   * first result.  You must call either the method
+   * &lt;code&gt;getResultSet&lt;/code&gt; or &lt;code&gt;getUpdateCount&lt;/code&gt;
+   * to retrieve the result; you must call &lt;code&gt;getInternalMoreResults&lt;/code&gt; to move to any
+   * subsequent result(s).
+   *
+   * @return &lt;code&gt;true&lt;/code&gt; if the first result is a &lt;code&gt;ResultSet&lt;/code&gt;
+   *     object; &lt;code&gt;false&lt;/code&gt; if the first result is an update count or there is no result
+   * @throws SQLException if a database access error occurs; this method is called on a closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt; or an argument is supplied to this method
+   * @see Statement#execute
+   * @see Statement#getResultSet
+   * @see Statement#getUpdateCount
+   * @see Statement#getMoreResults
+   */
+  public boolean execute() throws SQLException {
+<span class="nc" id="L157">    return executeInternal(getFetchSize());</span>
+  }
+
+  /**
+   * Executes the SQL query in this &lt;code&gt;PreparedStatement&lt;/code&gt; object and returns the
+   * &lt;code&gt;ResultSet&lt;/code&gt; object generated by the query.
+   *
+   * @return a &lt;code&gt;ResultSet&lt;/code&gt; object that contains the data produced by the query; never
+   * &lt;code&gt;null&lt;/code&gt;
+   * @throws SQLException if a database access error occurs; this method is called on a closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt; or the SQL statement does not return a
+   *                      &lt;code&gt;ResultSet&lt;/code&gt;
+   *                      object
+   */
+  public ResultSet executeQuery() throws SQLException {
+<span class="nc bnc" id="L172" title="All 2 branches missed.">    if (execute()) {</span>
+<span class="nc" id="L173">      return results.getResultSet();</span>
+    }
+<span class="nc" id="L175">    return SelectResultSet.createEmptyResultSet();</span>
+  }
+
+
+  /**
+   * Executes the SQL statement in this &lt;code&gt;PreparedStatement&lt;/code&gt; object, which must be an SQL
+   * Data Manipulation Language (DML) statement, such as &lt;code&gt;INSERT&lt;/code&gt;, &lt;code&gt;UPDATE&lt;/code&gt;
+   * or
+   * &lt;code&gt;DELETE&lt;/code&gt;; or an SQL statement that returns nothing, such as a DDL statement.
+   *
+   * @return either (1) the row count for SQL Data Manipulation Language (DML) statements or (2) 0
+   *     for SQL statements that return nothing
+   * @throws SQLException if a database access error occurs; this method is called on a closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt; or the SQL statement returns a
+   *                      &lt;code&gt;ResultSet&lt;/code&gt; object
+   */
+  public int executeUpdate() throws SQLException {
+<span class="nc bnc" id="L192" title="All 2 branches missed.">    if (execute()) {</span>
+<span class="nc" id="L193">      return 0;</span>
+    }
+<span class="nc" id="L195">    return getUpdateCount();</span>
+  }
+
+  protected boolean executeInternal(int fetchSize) throws SQLException {
+
+    //valid parameters
+<span class="nc bnc" id="L201" title="All 2 branches missed.">    for (int i = 0; i &lt; prepareResult.getParamCount(); i++) {</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">      if (parameters[i] == null) {</span>
+<span class="nc" id="L203">        logger.error(&quot;Parameter at position {} is not set&quot;, (i + 1));</span>
+<span class="nc" id="L204">        ExceptionMapper.throwException(</span>
+            new SQLException(&quot;Parameter at position &quot; + (i + 1) + &quot; is not set&quot;, &quot;07004&quot;),
+            connection, this);
+      }
+    }
+
+<span class="nc" id="L210">    lock.lock();</span>
+    try {
+<span class="nc" id="L212">      executeQueryPrologue(false);</span>
+<span class="nc" id="L213">      results = new Results(this, fetchSize, false, 1, false, resultSetScrollType,</span>
+          resultSetConcurrency, autoGeneratedKeys,
+<span class="nc" id="L215">          protocol.getAutoIncrementIncrement());</span>
+<span class="nc bnc" id="L216" title="All 4 branches missed.">      if (queryTimeout != 0 &amp;&amp; canUseServerTimeout) {</span>
+        //timer will not be used for timeout to avoid having threads
+<span class="nc" id="L218">        protocol.executeQuery(protocol.isMasterConnection(), results, prepareResult, parameters,</span>
+            queryTimeout);
+      } else {
+<span class="nc" id="L221">        protocol.executeQuery(protocol.isMasterConnection(), results, prepareResult, parameters);</span>
+      }
+<span class="nc" id="L223">      results.commandEnd();</span>
+<span class="nc bnc" id="L224" title="All 2 branches missed.">      return results.getResultSet() != null;</span>
+
+<span class="nc" id="L226">    } catch (SQLException exception) {</span>
+<span class="nc bnc" id="L227" title="All 2 branches missed.">      if (results != null) {</span>
+<span class="nc" id="L228">        results.commandEnd();</span>
+      }
+<span class="nc" id="L230">      throw executeExceptionEpilogue(exception);</span>
+    } finally {
+<span class="nc" id="L232">      executeEpilogue();</span>
+<span class="nc" id="L233">      lock.unlock();</span>
+    }
+
+  }
+
+  /**
+   * Adds a set of parameters to this &lt;code&gt;PreparedStatement&lt;/code&gt; object's batch of send.
+   * &lt;br&gt;
+   * &lt;br&gt;
+   *
+   * @throws SQLException if a database access error occurs or this method is called on a closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   * @see Statement#addBatch
+   * @since 1.2
+   */
+  public void addBatch() throws SQLException {
+<span class="nc" id="L249">    ParameterHolder[] holder = new ParameterHolder[prepareResult.getParamCount()];</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">    for (int i = 0; i &lt; holder.length; i++) {</span>
+<span class="nc" id="L251">      holder[i] = parameters[i];</span>
+<span class="nc bnc" id="L252" title="All 2 branches missed.">      if (holder[i] == null) {</span>
+<span class="nc" id="L253">        logger.error(&quot;You need to set exactly &quot; + prepareResult.getParamCount()</span>
+            + &quot; parameters on the prepared statement&quot;);
+<span class="nc" id="L255">        throw ExceptionMapper</span>
+<span class="nc" id="L256">            .getSqlException(&quot;You need to set exactly &quot; + prepareResult.getParamCount()</span>
+                + &quot; parameters on the prepared statement&quot;);
+      }
+    }
+<span class="nc" id="L260">    parameterList.add(holder);</span>
+<span class="nc" id="L261">  }</span>
+
+  /**
+   * Add batch.
+   *
+   * @param sql typically this is a SQL &lt;code&gt;INSERT&lt;/code&gt; or &lt;code&gt;UPDATE&lt;/code&gt; statement
+   * @throws SQLException every time since that method is forbidden on prepareStatement
+   */
+  @Override
+  public void addBatch(final String sql) throws SQLException {
+<span class="nc" id="L271">    throw new SQLException(&quot;Cannot do addBatch(String) on preparedStatement&quot;);</span>
+  }
+
+  /**
+   * Clear batch.
+   */
+  @Override
+  public void clearBatch() {
+<span class="nc" id="L279">    parameterList.clear();</span>
+<span class="nc" id="L280">    hasLongData = false;</span>
+<span class="nc" id="L281">    this.parameters = new ParameterHolder[prepareResult.getParamCount()];</span>
+<span class="nc" id="L282">  }</span>
+
+  /**
+   * {inheritdoc}.
+   */
+  public int[] executeBatch() throws SQLException {
+<span class="nc" id="L288">    checkClose();</span>
+<span class="nc" id="L289">    int size = parameterList.size();</span>
+<span class="nc bnc" id="L290" title="All 2 branches missed.">    if (size == 0) {</span>
+<span class="nc" id="L291">      return new int[0];</span>
+    }
+
+<span class="nc" id="L294">    lock.lock();</span>
+    try {
+<span class="nc" id="L296">      executeInternalBatch(size);</span>
+<span class="nc" id="L297">      results.commandEnd();</span>
+<span class="nc" id="L298">      return results.getCmdInformation().getUpdateCounts();</span>
+
+<span class="nc" id="L300">    } catch (SQLException sqle) {</span>
+<span class="nc" id="L301">      throw executeBatchExceptionEpilogue(sqle, size);</span>
+    } finally {
+<span class="nc" id="L303">      executeBatchEpilogue();</span>
+<span class="nc" id="L304">      lock.unlock();</span>
+    }
+  }
+
+  /**
+   * Non JDBC : Permit to retrieve server update counts when using option rewriteBatchedStatements.
+   *
+   * @return an array of update counts containing one element for each command in the batch. The
+   *     elements of the array are ordered according to the order in which commands were added to
+   *     the batch.
+   */
+  public int[] getServerUpdateCounts() {
+<span class="nc bnc" id="L316" title="All 4 branches missed.">    if (results != null &amp;&amp; results.getCmdInformation() != null) {</span>
+<span class="nc" id="L317">      return results.getCmdInformation().getServerUpdateCounts();</span>
+    }
+<span class="nc" id="L319">    return new int[0];</span>
+  }
+
+  /**
+   * Execute batch, like executeBatch(), with returning results with long[]. For when row count may
+   * exceed Integer.MAX_VALUE.
+   *
+   * @return an array of update counts (one element for each command in the batch)
+   * @throws SQLException if a database error occur.
+   */
+  public long[] executeLargeBatch() throws SQLException {
+<span class="nc" id="L330">    checkClose();</span>
+<span class="nc" id="L331">    int size = parameterList.size();</span>
+<span class="nc bnc" id="L332" title="All 2 branches missed.">    if (size == 0) {</span>
+<span class="nc" id="L333">      return new long[0];</span>
+    }
+
+<span class="nc" id="L336">    lock.lock();</span>
+    try {
+<span class="nc" id="L338">      executeInternalBatch(size);</span>
+<span class="nc" id="L339">      results.commandEnd();</span>
+<span class="nc" id="L340">      return results.getCmdInformation().getLargeUpdateCounts();</span>
+<span class="nc" id="L341">    } catch (SQLException sqle) {</span>
+<span class="nc" id="L342">      throw executeBatchExceptionEpilogue(sqle, size);</span>
+    } finally {
+<span class="nc" id="L344">      executeBatchEpilogue();</span>
+<span class="nc" id="L345">      lock.unlock();</span>
+    }
+  }
+
+  /**
+   * Choose better way to execute queries according to query and options.
+   *
+   * @param size parameters number
+   * @throws SQLException if any error occur
+   */
+  private void executeInternalBatch(int size) throws SQLException {
+<span class="nc" id="L356">    executeQueryPrologue(true);</span>
+<span class="nc" id="L357">    results = new Results(this, 0, true, size, false, resultSetScrollType,</span>
+<span class="nc" id="L358">            resultSetConcurrency, autoGeneratedKeys, protocol.getAutoIncrementIncrement());</span>
+<span class="nc" id="L359">    if (protocol</span>
+<span class="nc bnc" id="L360" title="All 2 branches missed.">        .executeBatchClient(protocol.isMasterConnection(), results, prepareResult, parameterList,</span>
+            hasLongData)) {
+<span class="nc" id="L362">      return;</span>
+    }
+
+    //send query one by one, reading results for each query before sending another one
+<span class="nc" id="L366">    SQLException exception = null;</span>
+
+<span class="nc bnc" id="L368" title="All 2 branches missed.">    if (queryTimeout &gt; 0) {</span>
+<span class="nc bnc" id="L369" title="All 2 branches missed.">      for (int batchQueriesCount = 0; batchQueriesCount &lt; size; batchQueriesCount++) {</span>
+<span class="nc" id="L370">        protocol.stopIfInterrupted();</span>
+        try {
+<span class="nc" id="L372">          protocol.executeQuery(protocol.isMasterConnection(), results, prepareResult,</span>
+<span class="nc" id="L373">              parameterList.get(batchQueriesCount));</span>
+<span class="nc" id="L374">        } catch (SQLException e) {</span>
+<span class="nc bnc" id="L375" title="All 2 branches missed.">          if (options.continueBatchOnError) {</span>
+<span class="nc" id="L376">            exception = e;</span>
+          } else {
+<span class="nc" id="L378">            throw e;</span>
+          }
+<span class="nc" id="L380">        }</span>
+      }
+
+    } else {
+<span class="nc bnc" id="L384" title="All 2 branches missed.">      for (int batchQueriesCount = 0; batchQueriesCount &lt; size; batchQueriesCount++) {</span>
+        try {
+<span class="nc" id="L386">          protocol.executeQuery(protocol.isMasterConnection(), results, prepareResult,</span>
+<span class="nc" id="L387">              parameterList.get(batchQueriesCount));</span>
+<span class="nc" id="L388">        } catch (SQLException e) {</span>
+<span class="nc bnc" id="L389" title="All 2 branches missed.">          if (options.continueBatchOnError) {</span>
+<span class="nc" id="L390">            exception = e;</span>
+          } else {
+<span class="nc" id="L392">            throw e;</span>
+          }
+<span class="nc" id="L394">        }</span>
+      }
+    }
+<span class="nc bnc" id="L397" title="All 2 branches missed.">    if (exception != null) {</span>
+<span class="nc" id="L398">      throw exception;</span>
+    }
+
+<span class="nc" id="L401">  }</span>
+
+  /**
+   * Retrieves a &lt;code&gt;ResultSetMetaData&lt;/code&gt; object that contains information about the columns
+   * of the
+   * &lt;code&gt;ResultSet&lt;/code&gt; object that will be returned when this &lt;code&gt;PreparedStatement&lt;/code&gt;
+   * object is executed.
+   * &lt;br&gt;
+   * Because a &lt;code&gt;PreparedStatement&lt;/code&gt; object is precompiled, it is possible to know about
+   * the
+   * &lt;code&gt;ResultSet&lt;/code&gt; object that it will return without having to execute it.  Consequently,
+   * it is possible to invoke the method &lt;code&gt;getMetaData&lt;/code&gt; on a
+   * &lt;code&gt;PreparedStatement&lt;/code&gt; object rather than waiting to execute it and then invoking the
+   * &lt;code&gt;ResultSet.getMetaData&lt;/code&gt; method on the &lt;code&gt;ResultSet&lt;/code&gt; object that is
+   * returned.
+   *
+   * @return the description of a &lt;code&gt;ResultSet&lt;/code&gt; object's columns or &lt;code&gt;null&lt;/code&gt; if
+   *     the driver cannot return a &lt;code&gt;ResultSetMetaData&lt;/code&gt; object
+   * @throws SQLException                    if a database access error occurs or this method is
+   *                                         called on a closed
+   *                                         &lt;code&gt;PreparedStatement&lt;/code&gt;
+   */
+  public ResultSetMetaData getMetaData() throws SQLException {
+<span class="nc" id="L424">    checkClose();</span>
+<span class="nc" id="L425">    ResultSet rs = getResultSet();</span>
+<span class="nc bnc" id="L426" title="All 2 branches missed.">    if (rs != null) {</span>
+<span class="nc" id="L427">      return rs.getMetaData();</span>
+    }
+<span class="nc bnc" id="L429" title="All 2 branches missed.">    if (resultSetMetaData == null) {</span>
+<span class="nc" id="L430">      loadParametersData();</span>
+    }
+<span class="nc" id="L432">    return resultSetMetaData;</span>
+  }
+
+  /**
+   * Set parameter.
+   *
+   * @param parameterIndex index
+   * @param holder         parameter holder
+   * @throws SQLException if index position doesn't correspond to query parameters
+   */
+  public void setParameter(final int parameterIndex, final ParameterHolder holder)
+      throws SQLException {
+<span class="nc bnc" id="L444" title="All 4 branches missed.">    if (parameterIndex &gt;= 1 &amp;&amp; parameterIndex &lt; prepareResult.getParamCount() + 1) {</span>
+<span class="nc" id="L445">      parameters[parameterIndex - 1] = holder;</span>
+    } else {
+<span class="nc" id="L447">      String error = &quot;Could not set parameter at position &quot; + parameterIndex</span>
+<span class="nc" id="L448">          + &quot; (values was &quot; + holder.toString() + &quot;)\n&quot;</span>
+<span class="nc" id="L449">          + &quot;Query - conn:&quot; + protocol.getServerThreadId()</span>
+<span class="nc bnc" id="L450" title="All 2 branches missed.">          + &quot;(&quot; + (protocol.isMasterConnection() ? &quot;M&quot; : &quot;S&quot;) + &quot;) &quot;;</span>
+
+<span class="nc bnc" id="L452" title="All 2 branches missed.">      if (options.maxQuerySizeToLog &gt; 0) {</span>
+<span class="nc" id="L453">        error += &quot; - \&quot;&quot;;</span>
+<span class="nc bnc" id="L454" title="All 2 branches missed.">        if (sqlQuery.length() &lt; options.maxQuerySizeToLog) {</span>
+<span class="nc" id="L455">          error += sqlQuery;</span>
+        } else {
+<span class="nc" id="L457">          error += sqlQuery.substring(0, options.maxQuerySizeToLog) + &quot;...&quot;;</span>
+        }
+<span class="nc" id="L459">        error += &quot;\&quot;&quot;;</span>
+      } else {
+<span class="nc" id="L461">        error += &quot; - \&quot;&quot; + sqlQuery + &quot;\&quot;&quot;;</span>
+      }
+
+<span class="nc" id="L464">      logger.error(error);</span>
+<span class="nc" id="L465">      throw ExceptionMapper.getSqlException(error);</span>
+    }
+<span class="nc" id="L467">  }</span>
+
+
+  /**
+   * Retrieves the number, types and properties of this &lt;code&gt;PreparedStatement&lt;/code&gt; object's
+   * parameters.
+   *
+   * @return a &lt;code&gt;ParameterMetaData&lt;/code&gt; object that contains information about the number,
+   *     types and properties for each parameter marker of this &lt;code&gt;PreparedStatement&lt;/code&gt; object
+   * @throws SQLException if a database access error occurs or this method is called on a closed
+   *                      &lt;code&gt;PreparedStatement&lt;/code&gt;
+   * @see ParameterMetaData
+   * @since 1.4
+   */
+  public ParameterMetaData getParameterMetaData() throws SQLException {
+<span class="nc" id="L482">    checkClose();</span>
+<span class="nc bnc" id="L483" title="All 2 branches missed.">    if (parameterMetaData == null) {</span>
+<span class="nc" id="L484">      loadParametersData();</span>
+    }
+<span class="nc" id="L486">    return parameterMetaData;</span>
+  }
+
+  private void loadParametersData() throws SQLSyntaxErrorException {
+<span class="nc" id="L490">    try (ServerSidePreparedStatement ssps = new ServerSidePreparedStatement(connection,</span>
+        sqlQuery,
+        ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY,
+        Statement.NO_GENERATED_KEYS)) {
+<span class="nc" id="L494">      resultSetMetaData = ssps.getMetaData();</span>
+<span class="nc" id="L495">      parameterMetaData = ssps.getParameterMetaData();</span>
+<span class="nc" id="L496">    } catch (SQLSyntaxErrorException sqlSyntaxErrorException) {</span>
+      //if error is due to wrong SQL syntax, better to throw exception immediately
+<span class="nc" id="L498">      throw sqlSyntaxErrorException;</span>
+<span class="nc" id="L499">    } catch (SQLException sqle) {</span>
+<span class="nc" id="L500">      parameterMetaData = new MariaDbParameterMetaData(null);</span>
+<span class="nc" id="L501">    }</span>
+<span class="nc" id="L502">  }</span>
+
+
+  /**
+   * Clears the current parameter values immediately.
+   *
+   * &lt;P&gt;In general, parameter values remain in
+   * force for repeated use of a statement. Setting a parameter value automatically clears its
+   * previous value.  However, in some cases it is useful to immediately release the resources used
+   * by the current parameter values; this can be done by calling the method
+   * &lt;code&gt;clearParameters&lt;/code&gt;.&lt;/p&gt;
+   */
+  public void clearParameters() {
+<span class="nc" id="L515">    parameters = new ParameterHolder[prepareResult.getParamCount()];</span>
+<span class="nc" id="L516">  }</span>
+
+
+  // Close prepared statement, maybe fire closed-statement events
+  @Override
+  public void close() throws SQLException {
+<span class="nc" id="L522">    super.close();</span>
+<span class="nc bnc" id="L523" title="All 4 branches missed.">    if (connection == null || connection.pooledConnection == null</span>
+<span class="nc bnc" id="L524" title="All 2 branches missed.">        || connection.pooledConnection.noStmtEventListeners()) {</span>
+<span class="nc" id="L525">      return;</span>
+    }
+<span class="nc" id="L527">    connection.pooledConnection.fireStatementClosed(this);</span>
+<span class="nc" id="L528">    connection = null;</span>
+<span class="nc" id="L529">  }</span>
+
+  protected int getParameterCount() {
+<span class="nc" id="L532">    return prepareResult.getParamCount();</span>
+  }
+
+  /**
+   * {inherit}.
+   */
+  @Override
+  public String toString() {
+<span class="nc" id="L540">    StringBuilder sb = new StringBuilder(&quot;sql : '&quot; + sqlQuery + &quot;'&quot;);</span>
+<span class="nc" id="L541">    sb.append(&quot;, parameters : [&quot;);</span>
+<span class="nc bnc" id="L542" title="All 2 branches missed.">    for (int i = 0; i &lt; parameters.length; i++) {</span>
+<span class="nc" id="L543">      ParameterHolder holder = parameters[i];</span>
+<span class="nc bnc" id="L544" title="All 2 branches missed.">      if (holder == null) {</span>
+<span class="nc" id="L545">        sb.append(&quot;null&quot;);</span>
+      } else {
+<span class="nc" id="L547">        sb.append(holder.toString());</span>
+      }
+<span class="nc bnc" id="L549" title="All 2 branches missed.">      if (i != parameters.length - 1) {</span>
+<span class="nc" id="L550">        sb.append(&quot;,&quot;);</span>
+      }
+    }
+<span class="nc" id="L553">    sb.append(&quot;]&quot;);</span>
+<span class="nc" id="L554">    return sb.toString();</span>
+  }
+
+
+  protected ClientPrepareResult getPrepareResult() {
+<span class="nc" id="L559">    return prepareResult;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

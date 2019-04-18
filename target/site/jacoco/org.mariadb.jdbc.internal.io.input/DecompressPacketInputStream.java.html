@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DecompressPacketInputStream.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.io.input</a> &gt; <span class="el_source">DecompressPacketInputStream.java</span></div><h1>DecompressPacketInputStream.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.io.input;
+
+import static org.mariadb.jdbc.internal.io.TraceObject.COMPRESSED_PROTOCOL_COMPRESSED_PACKET;
+import static org.mariadb.jdbc.internal.io.TraceObject.COMPRESSED_PROTOCOL_NOT_COMPRESSED_PACKET;
+
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Arrays;
+import java.util.zip.DataFormatException;
+import java.util.zip.Inflater;
+import org.mariadb.jdbc.internal.com.read.Buffer;
+import org.mariadb.jdbc.internal.io.LruTraceCache;
+import org.mariadb.jdbc.internal.io.TraceObject;
+import org.mariadb.jdbc.internal.logging.Logger;
+import org.mariadb.jdbc.internal.logging.LoggerFactory;
+import org.mariadb.jdbc.internal.util.Utils;
+
+public class DecompressPacketInputStream implements PacketInputStream {
+
+  private static final int REUSABLE_BUFFER_LENGTH = 1024;
+  private static final int MAX_PACKET_SIZE = 0xffffff;
+<span class="nc" id="L75">  private static final Logger logger = LoggerFactory.getLogger(DecompressPacketInputStream.class);</span>
+<span class="nc" id="L76">  private final byte[] header = new byte[7];</span>
+<span class="nc" id="L77">  private final byte[] reusableArray = new byte[REUSABLE_BUFFER_LENGTH];</span>
+  private final InputStream inputStream;
+  private final int maxQuerySizeToLog;
+  //compress packet can contain multiple standard packet
+<span class="nc" id="L81">  private byte[] cacheData = new byte[0];</span>
+  private int cachePos;
+  private int cacheEnd;
+  private int packetSeq;
+  private int compressPacketSeq;
+<span class="nc" id="L86">  private String serverThreadLog = &quot;&quot;;</span>
+<span class="nc" id="L87">  private LruTraceCache traceCache = null;</span>
+
+<span class="nc" id="L89">  public DecompressPacketInputStream(InputStream in, int maxQuerySizeToLog) {</span>
+<span class="nc" id="L90">    inputStream = in;</span>
+<span class="nc" id="L91">    this.maxQuerySizeToLog = maxQuerySizeToLog;</span>
+<span class="nc" id="L92">  }</span>
+
+
+  @Override
+  public Buffer getPacket(boolean reUsable) throws IOException {
+<span class="nc" id="L97">    return new Buffer(getPacketArray(reUsable));</span>
+  }
+
+  /**
+   * Get next packet. Packet can be compressed, and if so, can contain many standard packet.
+   *
+   * @param reUsable if can use existing reusable buffer to avoid creating array
+   * @return array packet.
+   * @throws IOException if socket exception occur.
+   */
+  public byte[] getPacketArray(boolean reUsable) throws IOException {
+
+<span class="nc" id="L109">    byte[] cachePacket = getNextCachePacket();</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">    if (cachePacket != null) {</span>
+<span class="nc" id="L111">      return cachePacket;</span>
+    }
+
+    //loop until having the whole packet
+    do {
+      //Read 7 byte header
+<span class="nc" id="L117">      readBlocking(header, 7);</span>
+
+<span class="nc" id="L119">      int compressedLength =</span>
+          (header[0] &amp; 0xff) + ((header[1] &amp; 0xff) &lt;&lt; 8) + ((header[2] &amp; 0xff) &lt;&lt; 16);
+<span class="nc" id="L121">      compressPacketSeq = header[3] &amp; 0xff;</span>
+<span class="nc" id="L122">      int decompressedLength =</span>
+          (header[4] &amp; 0xff) + ((header[5] &amp; 0xff) &lt;&lt; 8) + ((header[6] &amp; 0xff) &lt;&lt; 16);
+
+      byte[] rawBytes;
+<span class="nc bnc" id="L126" title="All 6 branches missed.">      if (reUsable &amp;&amp; decompressedLength == 0 &amp;&amp; compressedLength &lt; REUSABLE_BUFFER_LENGTH) {</span>
+<span class="nc" id="L127">        rawBytes = reusableArray;</span>
+      } else {
+<span class="nc bnc" id="L129" title="All 2 branches missed.">        rawBytes = new byte[decompressedLength != 0 ? decompressedLength : compressedLength];</span>
+      }
+
+<span class="nc" id="L132">      readCompressBlocking(rawBytes, compressedLength, decompressedLength);</span>
+
+<span class="nc bnc" id="L134" title="All 2 branches missed.">      if (traceCache != null) {</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">        int length = decompressedLength != 0 ? decompressedLength : compressedLength;</span>
+<span class="nc" id="L136">        traceCache.put(new TraceObject(false,</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">            decompressedLength == 0 ? COMPRESSED_PROTOCOL_NOT_COMPRESSED_PACKET</span>
+<span class="nc" id="L138">                : COMPRESSED_PROTOCOL_COMPRESSED_PACKET,</span>
+<span class="nc" id="L139">            Arrays.copyOfRange(header, 0, 7),</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">            Arrays.copyOfRange(rawBytes, 0, length &gt; 1000 ? 1000 : length)));</span>
+      }
+
+<span class="nc bnc" id="L143" title="All 2 branches missed.">      if (logger.isTraceEnabled()) {</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">        int length = decompressedLength != 0 ? decompressedLength : compressedLength;</span>
+<span class="nc" id="L145">        logger.trace(&quot;read {} {}{}&quot;,</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">            (decompressedLength == 0 ? &quot;uncompress&quot; : &quot;compress&quot;),</span>
+            serverThreadLog,
+<span class="nc" id="L148">            Utils.hexdump(maxQuerySizeToLog - 7, 0, length, header, rawBytes));</span>
+      }
+
+<span class="nc bnc" id="L151" title="All 2 branches missed.">      cache(rawBytes, decompressedLength == 0 ? compressedLength : decompressedLength);</span>
+<span class="nc" id="L152">      byte[] packet = getNextCachePacket();</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">      if (packet != null) {</span>
+<span class="nc" id="L154">        return packet;</span>
+      }
+
+<span class="nc" id="L157">    } while (true);</span>
+  }
+
+  private void readCompressBlocking(byte[] arr, int compressedLength, int decompressedLength)
+      throws IOException {
+<span class="nc bnc" id="L162" title="All 2 branches missed.">    if (decompressedLength != 0) {</span>
+
+<span class="nc" id="L164">      byte[] compressedBuffer = new byte[compressedLength];</span>
+      //Read compress content
+<span class="nc" id="L166">      readBlocking(compressedBuffer, compressedLength);</span>
+
+<span class="nc" id="L168">      Inflater inflater = new Inflater();</span>
+<span class="nc" id="L169">      inflater.setInput(compressedBuffer);</span>
+      try {
+<span class="nc" id="L171">        int actualUncompressBytes = inflater.inflate(arr);</span>
+<span class="nc bnc" id="L172" title="All 2 branches missed.">        if (actualUncompressBytes != decompressedLength) {</span>
+<span class="nc" id="L173">          throw new IOException(</span>
+              &quot;Invalid exception length after decompression &quot; + actualUncompressBytes + &quot;,expected &quot;
+                  + decompressedLength);
+        }
+<span class="nc" id="L177">      } catch (DataFormatException dfe) {</span>
+<span class="nc" id="L178">        throw new IOException(dfe);</span>
+<span class="nc" id="L179">      }</span>
+<span class="nc" id="L180">      inflater.end();</span>
+
+<span class="nc" id="L182">    } else {</span>
+      //Read standard content
+<span class="nc" id="L184">      readBlocking(arr, compressedLength);</span>
+    }
+
+<span class="nc" id="L187">  }</span>
+
+  private void readBlocking(byte[] arr, int length) throws IOException {
+<span class="nc" id="L190">    int remaining = length;</span>
+<span class="nc" id="L191">    int off = 0;</span>
+    do {
+<span class="nc" id="L193">      int count = inputStream.read(arr, off, remaining);</span>
+<span class="nc bnc" id="L194" title="All 2 branches missed.">      if (count &lt; 0) {</span>
+<span class="nc" id="L195">        throw new EOFException(</span>
+            &quot;unexpected end of stream, read &quot; + (length - remaining) + &quot; bytes from &quot; + length
+                + &quot; (socket was closed by server)&quot;);
+      }
+<span class="nc" id="L199">      remaining -= count;</span>
+<span class="nc" id="L200">      off += count;</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">    } while (remaining &gt; 0);</span>
+<span class="nc" id="L202">  }</span>
+
+  private void cache(byte[] rawBytes, int length) {
+<span class="nc bnc" id="L205" title="All 2 branches missed.">    if (cachePos &gt;= cacheEnd) {</span>
+<span class="nc" id="L206">      cacheData = rawBytes;</span>
+<span class="nc" id="L207">      cachePos = 0;</span>
+<span class="nc" id="L208">      cacheEnd = length;</span>
+    } else {
+      //must add to cache
+<span class="nc" id="L211">      byte[] newCache = new byte[length + cacheEnd - cachePos];</span>
+<span class="nc" id="L212">      System.arraycopy(cacheData, cachePos, newCache, 0, cacheEnd - cachePos);</span>
+<span class="nc" id="L213">      System.arraycopy(rawBytes, 0, newCache, cacheEnd - cachePos, length);</span>
+<span class="nc" id="L214">      cacheData = newCache;</span>
+<span class="nc" id="L215">      cachePos = 0;</span>
+<span class="nc" id="L216">      cacheEnd = newCache.length;</span>
+    }
+<span class="nc" id="L218">  }</span>
+
+  private byte[] getNextCachePacket() {
+<span class="nc" id="L221">    int packetOffset = 0;</span>
+
+    //if packet is not totally fetch, return null
+<span class="nc bnc" id="L224" title="All 2 branches missed.">    while (cacheEnd &gt; cachePos + 4 + packetOffset * (MAX_PACKET_SIZE + 4)) {</span>
+<span class="nc" id="L225">      int lastPacketLength = (cacheData[cachePos + packetOffset * (MAX_PACKET_SIZE + 4)] &amp; 0xff)</span>
+          + ((cacheData[cachePos + packetOffset * (MAX_PACKET_SIZE + 4) + 1] &amp; 0xff) &lt;&lt; 8)
+          + ((cacheData[cachePos + packetOffset * (MAX_PACKET_SIZE + 4) + 2] &amp; 0xff) &lt;&lt; 16);
+<span class="nc bnc" id="L228" title="All 2 branches missed.">      if (lastPacketLength == MAX_PACKET_SIZE) {</span>
+<span class="nc" id="L229">        packetOffset += 1;</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">      } else if (cacheEnd &gt;= cachePos + 4 + packetOffset * (MAX_PACKET_SIZE + 4)</span>
+          + lastPacketLength) {
+        //packet is totally fetched.
+
+        //if packet was less than 16M
+<span class="nc bnc" id="L235" title="All 2 branches missed.">        if (packetOffset == 0) {</span>
+<span class="nc" id="L236">          packetSeq = cacheData[cachePos + 3];</span>
+
+<span class="nc bnc" id="L238" title="All 2 branches missed.">          if (cacheEnd - (cachePos + 4) &gt;= lastPacketLength) {</span>
+<span class="nc" id="L239">            byte[] packet = new byte[lastPacketLength];</span>
+<span class="nc" id="L240">            System.arraycopy(cacheData, cachePos + 4, packet, 0, lastPacketLength);</span>
+
+<span class="nc bnc" id="L242" title="All 2 branches missed.">            if (logger.isTraceEnabled()) {</span>
+<span class="nc" id="L243">              logger.trace(&quot;read packet: seq={} len={} {}{}&quot;,</span>
+<span class="nc" id="L244">                  packetSeq,</span>
+<span class="nc" id="L245">                  lastPacketLength,</span>
+                  serverThreadLog,
+<span class="nc" id="L247">                  Utils.hexdump(maxQuerySizeToLog, cachePos + 4, lastPacketLength, cacheData));</span>
+            }
+
+<span class="nc" id="L250">            cachePos += 4 + lastPacketLength;</span>
+<span class="nc" id="L251">            return packet;</span>
+          }
+        } else {
+<span class="nc" id="L254">          byte[] packet = new byte[lastPacketLength + packetOffset * MAX_PACKET_SIZE];</span>
+<span class="nc" id="L255">          int offset = 0;</span>
+          do {
+<span class="nc" id="L257">            lastPacketLength = (cacheData[cachePos] &amp; 0xff)</span>
+                + ((cacheData[cachePos + 1] &amp; 0xff) &lt;&lt; 8)
+                + ((cacheData[cachePos + 2] &amp; 0xff) &lt;&lt; 16);
+<span class="nc" id="L260">            packetSeq = cacheData[cachePos + 3];</span>
+<span class="nc" id="L261">            System.arraycopy(cacheData, cachePos + 4, packet, offset, lastPacketLength);</span>
+<span class="nc" id="L262">            offset += lastPacketLength;</span>
+
+<span class="nc bnc" id="L264" title="All 2 branches missed.">            if (logger.isTraceEnabled()) {</span>
+<span class="nc" id="L265">              logger.trace(&quot;read packet: seq={} len={} {}{}&quot;,</span>
+<span class="nc" id="L266">                  packetSeq,</span>
+<span class="nc" id="L267">                  lastPacketLength,</span>
+                  serverThreadLog,
+<span class="nc" id="L269">                  Utils.hexdump(maxQuerySizeToLog, cachePos + 4, lastPacketLength, cacheData));</span>
+            }
+
+<span class="nc" id="L272">            cachePos += 4 + lastPacketLength;</span>
+
+<span class="nc bnc" id="L274" title="All 2 branches missed.">          } while (lastPacketLength == MAX_PACKET_SIZE);</span>
+<span class="nc" id="L275">          return packet;</span>
+
+        }
+      } else {
+<span class="nc" id="L279">        return null;</span>
+      }
+<span class="nc" id="L281">    }</span>
+<span class="nc" id="L282">    return null;</span>
+  }
+
+  @Override
+  public int getLastPacketSeq() {
+<span class="nc" id="L287">    return packetSeq;</span>
+  }
+
+  @Override
+  public int getCompressLastPacketSeq() {
+<span class="nc" id="L292">    return compressPacketSeq;</span>
+  }
+
+  @Override
+  public void close() throws IOException {
+<span class="nc" id="L297">    inputStream.close();</span>
+<span class="nc" id="L298">  }</span>
+
+  /**
+   * Set server thread id.
+   *
+   * @param serverThreadId current server thread id.
+   * @param isMaster       is server master
+   */
+  public void setServerThreadId(long serverThreadId, Boolean isMaster) {
+<span class="nc" id="L307">    this.serverThreadLog =</span>
+<span class="nc bnc" id="L308" title="All 4 branches missed.">        &quot;conn=&quot; + serverThreadId + ((isMaster != null) ? &quot;(&quot; + (isMaster ? &quot;M&quot; : &quot;S&quot;) + &quot;)&quot; : &quot;&quot;);</span>
+<span class="nc" id="L309">  }</span>
+
+  public void setTraceCache(LruTraceCache traceCache) {
+<span class="nc" id="L312">    this.traceCache = traceCache;</span>
+<span class="nc" id="L313">  }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

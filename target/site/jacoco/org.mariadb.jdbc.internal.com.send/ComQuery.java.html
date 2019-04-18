@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ComQuery.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.com.send</a> &gt; <span class="el_source">ComQuery.java</span></div><h1>ComQuery.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.com.send;
+
+import java.io.IOException;
+import java.util.List;
+import org.mariadb.jdbc.internal.com.Packet;
+import org.mariadb.jdbc.internal.com.send.parameters.ParameterHolder;
+import org.mariadb.jdbc.internal.io.output.PacketOutputStream;
+import org.mariadb.jdbc.internal.util.dao.ClientPrepareResult;
+
+<span class="nc" id="L62">public class ComQuery {</span>
+
+  /**
+   * Client-side PrepareStatement.execute() packet send.
+   *
+   * @param out                 outputStream
+   * @param clientPrepareResult clientPrepareResult
+   * @param parameters          parameter
+   * @param queryTimeout        query timeout
+   * @throws IOException if connection fail
+   */
+  public static void sendSubCmd(final PacketOutputStream out,
+      final ClientPrepareResult clientPrepareResult, ParameterHolder[] parameters, int queryTimeout)
+      throws IOException {
+<span class="nc" id="L76">    out.write(Packet.COM_QUERY);</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">    if (queryTimeout &gt; 0) {</span>
+<span class="nc" id="L78">      out.write((&quot;SET STATEMENT max_statement_time=&quot; + queryTimeout + &quot; FOR &quot;).getBytes());</span>
+    }
+<span class="nc bnc" id="L80" title="All 2 branches missed.">    if (clientPrepareResult.isRewriteType()) {</span>
+
+<span class="nc" id="L82">      out.write(clientPrepareResult.getQueryParts().get(0));</span>
+<span class="nc" id="L83">      out.write(clientPrepareResult.getQueryParts().get(1));</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">      for (int i = 0; i &lt; clientPrepareResult.getParamCount(); i++) {</span>
+<span class="nc" id="L85">        parameters[i].writeTo(out);</span>
+<span class="nc" id="L86">        out.write(clientPrepareResult.getQueryParts().get(i + 2));</span>
+      }
+<span class="nc" id="L88">      out</span>
+<span class="nc" id="L89">          .write(clientPrepareResult.getQueryParts().get(clientPrepareResult.getParamCount() + 2));</span>
+
+    } else {
+
+<span class="nc" id="L93">      out.write(clientPrepareResult.getQueryParts().get(0));</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">      for (int i = 0; i &lt; clientPrepareResult.getParamCount(); i++) {</span>
+<span class="nc" id="L95">        parameters[i].writeTo(out);</span>
+<span class="nc" id="L96">        out.write(clientPrepareResult.getQueryParts().get(i + 1));</span>
+      }
+
+    }
+
+<span class="nc" id="L101">  }</span>
+
+  /**
+   * Client side PreparedStatement.executeBatch values rewritten (concatenate value params according
+   * to max_allowed_packet)
+   *
+   * @param pos           outputStream
+   * @param queryParts    query parts
+   * @param currentIndex  currentIndex
+   * @param paramCount    parameter pos
+   * @param parameterList parameter list
+   * @param rewriteValues is query rewritable by adding values
+   * @return current index
+   * @throws IOException if connection fail
+   */
+  public static int sendRewriteCmd(final PacketOutputStream pos, final List&lt;byte[]&gt; queryParts,
+      int currentIndex,
+      int paramCount, List&lt;ParameterHolder[]&gt; parameterList, boolean rewriteValues)
+      throws IOException {
+<span class="nc" id="L120">    pos.startPacket(0);</span>
+<span class="nc" id="L121">    pos.write(Packet.COM_QUERY);</span>
+<span class="nc" id="L122">    int index = currentIndex;</span>
+<span class="nc" id="L123">    ParameterHolder[] parameters = parameterList.get(index++);</span>
+
+<span class="nc" id="L125">    byte[] firstPart = queryParts.get(0);</span>
+<span class="nc" id="L126">    byte[] secondPart = queryParts.get(1);</span>
+
+<span class="nc bnc" id="L128" title="All 2 branches missed.">    if (!rewriteValues) {</span>
+      //write first
+<span class="nc" id="L130">      pos.write(firstPart, 0, firstPart.length);</span>
+<span class="nc" id="L131">      pos.write(secondPart, 0, secondPart.length);</span>
+
+<span class="nc" id="L133">      int staticLength = 1;</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">      for (byte[] queryPart : queryParts) {</span>
+<span class="nc" id="L135">        staticLength += queryPart.length;</span>
+<span class="nc" id="L136">      }</span>
+
+<span class="nc bnc" id="L138" title="All 2 branches missed.">      for (int i = 0; i &lt; paramCount; i++) {</span>
+<span class="nc" id="L139">        parameters[i].writeTo(pos);</span>
+<span class="nc" id="L140">        pos.write(queryParts.get(i + 2));</span>
+      }
+<span class="nc" id="L142">      pos.write(queryParts.get(paramCount + 2));</span>
+
+      // write other, separate by &quot;;&quot;
+<span class="nc bnc" id="L145" title="All 2 branches missed.">      while (index &lt; parameterList.size()) {</span>
+<span class="nc" id="L146">        parameters = parameterList.get(index);</span>
+
+        //check packet length so to separate in multiple packet
+<span class="nc" id="L149">        int parameterLength = 0;</span>
+<span class="nc" id="L150">        boolean knownParameterSize = true;</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">        for (ParameterHolder parameter : parameters) {</span>
+<span class="nc" id="L152">          long paramSize = parameter.getApproximateTextProtocolLength();</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">          if (paramSize == -1) {</span>
+<span class="nc" id="L154">            knownParameterSize = false;</span>
+<span class="nc" id="L155">            break;</span>
+          }
+<span class="nc" id="L157">          parameterLength += paramSize;</span>
+        }
+
+<span class="nc bnc" id="L160" title="All 2 branches missed.">        if (knownParameterSize) {</span>
+          //We know the additional query part size. This permit :
+          // - to resize buffer size if needed (to avoid resize test every write)
+          // - if this query will be separated in a new packet.
+<span class="nc bnc" id="L164" title="All 2 branches missed.">          if (pos.checkRemainingSize(staticLength + parameterLength)) {</span>
+<span class="nc" id="L165">            pos.write((byte) ';');</span>
+<span class="nc" id="L166">            pos.write(firstPart, 0, firstPart.length);</span>
+<span class="nc" id="L167">            pos.write(secondPart, 0, secondPart.length);</span>
+<span class="nc bnc" id="L168" title="All 2 branches missed.">            for (int i = 0; i &lt; paramCount; i++) {</span>
+<span class="nc" id="L169">              parameters[i].writeTo(pos);</span>
+<span class="nc" id="L170">              pos.write(queryParts.get(i + 2));</span>
+            }
+<span class="nc" id="L172">            pos.write(queryParts.get(paramCount + 2));</span>
+<span class="nc" id="L173">            index++;</span>
+          } else {
+            break;
+          }
+        } else {
+          //we cannot know the additional query part size.
+<span class="nc" id="L179">          pos.write(';');</span>
+<span class="nc" id="L180">          pos.write(firstPart, 0, firstPart.length);</span>
+<span class="nc" id="L181">          pos.write(secondPart, 0, secondPart.length);</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">          for (int i = 0; i &lt; paramCount; i++) {</span>
+<span class="nc" id="L183">            parameters[i].writeTo(pos);</span>
+<span class="nc" id="L184">            pos.write(queryParts.get(i + 2));</span>
+          }
+<span class="nc" id="L186">          pos.write(queryParts.get(paramCount + 2));</span>
+<span class="nc" id="L187">          index++;</span>
+<span class="nc" id="L188">          break;</span>
+        }
+<span class="nc" id="L190">      }</span>
+
+<span class="nc" id="L192">    } else {</span>
+<span class="nc" id="L193">      pos.write(firstPart, 0, firstPart.length);</span>
+<span class="nc" id="L194">      pos.write(secondPart, 0, secondPart.length);</span>
+<span class="nc" id="L195">      int lastPartLength = queryParts.get(paramCount + 2).length;</span>
+<span class="nc" id="L196">      int intermediatePartLength = queryParts.get(1).length;</span>
+
+<span class="nc bnc" id="L198" title="All 2 branches missed.">      for (int i = 0; i &lt; paramCount; i++) {</span>
+<span class="nc" id="L199">        parameters[i].writeTo(pos);</span>
+<span class="nc" id="L200">        pos.write(queryParts.get(i + 2));</span>
+<span class="nc" id="L201">        intermediatePartLength += queryParts.get(i + 2).length;</span>
+      }
+
+<span class="nc bnc" id="L204" title="All 2 branches missed.">      while (index &lt; parameterList.size()) {</span>
+<span class="nc" id="L205">        parameters = parameterList.get(index);</span>
+
+        //check packet length so to separate in multiple packet
+<span class="nc" id="L208">        int parameterLength = 0;</span>
+<span class="nc" id="L209">        boolean knownParameterSize = true;</span>
+<span class="nc bnc" id="L210" title="All 2 branches missed.">        for (ParameterHolder parameter : parameters) {</span>
+<span class="nc" id="L211">          long paramSize = parameter.getApproximateTextProtocolLength();</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">          if (paramSize == -1) {</span>
+<span class="nc" id="L213">            knownParameterSize = false;</span>
+<span class="nc" id="L214">            break;</span>
+          }
+<span class="nc" id="L216">          parameterLength += paramSize;</span>
+        }
+
+<span class="nc bnc" id="L219" title="All 2 branches missed.">        if (knownParameterSize) {</span>
+          //We know the additional query part size. This permit :
+          // - to resize buffer size if needed (to avoid resize test every write)
+          // - if this query will be separated in a new packet.
+<span class="nc" id="L223">          if (pos</span>
+<span class="nc bnc" id="L224" title="All 2 branches missed.">              .checkRemainingSize(1 + parameterLength + intermediatePartLength + lastPartLength)) {</span>
+<span class="nc" id="L225">            pos.write((byte) ',');</span>
+<span class="nc" id="L226">            pos.write(secondPart, 0, secondPart.length);</span>
+
+<span class="nc bnc" id="L228" title="All 2 branches missed.">            for (int i = 0; i &lt; paramCount; i++) {</span>
+<span class="nc" id="L229">              parameters[i].writeTo(pos);</span>
+<span class="nc" id="L230">              byte[] addPart = queryParts.get(i + 2);</span>
+<span class="nc" id="L231">              pos.write(addPart, 0, addPart.length);</span>
+            }
+<span class="nc" id="L233">            index++;</span>
+          } else {
+            break;
+          }
+        } else {
+<span class="nc" id="L238">          pos.write((byte) ',');</span>
+<span class="nc" id="L239">          pos.write(secondPart, 0, secondPart.length);</span>
+
+<span class="nc bnc" id="L241" title="All 2 branches missed.">          for (int i = 0; i &lt; paramCount; i++) {</span>
+<span class="nc" id="L242">            parameters[i].writeTo(pos);</span>
+<span class="nc" id="L243">            pos.write(queryParts.get(i + 2));</span>
+          }
+<span class="nc" id="L245">          index++;</span>
+<span class="nc" id="L246">          break;</span>
+        }
+<span class="nc" id="L248">      }</span>
+<span class="nc" id="L249">      pos.write(queryParts.get(paramCount + 2));</span>
+    }
+
+<span class="nc" id="L252">    pos.flush();</span>
+<span class="nc" id="L253">    return index;</span>
+  }
+
+  /**
+   * Statement.executeBatch() rewritten multiple (concatenate with &quot;;&quot;) according to
+   * max_allowed_packet)
+   *
+   * @param writer       outputstream
+   * @param firstQuery   first query
+   * @param queries      queries
+   * @param currentIndex currentIndex
+   * @return current index
+   * @throws IOException if connection error occur
+   */
+  public static int sendBatchAggregateSemiColon(final PacketOutputStream writer, String firstQuery,
+      List&lt;String&gt; queries, int currentIndex) throws IOException {
+<span class="nc" id="L269">    writer.startPacket(0);</span>
+<span class="nc" id="L270">    writer.write(Packet.COM_QUERY);</span>
+    //index is already set to 1 for first one
+<span class="nc" id="L272">    writer.write(firstQuery.getBytes(&quot;UTF-8&quot;));</span>
+
+<span class="nc" id="L274">    int index = currentIndex;</span>
+
+    //add query with &quot;;&quot;
+<span class="nc bnc" id="L277" title="All 2 branches missed.">    while (index &lt; queries.size()) {</span>
+<span class="nc" id="L278">      byte[] sqlByte = queries.get(index).getBytes(&quot;UTF-8&quot;);</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">      if (!writer.checkRemainingSize(sqlByte.length + 1)) {</span>
+<span class="nc" id="L280">        break;</span>
+      }
+<span class="nc" id="L282">      writer.write(';');</span>
+<span class="nc" id="L283">      writer.write(sqlByte);</span>
+<span class="nc" id="L284">      index++;</span>
+<span class="nc" id="L285">    }</span>
+
+<span class="nc" id="L287">    writer.flush();</span>
+<span class="nc" id="L288">    return index;</span>
+  }
+
+  /**
+   * Send directly to socket the sql data.
+   *
+   * @param pos      output stream
+   * @param sqlBytes the query in UTF-8 bytes
+   * @throws IOException if connection error occur
+   */
+  public static void sendDirect(final PacketOutputStream pos, byte[] sqlBytes) throws IOException {
+<span class="nc" id="L299">    pos.startPacket(0);</span>
+<span class="nc" id="L300">    pos.write(Packet.COM_QUERY);</span>
+<span class="nc" id="L301">    pos.write(sqlBytes);</span>
+<span class="nc" id="L302">    pos.flush();</span>
+<span class="nc" id="L303">  }</span>
+
+  /**
+   * Send directly to socket the sql data.
+   *
+   * @param pos          output stream
+   * @param sqlBytes     the query in UTF-8 bytes
+   * @param queryTimeout timeout using max_statement_time
+   * @throws IOException if connection error occur
+   */
+  public static void sendDirect(final PacketOutputStream pos, byte[] sqlBytes, int queryTimeout)
+      throws IOException {
+<span class="nc" id="L315">    pos.startPacket(0);</span>
+<span class="nc" id="L316">    pos.write(Packet.COM_QUERY);</span>
+<span class="nc bnc" id="L317" title="All 2 branches missed.">    if (queryTimeout &gt; 0) {</span>
+<span class="nc" id="L318">      pos.write((&quot;SET STATEMENT max_statement_time=&quot; + queryTimeout + &quot; FOR &quot;).getBytes());</span>
+    }
+<span class="nc" id="L320">    pos.write(sqlBytes);</span>
+<span class="nc" id="L321">    pos.flush();</span>
+<span class="nc" id="L322">  }</span>
+
+  /**
+   * Send directly to socket the sql data.
+   *
+   * @param pos      output stream
+   * @param sqlBytes the query in UTF-8 bytes
+   * @throws IOException if connection error occur
+   */
+  public static void sendMultiDirect(final PacketOutputStream pos, List&lt;byte[]&gt; sqlBytes)
+      throws IOException {
+<span class="nc" id="L333">    pos.startPacket(0);</span>
+<span class="nc" id="L334">    pos.write(Packet.COM_QUERY);</span>
+<span class="nc bnc" id="L335" title="All 2 branches missed.">    for (byte[] bytes : sqlBytes) {</span>
+<span class="nc" id="L336">      pos.write(bytes);</span>
+<span class="nc" id="L337">    }</span>
+<span class="nc" id="L338">    pos.flush();</span>
+<span class="nc" id="L339">  }</span>
+
+  /**
+   * Send directly to socket the sql data.
+   *
+   * @param pos          output stream
+   * @param sqlBytes     the query in UTF-8 bytes
+   * @param queryTimeout timeout using max_statement_time
+   * @throws IOException if connection error occur
+   */
+  public static void sendMultiDirect(final PacketOutputStream pos, List&lt;byte[]&gt; sqlBytes,
+      int queryTimeout) throws IOException {
+<span class="nc" id="L351">    pos.startPacket(0);</span>
+<span class="nc" id="L352">    pos.write(Packet.COM_QUERY);</span>
+<span class="nc" id="L353">    pos.write((&quot;SET STATEMENT max_statement_time=&quot; + queryTimeout + &quot; FOR &quot;).getBytes());</span>
+<span class="nc bnc" id="L354" title="All 2 branches missed.">    for (byte[] bytes : sqlBytes) {</span>
+<span class="nc" id="L355">      pos.write(bytes);</span>
+<span class="nc" id="L356">    }</span>
+<span class="nc" id="L357">    pos.flush();</span>
+<span class="nc" id="L358">  }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

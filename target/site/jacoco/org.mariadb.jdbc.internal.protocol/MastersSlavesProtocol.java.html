@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MastersSlavesProtocol.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.protocol</a> &gt; <span class="el_source">MastersSlavesProtocol.java</span></div><h1>MastersSlavesProtocol.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.protocol;
+
+import java.sql.SQLException;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
+import org.mariadb.jdbc.HostAddress;
+import org.mariadb.jdbc.UrlParser;
+import org.mariadb.jdbc.internal.failover.FailoverProxy;
+import org.mariadb.jdbc.internal.failover.impl.MastersSlavesListener;
+import org.mariadb.jdbc.internal.failover.tools.SearchFilter;
+import org.mariadb.jdbc.internal.util.pool.GlobalStateInfo;
+
+public class MastersSlavesProtocol extends MasterProtocol {
+
+<span class="nc" id="L71">  protected boolean masterConnection = false;</span>
+<span class="nc" id="L72">  private boolean mustBeMasterConnection = false;</span>
+
+  public MastersSlavesProtocol(final UrlParser url, final GlobalStateInfo globalInfo,
+      final ReentrantLock lock) {
+<span class="nc" id="L76">    super(url, globalInfo, lock);</span>
+<span class="nc" id="L77">  }</span>
+
+
+  /**
+   * loop until found the failed connection.
+   *
+   * @param listener     current failover
+   * @param globalInfo   server global variables information
+   * @param addresses    list of HostAddress to loop
+   * @param searchFilter search parameter
+   * @throws SQLException if not found
+   */
+  public static void loop(MastersSlavesListener listener, final GlobalStateInfo globalInfo,
+      final List&lt;HostAddress&gt; addresses, SearchFilter searchFilter) throws SQLException {
+
+    MastersSlavesProtocol protocol;
+<span class="nc" id="L93">    ArrayDeque&lt;HostAddress&gt; loopAddresses = new ArrayDeque&lt;&gt;(addresses);</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">    if (loopAddresses.isEmpty()) {</span>
+<span class="nc" id="L95">      resetHostList(listener, loopAddresses);</span>
+    }
+
+<span class="nc" id="L98">    int maxConnectionTry = listener.getRetriesAllDown();</span>
+<span class="nc" id="L99">    SQLException lastQueryException = null;</span>
+<span class="nc" id="L100">    boolean firstLoop = true;</span>
+<span class="nc bnc" id="L101" title="All 6 branches missed.">    while (!loopAddresses.isEmpty() || (!searchFilter.isFailoverLoop() &amp;&amp; maxConnectionTry &gt; 0)) {</span>
+<span class="nc" id="L102">      protocol = getNewProtocol(listener.getProxy(), globalInfo, listener.getUrlParser());</span>
+
+<span class="nc bnc" id="L104" title="All 4 branches missed.">      if (listener.isExplicitClosed() || (!listener.isSecondaryHostFailReconnect() &amp;&amp; !listener</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">          .isMasterHostFailReconnect())) {</span>
+<span class="nc" id="L106">        return;</span>
+      }
+<span class="nc" id="L108">      maxConnectionTry--;</span>
+      try {
+<span class="nc" id="L110">        HostAddress host = loopAddresses.pollFirst();</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">        if (host == null) {</span>
+<span class="nc" id="L112">          loopAddresses.addAll(listener.getUrlParser().getHostAddresses());</span>
+<span class="nc" id="L113">          host = loopAddresses.pollFirst();</span>
+        }
+
+<span class="nc" id="L116">        protocol.setHostAddress(host);</span>
+
+<span class="nc" id="L118">        protocol.connect();</span>
+<span class="nc bnc" id="L119" title="All 2 branches missed.">        if (listener.isExplicitClosed()) {</span>
+<span class="nc" id="L120">          protocol.close();</span>
+<span class="nc" id="L121">          return;</span>
+        }
+
+<span class="nc" id="L124">        listener.removeFromBlacklist(protocol.getHostAddress());</span>
+
+<span class="nc bnc" id="L126" title="All 4 branches missed.">        if (listener.isMasterHostFailReconnect() &amp;&amp; protocol.isMasterConnection()) {</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">          if (foundMaster(listener, protocol, searchFilter)) {</span>
+<span class="nc" id="L128">            return;</span>
+          }
+<span class="nc bnc" id="L130" title="All 4 branches missed.">        } else if (listener.isSecondaryHostFailReconnect() &amp;&amp; !protocol.isMasterConnection()) {</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">          if (foundSecondary(listener, protocol, searchFilter)) {</span>
+<span class="nc" id="L132">            return;</span>
+          }
+        } else {
+<span class="nc" id="L135">          protocol.close();</span>
+        }
+
+<span class="nc" id="L138">      } catch (SQLException e) {</span>
+<span class="nc" id="L139">        lastQueryException = e;</span>
+<span class="nc" id="L140">        listener.addToBlacklist(protocol.getHostAddress());</span>
+<span class="nc" id="L141">      }</span>
+
+<span class="nc bnc" id="L143" title="All 4 branches missed.">      if (!listener.isMasterHostFailReconnect() &amp;&amp; !listener.isSecondaryHostFailReconnect()) {</span>
+<span class="nc" id="L144">        return;</span>
+      }
+
+      //in case master not found but slave is , and allowing master down
+<span class="nc bnc" id="L148" title="All 2 branches missed.">      if (loopAddresses.isEmpty()</span>
+<span class="nc bnc" id="L149" title="All 2 branches missed.">          &amp;&amp; (listener.isMasterHostFailReconnect()</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">          &amp;&amp; listener.urlParser.getOptions().allowMasterDownConnection</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">          &amp;&amp; !listener.isSecondaryHostFailReconnect())) {</span>
+<span class="nc" id="L152">        return;</span>
+      }
+
+      //on connection and all slaves have been tested, use master if on
+<span class="nc bnc" id="L156" title="All 2 branches missed.">      if (loopAddresses.isEmpty()</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">          &amp;&amp; searchFilter.isInitialConnection()</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">          &amp;&amp; !listener.isMasterHostFailReconnect()) {</span>
+<span class="nc" id="L159">        return;</span>
+      }
+
+      // if server has try to connect to all host, and there is remaining master or slave that fail
+      // add all servers back to continue looping until maxConnectionTry is reached
+<span class="nc bnc" id="L164" title="All 6 branches missed.">      if (loopAddresses.isEmpty() &amp;&amp; !searchFilter.isFailoverLoop() &amp;&amp; maxConnectionTry &gt; 0) {</span>
+<span class="nc" id="L165">        resetHostList(listener, loopAddresses);</span>
+
+<span class="nc bnc" id="L167" title="All 2 branches missed.">        if (firstLoop) {</span>
+<span class="nc" id="L168">          firstLoop = false;</span>
+        } else {
+          try {
+            //wait 250ms before looping through all connection another time
+<span class="nc" id="L172">            Thread.sleep(250);</span>
+<span class="nc" id="L173">          } catch (InterruptedException interrupted) {</span>
+            //interrupted, continue
+<span class="nc" id="L175">          }</span>
+        }
+      }
+
+    }
+
+<span class="nc bnc" id="L181" title="All 4 branches missed.">    if (listener.isMasterHostFailReconnect() || listener.isSecondaryHostFailReconnect()) {</span>
+<span class="nc" id="L182">      String error = &quot;No active connection found for replica&quot;;</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">      if (listener.isMasterHostFailReconnect()) {</span>
+<span class="nc" id="L184">        error = &quot;No active connection found for master&quot;;</span>
+      }
+<span class="nc bnc" id="L186" title="All 2 branches missed.">      if (lastQueryException != null) {</span>
+<span class="nc" id="L187">        throw new SQLException(error + &quot; : &quot; + lastQueryException.getMessage(),</span>
+<span class="nc" id="L188">            lastQueryException.getSQLState(), lastQueryException.getErrorCode(),</span>
+            lastQueryException);
+      }
+<span class="nc" id="L191">      throw new SQLException(error);</span>
+    }
+
+<span class="nc" id="L194">  }</span>
+
+  /**
+   * Reinitialize loopAddresses with all servers in randomize order.
+   *
+   * @param listener      current listener
+   * @param loopAddresses the list to reinitialize
+   */
+  private static void resetHostList(MastersSlavesListener listener,
+      Deque&lt;HostAddress&gt; loopAddresses) {
+    //if all servers have been connected without result
+    //add back all servers
+<span class="nc" id="L206">    List&lt;HostAddress&gt; servers = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L207">    servers.addAll(listener.getUrlParser().getHostAddresses());</span>
+<span class="nc" id="L208">    Collections.shuffle(servers);</span>
+
+    //remove current connected hosts to avoid reconnect them
+<span class="nc" id="L211">    servers.removeAll(listener.connectedHosts());</span>
+
+<span class="nc" id="L213">    loopAddresses.clear();</span>
+<span class="nc" id="L214">    loopAddresses.addAll(servers);</span>
+<span class="nc" id="L215">  }</span>
+
+  protected static boolean foundMaster(MastersSlavesListener listener,
+      MastersSlavesProtocol protocol,
+      SearchFilter searchFilter) {
+<span class="nc" id="L220">    protocol.setMustBeMasterConnection(true);</span>
+<span class="nc bnc" id="L221" title="All 2 branches missed.">    if (listener.isMasterHostFailReconnect()) {</span>
+<span class="nc" id="L222">      listener.foundActiveMaster(protocol);</span>
+    } else {
+<span class="nc" id="L224">      protocol.close();</span>
+    }
+
+<span class="nc bnc" id="L227" title="All 2 branches missed.">    if (!listener.isSecondaryHostFailReconnect()) {</span>
+<span class="nc" id="L228">      return true;</span>
+    } else {
+<span class="nc bnc" id="L230" title="All 2 branches missed.">      return listener.isExplicitClosed()</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">              || searchFilter.isFineIfFoundOnlyMaster()</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">              || !listener.isSecondaryHostFailReconnect();</span>
+    }
+  }
+
+  protected static boolean foundSecondary(MastersSlavesListener listener,
+      MastersSlavesProtocol protocol,
+      SearchFilter searchFilter) throws SQLException {
+<span class="nc" id="L239">    protocol.setMustBeMasterConnection(false);</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">    if (listener.isSecondaryHostFailReconnect()) {</span>
+<span class="nc" id="L241">      listener.foundActiveSecondary(protocol);</span>
+    } else {
+<span class="nc" id="L243">      protocol.close();</span>
+    }
+
+<span class="nc bnc" id="L246" title="All 2 branches missed.">    if (!listener.isMasterHostFailReconnect()) {</span>
+<span class="nc" id="L247">      return true;</span>
+    } else {
+<span class="nc bnc" id="L249" title="All 2 branches missed.">      return listener.isExplicitClosed()</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">              || searchFilter.isFineIfFoundOnlySlave()</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">              || !listener.isMasterHostFailReconnect();</span>
+    }
+  }
+
+  /**
+   * Get new instance of MastersSlavesProtocol.
+   *
+   * @param proxy     proxy
+   * @param urlParser connection string Object.
+   * @return a new MastersSlavesProtocol instance
+   */
+  private static MastersSlavesProtocol getNewProtocol(FailoverProxy proxy,
+      final GlobalStateInfo globalInfo, UrlParser urlParser) {
+<span class="nc" id="L264">    MastersSlavesProtocol newProtocol = new MastersSlavesProtocol(urlParser, globalInfo,</span>
+        proxy.lock);
+<span class="nc" id="L266">    newProtocol.setProxy(proxy);</span>
+<span class="nc" id="L267">    return newProtocol;</span>
+  }
+
+  public boolean mustBeMasterConnection() {
+<span class="nc" id="L271">    return mustBeMasterConnection;</span>
+  }
+
+  public void setMustBeMasterConnection(boolean mustBeMasterConnection) {
+<span class="nc" id="L275">    this.mustBeMasterConnection = mustBeMasterConnection;</span>
+<span class="nc" id="L276">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>

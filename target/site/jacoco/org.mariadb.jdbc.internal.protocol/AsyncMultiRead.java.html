@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="tr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AsyncMultiRead.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">mariadb-java-client</a> &gt; <a href="index.source.html" class="el_package">org.mariadb.jdbc.internal.protocol</a> &gt; <span class="el_source">AsyncMultiRead.java</span></div><h1>AsyncMultiRead.java</h1><pre class="source lang-java linenums">/*
+ *
+ * MariaDB Client for Java
+ *
+ * Copyright (c) 2012-2014 Monty Program Ab.
+ * Copyright (c) 2015-2017 MariaDB Ab.
+ *
+ * This library is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation; either version 2.1 of the License, or (at your option)
+ * any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
+ * for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along
+ * with this library; if not, write to Monty Program Ab info@montyprogram.com.
+ *
+ * This particular MariaDB Client for Java file is work
+ * derived from a Drizzle-JDBC. Drizzle-JDBC file which is covered by subject to
+ * the following copyright and notice provisions:
+ *
+ * Copyright (c) 2009-2011, Marcus Eriksson
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list
+ * of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright notice, this
+ * list of conditions and the following disclaimer in the documentation and/or
+ * other materials provided with the distribution.
+ *
+ * Neither the name of the driver nor the names of its contributors may not be
+ * used to endorse or promote products derived from this software without specific
+ * prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS  AND CONTRIBUTORS &quot;AS IS&quot;
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ */
+
+package org.mariadb.jdbc.internal.protocol;
+
+import static org.mariadb.jdbc.internal.util.SqlStates.INTERRUPTED_EXCEPTION;
+
+import java.sql.SQLException;
+import java.sql.SQLNonTransientConnectionException;
+import java.sql.SQLTransientConnectionException;
+import java.util.List;
+import java.util.concurrent.Callable;
+import org.mariadb.jdbc.internal.com.read.dao.Results;
+import org.mariadb.jdbc.internal.com.send.ComStmtPrepare;
+import org.mariadb.jdbc.internal.com.send.parameters.ParameterHolder;
+import org.mariadb.jdbc.internal.util.BulkStatus;
+import org.mariadb.jdbc.internal.util.dao.PrepareResult;
+
+public class AsyncMultiRead implements Callable&lt;AsyncMultiReadResult&gt; {
+
+  private final ComStmtPrepare comStmtPrepare;
+  private final BulkStatus status;
+  private final int sendCmdInitialCounter;
+  private final Protocol protocol;
+  private final boolean readPrepareStmtResult;
+  private final AbstractMultiSend bulkSend;
+  private final List&lt;ParameterHolder[]&gt; parametersList;
+  private final List&lt;String&gt; queries;
+  private final Results results;
+  private final int paramCount;
+  private final AsyncMultiReadResult asyncMultiReadResult;
+
+
+  /**
+   * Read results async to avoid local and remote networking stack buffer overflow &quot;lock&quot;.
+   *
+   * @param comStmtPrepare        current prepare
+   * @param status                bulk status
+   * @param protocol              protocol
+   * @param readPrepareStmtResult must read prepare statement result
+   * @param bulkSend              bulk sender object
+   * @param paramCount            number of parameters
+   * @param results               execution result
+   * @param parametersList        parameter list
+   * @param queries               queries
+   * @param prepareResult         prepare result
+   */
+  public AsyncMultiRead(ComStmtPrepare comStmtPrepare, BulkStatus status, Protocol protocol,
+      boolean readPrepareStmtResult, AbstractMultiSend bulkSend, int paramCount, Results results,
+<span class="nc" id="L99">      List&lt;ParameterHolder[]&gt; parametersList, List&lt;String&gt; queries, PrepareResult prepareResult) {</span>
+<span class="nc" id="L100">    this.comStmtPrepare = comStmtPrepare;</span>
+<span class="nc" id="L101">    this.status = status;</span>
+<span class="nc" id="L102">    this.sendCmdInitialCounter = status.sendCmdCounter - 1;</span>
+<span class="nc" id="L103">    this.protocol = protocol;</span>
+<span class="nc" id="L104">    this.readPrepareStmtResult = readPrepareStmtResult;</span>
+<span class="nc" id="L105">    this.bulkSend = bulkSend;</span>
+<span class="nc" id="L106">    this.paramCount = paramCount;</span>
+<span class="nc" id="L107">    this.results = results;</span>
+<span class="nc" id="L108">    this.parametersList = parametersList;</span>
+<span class="nc" id="L109">    this.queries = queries;</span>
+<span class="nc" id="L110">    this.asyncMultiReadResult = new AsyncMultiReadResult(prepareResult);</span>
+<span class="nc" id="L111">  }</span>
+
+  @Override
+  public AsyncMultiReadResult call() throws Exception {
+    // avoid synchronisation of calls for write and read
+    // since technically, getResult can be called before the write is send.
+    // Other solution would have been to synchronised write and read, but would have been less performant,
+    // just to have this timeout according to set value
+<span class="nc" id="L119">    int initialTimeout = protocol.getTimeout();</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">    if (initialTimeout != 0) {</span>
+<span class="nc" id="L121">      protocol.changeSocketSoTimeout(0);</span>
+    }
+
+<span class="nc bnc" id="L124" title="All 2 branches missed.">    if (readPrepareStmtResult) {</span>
+      try {
+<span class="nc" id="L126">        asyncMultiReadResult.setPrepareResult(</span>
+<span class="nc" id="L127">            comStmtPrepare.read(protocol.getReader(), protocol.isEofDeprecated()));</span>
+<span class="nc" id="L128">      } catch (SQLException queryException) {</span>
+<span class="nc" id="L129">        asyncMultiReadResult.setException(queryException);</span>
+<span class="nc" id="L130">      }</span>
+    }
+
+    //read all corresponding results
+<span class="nc" id="L134">    int counter = 0;</span>
+
+    //ensure to not finished loop while all bulk has not been send
+    outerloop:
+<span class="nc bnc" id="L138" title="All 4 branches missed.">    while (!status.sendEnded || counter &lt; status.sendSubCmdCounter) {</span>
+      //read results for each send data
+<span class="nc bnc" id="L140" title="All 2 branches missed.">      while (counter &lt; status.sendSubCmdCounter) {</span>
+        try {
+<span class="nc" id="L142">          protocol.getResult(results);</span>
+<span class="nc" id="L143">        } catch (SQLException qex) {</span>
+<span class="nc bnc" id="L144" title="All 4 branches missed.">          if (qex instanceof SQLNonTransientConnectionException</span>
+              || qex instanceof SQLTransientConnectionException) {
+<span class="nc" id="L146">            break outerloop;</span>
+          }
+<span class="nc bnc" id="L148" title="All 2 branches missed.">          if (asyncMultiReadResult.getException() == null) {</span>
+<span class="nc" id="L149">            asyncMultiReadResult.setException(bulkSend.handleResultException(qex, results,</span>
+                parametersList, queries, counter, sendCmdInitialCounter, paramCount,
+<span class="nc" id="L151">                asyncMultiReadResult.getPrepareResult()));</span>
+          }
+<span class="nc" id="L153">        }</span>
+<span class="nc" id="L154">        counter++;</span>
+
+<span class="nc bnc" id="L156" title="All 2 branches missed.">        if (Thread.currentThread().isInterrupted()) {</span>
+<span class="nc" id="L157">          asyncMultiReadResult.setException(new SQLException(&quot;Interrupted reading responses &quot;,</span>
+<span class="nc" id="L158">              INTERRUPTED_EXCEPTION.getSqlState(), -1));</span>
+<span class="nc" id="L159">          break;</span>
+        }
+      }
+    }
+
+<span class="nc bnc" id="L164" title="All 2 branches missed.">    if (initialTimeout != 0) {</span>
+<span class="nc" id="L165">      protocol.changeSocketSoTimeout(initialTimeout);</span>
+    }
+
+<span class="nc" id="L168">    return asyncMultiReadResult;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.2.201808211720</span></div></body></html>
